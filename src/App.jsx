@@ -2138,6 +2138,12 @@ function App() {
   useEffect(() => {
     if (isDemo || !user || !db) return;
     setSyncStatus('syncing');
+    // Vérifier si l'utilisateur a sa propre clé Hevy avant de charger ses workouts
+    let userHasHevyKey = false;
+    getDoc(doc(db, "users", user.uid, "integrations", "hevy")).then(snap => {
+      userHasHevyKey = snap.exists() && !!snap.data().apiKey;
+    }).catch(() => {});
+
     const unsubscribeSnapshot = onSnapshot(doc(db, "users", user.uid), (docSnap) => {
       // Si c'est nous qui venons d'écrire, on ignore ce snapshot
       if (isWriting.current) return;
@@ -2148,15 +2154,16 @@ function App() {
         setIsWithingsEnabled(data.isWithingsEnabled || false);
         setIsStravaEnabled(data.isStravaEnabled || false);
         setStravaLogs(data.stravaLogs || []);
-        setHevyWorkouts(data.hevyWorkouts || []);
+        // Ne charger les workouts Hevy que si l'utilisateur a sa propre clé API
+        setHevyWorkouts(userHasHevyKey ? (data.hevyWorkouts || []) : []);
         if (data.goals) setGoals(prev => ({ ...prev, ...data.goals }));
         isDataLoaded.current = true;
         setDataLoaded(true);
         setSyncStatus('idle');
-      } else { 
-        isDataLoaded.current = true; 
-        setDataLoaded(true); 
-        setSyncStatus('idle'); 
+      } else {
+        isDataLoaded.current = true;
+        setDataLoaded(true);
+        setSyncStatus('idle');
       }
     }, (error) => setSyncStatus('error'));
     return () => unsubscribeSnapshot();
