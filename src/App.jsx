@@ -2327,7 +2327,7 @@ function App() {
           <div className="flex items-center gap-3">
              <button onClick={() => setShowWaterModal(true)} className="bg-blue-600/20 text-blue-400 p-2 rounded-full hover:bg-blue-600/40 border border-blue-500/50 mr-2 flex items-center justify-center active:scale-95 transition-all shadow-lg shadow-blue-900/20"><Droplet size={20} fill="currentColor" className="opacity-80"/></button>
              <div className="text-xs">{syncStatus === 'syncing' && <CloudLightning className="text-yellow-400 animate-pulse" size={20} />}{syncStatus === 'saved' && <Cloud className="text-green-400" size={20} />}{syncStatus === 'error' && <AlertCircle className="text-red-500" size={20} />}{syncStatus === 'idle' && <Cloud className="text-slate-600" size={20} />}</div>
-             <div className="hidden md:flex items-center gap-2 text-sm text-slate-400"><User size={16}/> {user.displayName || 'Anonyme'}</div>
+             <div className="hidden md:flex items-center gap-2 text-sm text-slate-400"><User size={16}/> {user.displayName || user.email || 'Anonyme'}</div>
              <button onClick={() => signOut(auth)} className="text-slate-400 hover:text-red-400 transition-colors p-2 rounded-full hover:bg-slate-700"><LogOut size={20} /></button>
           </div>
         </div>
