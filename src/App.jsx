@@ -1695,8 +1695,14 @@ function LoginScreen({ onLogin, version }) {
 
 // --- MAIN APP ---
 function App() {
-  const [user, setUser] = useState(null); 
-  const [loadingAuth, setLoadingAuth] = useState(true); 
+  const [user, setUser] = useState(null);
+  const [loadingAuth, setLoadingAuth] = useState(true);
+  const [showSplash, setShowSplash] = useState(true);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setShowSplash(false), 2000);
+    return () => clearTimeout(timer);
+  }, []);
   const [syncStatus, setSyncStatus] = useState('idle'); 
   
   const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
@@ -2302,9 +2308,9 @@ function App() {
       }
   };
 
-  if (loadingAuth) return (
+  if (showSplash || loadingAuth) return (
     <div className="min-h-screen bg-black flex items-center justify-center">
-      <img src={new URL('./BIOZ.png', import.meta.url).href} alt="BIOZ" className="w-20 h-20 animate-pulse" />
+      <img src={new URL('./splashscreen.png', import.meta.url).href} alt="BIOZ" className="w-full h-full object-contain" />
     </div>
   );
 
