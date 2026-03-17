@@ -2310,7 +2310,7 @@ function App() {
 
   if (showSplash || loadingAuth) return (
     <div className="min-h-screen bg-black flex items-center justify-center">
-      <img src={new URL('./splashscreen.png', import.meta.url).href} alt="BIOZ" className="w-full h-full object-contain" />
+      <img src={new URL('./picto-transparent.png', import.meta.url).href} alt="BIOZ" className="w-16 h-16" />
     </div>
   );
 
