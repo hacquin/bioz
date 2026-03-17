@@ -2302,7 +2302,11 @@ function App() {
       }
   };
 
-  if (loadingAuth) return <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white animate-pulse">Chargement...</div>;
+  if (loadingAuth) return (
+    <div className="min-h-screen bg-black flex items-center justify-center">
+      <img src={new URL('./BIOZ.png', import.meta.url).href} alt="BIOZ" className="w-20 h-20 animate-pulse" />
+    </div>
+  );
 
   if (!user) {
     return <LoginScreen onLogin={handleLogin} version={APP_VERSION} />;
