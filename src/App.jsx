@@ -19,7 +19,12 @@ import video1 from './1.mp4';
 import video2 from './2.mp4';
 import video3 from './3.mp4';
 import video4 from './4.mp4';
-const ONBOARDING_VIDEOS = [video1, video2, video3, video4];
+import video1L from './1-laptop.mp4';
+import video2L from './2-laptop.mp4';
+import video3L from './3-laptop.mp4';
+import video4L from './4-laptop.mp4';
+const ONBOARDING_VIDEOS_MOBILE = [video1, video2, video3, video4];
+const ONBOARDING_VIDEOS_LAPTOP = [video1L, video2L, video3L, video4L];
 
 // --- VERSIONING ---
 const APP_VERSION = "v2.35.0 (Stable Switch)";
@@ -1656,30 +1661,33 @@ function StravaView({ stravaLogs, onSync, isSyncing, isDemo }) {
 function VideoOnboarding({ onFinish }) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const videoRef = useRef(null);
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  const videos = isMobile ? ONBOARDING_VIDEOS_MOBILE : ONBOARDING_VIDEOS_LAPTOP;
 
   useEffect(() => {
     if (videoRef.current) {
+      videoRef.current.muted = true;
       videoRef.current.load();
       videoRef.current.play().catch(() => {});
     }
   }, [currentIndex]);
 
   const handleNext = () => {
-    if (currentIndex < ONBOARDING_VIDEOS.length - 1) {
+    if (currentIndex < videos.length - 1) {
       setCurrentIndex(currentIndex + 1);
     } else {
       onFinish();
     }
   };
 
-  const isLast = currentIndex === ONBOARDING_VIDEOS.length - 1;
+  const isLast = currentIndex === videos.length - 1;
 
   return (
     <div className="fixed inset-0 bg-black flex flex-col items-center justify-center z-50">
       <video
         ref={videoRef}
-        src={ONBOARDING_VIDEOS[currentIndex]}
-        className="w-full h-full object-contain"
+        src={videos[currentIndex]}
+        className="w-full h-full object-cover"
         autoPlay
         loop
         muted
@@ -1687,7 +1695,7 @@ function VideoOnboarding({ onFinish }) {
       />
       <div className="absolute bottom-0 left-0 right-0 pb-10 px-6 flex flex-col items-center gap-4 bg-gradient-to-t from-black/80 via-black/40 to-transparent pt-20">
         <div className="flex gap-2 mb-2">
-          {ONBOARDING_VIDEOS.map((_, i) => (
+          {videos.map((_, i) => (
             <div key={i} className={`w-2.5 h-2.5 rounded-full transition-all ${i === currentIndex ? 'bg-violet-400 scale-125' : 'bg-slate-600'}`} />
           ))}
         </div>
