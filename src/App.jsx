@@ -1665,12 +1665,23 @@ function VideoOnboarding({ onFinish }) {
   const videos = isMobile ? ONBOARDING_VIDEOS_MOBILE : ONBOARDING_VIDEOS_LAPTOP;
 
   useEffect(() => {
-    if (videoRef.current) {
-      videoRef.current.muted = true;
-      videoRef.current.load();
-      videoRef.current.play().catch(() => {});
+    const v = videoRef.current;
+    if (v) {
+      v.muted = true;
+      v.setAttribute('muted', '');
+      v.setAttribute('playsinline', '');
+      v.setAttribute('webkit-playsinline', '');
+      v.load();
     }
   }, [currentIndex]);
+
+  const handlePlay = () => {
+    const v = videoRef.current;
+    if (v) {
+      v.muted = true;
+      v.play().catch(() => {});
+    }
+  };
 
   const handleNext = () => {
     if (currentIndex < videos.length - 1) {
@@ -1692,6 +1703,9 @@ function VideoOnboarding({ onFinish }) {
         loop
         muted
         playsInline
+        onLoadedData={handlePlay}
+        onCanPlay={handlePlay}
+        preload="auto"
       />
       <div className="absolute bottom-0 left-0 right-0 pb-10 px-6 flex flex-col items-center gap-4 bg-gradient-to-t from-black/80 via-black/40 to-transparent pt-20">
         <div className="flex gap-2 mb-2">
