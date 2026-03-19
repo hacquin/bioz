@@ -448,13 +448,14 @@ function Dashboard({ healthLogs, stravaLogs }) {
         <h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Heart size={16} className="text-red-400"/> FC moy. endurance (bpm)</h3>
         <div className="h-56">
           <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={enduranceHRData}>
+            <BarChart data={enduranceHRData}>
+              <defs><linearGradient id="hrEndGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#ef4444" stopOpacity={1}/><stop offset="100%" stopColor="#ef4444" stopOpacity={0}/></linearGradient></defs>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.grid} />
               <XAxis dataKey="date" tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} padding={{ left: 10, right: 30 }} />
               <YAxis tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} domain={['auto', 'auto']} />
               <Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(v) => [`${v} bpm`, 'FC moy.']} />
-              <Line type="monotone" dataKey="hr" stroke="none" dot={{fill: '#ef4444', r: 4, strokeWidth: 0}} activeDot={{r: 6, fill: '#ef4444'}} name="FC moy. (bpm)" connectNulls={false} isAnimationActive={false} />
-            </ComposedChart>
+              <Bar dataKey="hr" fill="url(#hrEndGrad)" radius={[4, 4, 0, 0]} name="FC moy. (bpm)" />
+            </BarChart>
           </ResponsiveContainer>
         </div>
       </div>}
@@ -559,13 +560,14 @@ function Dashboard({ healthLogs, stravaLogs }) {
         <h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Heart size={16} className="text-cyan-400"/> Aviron — FC moy. (bpm)</h3>
         <div className="h-56">
           <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={rowingHRData}>
+            <BarChart data={rowingHRData}>
+              <defs><linearGradient id="rowHRGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#06b6d4" stopOpacity={1}/><stop offset="100%" stopColor="#06b6d4" stopOpacity={0}/></linearGradient></defs>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.grid} />
               <XAxis dataKey="date" tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} padding={{ left: 10, right: 30 }} />
               <YAxis tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} domain={['auto', 'auto']} />
               <Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(v) => [`${v} bpm`, 'FC moy.']} />
-              <Line type="monotone" dataKey="hr" stroke="none" dot={{fill: '#06b6d4', r: 4, strokeWidth: 0}} activeDot={{r: 6, fill: '#06b6d4'}} name="FC moy. (bpm)" connectNulls={false} isAnimationActive={false} />
-            </ComposedChart>
+              <Bar dataKey="hr" fill="url(#rowHRGrad)" radius={[4, 4, 0, 0]} name="FC moy. (bpm)" />
+            </BarChart>
           </ResponsiveContainer>
         </div>
       </div>}
