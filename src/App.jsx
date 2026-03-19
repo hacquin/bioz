@@ -229,10 +229,12 @@ function Dashboard({ healthLogs, stravaLogs }) {
   // --- Données endurance par type ---
   const cyclingTypes = ['Ride', 'VirtualRide', 'EBikeRide'];
   const runningTypes = ['Run'];
+  const rowingTypes = ['Rowing', 'VirtualRow'];
 
   const cyclingMapped = useMemo(() => filteredStravaLogs.filter(a => cyclingTypes.includes(a.type)).map(l => ({ ...l, date: l.start_date })), [filteredStravaLogs]);
   const runningMapped = useMemo(() => filteredStravaLogs.filter(a => runningTypes.includes(a.type)).map(l => ({ ...l, date: l.start_date })), [filteredStravaLogs]);
-  const enduranceMapped = useMemo(() => filteredStravaLogs.filter(a => [...cyclingTypes, ...runningTypes].includes(a.type)).map(l => ({ ...l, date: l.start_date })), [filteredStravaLogs]);
+  const rowingMapped = useMemo(() => filteredStravaLogs.filter(a => rowingTypes.includes(a.type)).map(l => ({ ...l, date: l.start_date })), [filteredStravaLogs]);
+  const enduranceMapped = useMemo(() => filteredStravaLogs.filter(a => [...cyclingTypes, ...runningTypes, ...rowingTypes].includes(a.type)).map(l => ({ ...l, date: l.start_date })), [filteredStravaLogs]);
 
   const cyclingDistData = useMemo(() => aggregateData(cyclingMapped, (acc, log) => {
     acc.distance = (acc.distance || 0) + ((log.distance || 0) / 1000);
@@ -257,6 +259,14 @@ function Dashboard({ healthLogs, stravaLogs }) {
   const runningPaceData = useMemo(() => aggregateData(runningMapped, (acc, log) => {
     if (log.average_speed) { acc._speeds = acc._speeds || []; acc._speeds.push(log.average_speed); }
   }, {}).map(d => ({ ...d, pace: d._speeds && d._speeds.length > 0 ? parseFloat((1000 / (d._speeds.reduce((a, b) => a + b, 0) / d._speeds.length) / 60).toFixed(2)) : null })), [runningMapped, timeFrame, startDate, endDate]);
+
+  const rowingDistData = useMemo(() => aggregateData(rowingMapped, (acc, log) => {
+    acc.distance = (acc.distance || 0) + ((log.distance || 0) / 1000);
+  }, { distance: 0 }).map(d => ({ ...d, distance: parseFloat(d.distance.toFixed(1)) || null })), [rowingMapped, timeFrame, startDate, endDate]);
+
+  const rowingDurData = useMemo(() => aggregateData(rowingMapped, (acc, log) => {
+    acc.duration = (acc.duration || 0) + ((log.moving_time || 0) / 60);
+  }, { duration: 0 }).map(d => ({ ...d, duration: Math.round(d.duration) || null })), [rowingMapped, timeFrame, startDate, endDate]);
 
   const enduranceHRData = useMemo(() => aggregateData(enduranceMapped, (acc, log) => {
     if (log.average_heartrate) { acc._hrs = acc._hrs || []; acc._hrs.push(log.average_heartrate); }
@@ -465,6 +475,38 @@ function Dashboard({ healthLogs, stravaLogs }) {
               <Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(v) => [`${v} min/km`, 'Allure']} />
               <Area type="monotone" dataKey="pace" stroke="#f97316" fill="url(#runPaceGrad)" strokeWidth={2} name="Allure (min/km)" dot={false} connectNulls />
             </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-lg">
+        <h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Waves size={16} className="text-cyan-400"/> Aviron — Distance (km)</h3>
+        <div className="h-56">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={rowingDistData}>
+              <defs><linearGradient id="rowDistGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#06b6d4" stopOpacity={1}/><stop offset="100%" stopColor="#06b6d4" stopOpacity={0}/></linearGradient></defs>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.grid} />
+              <XAxis dataKey="date" tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} padding={{ left: 10, right: 30 }} />
+              <YAxis tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} />
+              <Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(v) => [`${v} km`, 'Distance']} />
+              <Bar dataKey="distance" fill="url(#rowDistGrad)" radius={[4, 4, 0, 0]} name="Distance (km)" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-lg">
+        <h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Clock size={16} className="text-cyan-400"/> Aviron — Durée (min)</h3>
+        <div className="h-56">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={rowingDurData}>
+              <defs><linearGradient id="rowDurGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#22d3ee" stopOpacity={1}/><stop offset="100%" stopColor="#22d3ee" stopOpacity={0}/></linearGradient></defs>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.grid} />
+              <XAxis dataKey="date" tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} padding={{ left: 10, right: 30 }} />
+              <YAxis tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} />
+              <Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(v) => [`${v} min`, 'Durée']} />
+              <Bar dataKey="duration" fill="url(#rowDurGrad)" radius={[4, 4, 0, 0]} name="Durée (min)" />
+            </BarChart>
           </ResponsiveContainer>
         </div>
       </div>
@@ -1830,8 +1872,11 @@ function EnduranceView({ stravaLogs, onSync, isSyncing, isDemo }) {
     const runningTypes = ['Run'];
     const enduranceTypes = [...cyclingTypes, ...runningTypes, 'Swim', 'Rowing', 'VirtualRow', 'Walk', 'Hike'];
 
+    const rowingTypes = ['Rowing', 'VirtualRow'];
+
     const cyclingLogs = recentLogs.filter(a => cyclingTypes.includes(a.type));
     const runningLogs = recentLogs.filter(a => runningTypes.includes(a.type));
+    const rowingLogs = recentLogs.filter(a => rowingTypes.includes(a.type));
     const enduranceLogs = recentLogs.filter(a => enduranceTypes.includes(a.type));
 
     const sumDistance = (logs) => logs.reduce((s, a) => s + (a.distance || 0), 0);
@@ -1847,8 +1892,10 @@ function EnduranceView({ stravaLogs, onSync, isSyncing, isDemo }) {
 
     const cyclingDist = sumDistance(cyclingLogs);
     const runningDist = sumDistance(runningLogs);
+    const rowingDist = sumDistance(rowingLogs);
     const cyclingDur = sumDuration(cyclingLogs);
     const runningDur = sumDuration(runningLogs);
+    const rowingDur = sumDuration(rowingLogs);
     const cyclingSpeed = avgSpeed(cyclingLogs);
     const runningSpeed = avgSpeed(runningLogs);
     const enduranceHR = avgHR(enduranceLogs);
@@ -1869,6 +1916,8 @@ function EnduranceView({ stravaLogs, onSync, isSyncing, isDemo }) {
         { label: 'Running — Durée', value: runningDur ? formatDuration(runningDur) : '—', icon: <Clock size={18} />, color: 'text-orange-400', bg: 'bg-orange-500/10', border: 'border-orange-500/30' },
         { label: 'Cyclisme — Vit. moy.', value: cyclingSpeed ? `${(cyclingSpeed * 3.6).toFixed(1)} km/h` : '—', icon: <Bike size={18} />, color: 'text-blue-400', bg: 'bg-blue-500/10', border: 'border-blue-500/30' },
         { label: 'Running — Allure moy.', value: formatPace(runningSpeed), icon: <Footprints size={18} />, color: 'text-orange-400', bg: 'bg-orange-500/10', border: 'border-orange-500/30' },
+        { label: 'Aviron — Distance', value: rowingDist ? `${(rowingDist / 1000).toFixed(1)} km` : '—', icon: <Waves size={18} />, color: 'text-cyan-400', bg: 'bg-cyan-500/10', border: 'border-cyan-500/30' },
+        { label: 'Aviron — Durée', value: rowingDur ? formatDuration(rowingDur) : '—', icon: <Clock size={18} />, color: 'text-cyan-400', bg: 'bg-cyan-500/10', border: 'border-cyan-500/30' },
     ];
 
     return (
