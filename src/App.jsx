@@ -2201,6 +2201,181 @@ function App() {
      window.location.href = `${HUAWEI_CONFIG.authUrl}?response_type=code&client_id=${HUAWEI_CONFIG.clientId}&state=huawei_${generateId()}&scope=${encodeURIComponent(HUAWEI_CONFIG.scope)}&redirect_uri=${encodeURIComponent(HUAWEI_CONFIG.redirectUri)}&access_type=offline`;
   };
   
+  // --- HUAWEI OAUTH CALLBACK ---
+  useEffect(() => {
+    const handleHuaweiCallback = async () => {
+      const params = new URLSearchParams(window.location.search);
+      const code = params.get('code');
+      const state = params.get('state');
+      if (!code || !state || !state.startsWith('huawei_')) return;
+      window.history.replaceState({}, document.title, "/");
+      setIsSyncingHuawei(true);
+      try {
+        const formData = new URLSearchParams();
+        formData.append('grant_type', 'authorization_code');
+        formData.append('code', code);
+        formData.append('client_id', HUAWEI_CONFIG.clientId);
+        formData.append('client_secret', HUAWEI_CONFIG.clientSecret);
+        formData.append('redirect_uri', HUAWEI_CONFIG.redirectUri);
+        const data = await fetchWithFallback(HUAWEI_CONFIG.tokenUrl, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: formData.toString() });
+        if (data && data.access_token) {
+          const tokenData = { access_token: data.access_token, refresh_token: data.refresh_token, expires_in: data.expires_in, token_type: data.token_type, timestamp: Date.now() };
+          await setDoc(doc(db, "users", user.uid, "integrations", "huawei"), tokenData);
+          await setDoc(doc(db, "users", user.uid), { isHuaweiEnabled: true }, { merge: true });
+          setIsHuaweiEnabled(true);
+          alert("Huawei Health connecté !");
+          setTimeout(() => handleHuaweiSync(tokenData), 1000);
+        } else {
+          throw new Error(data ? JSON.stringify(data) : "Réponse vide");
+        }
+      } catch (err) {
+        console.error("[Huawei] Auth error:", err);
+        alert("Erreur de connexion Huawei Health. Veuillez réessayer depuis les Paramètres.");
+      } finally {
+        setIsSyncingHuawei(false);
+      }
+    };
+    if (user && !isDemo) handleHuaweiCallback();
+  }, [user, isDemo]);
+
+  // --- HUAWEI HEALTH SYNC ---
+  const handleHuaweiSync = async (forcedToken = null) => {
+    if (!user) return;
+    setIsSyncingHuawei(true);
+    setHuaweiNeedsReconnect(false);
+    try {
+      let tokenData = forcedToken;
+      if (!tokenData) {
+        const tokenSnap = await getDoc(doc(db, "users", user.uid, "integrations", "huawei"));
+        if (!tokenSnap.exists()) { setIsSyncingHuawei(false); return; }
+        tokenData = tokenSnap.data();
+      }
+      if (!tokenData) { setIsSyncingHuawei(false); return; }
+
+      // Refresh token si expiré
+      const isExpired = tokenData.timestamp && (Date.now() - tokenData.timestamp > (tokenData.expires_in - 300) * 1000);
+      if (isExpired) {
+        const refreshForm = new URLSearchParams();
+        refreshForm.append('grant_type', 'refresh_token');
+        refreshForm.append('client_id', HUAWEI_CONFIG.clientId);
+        refreshForm.append('client_secret', HUAWEI_CONFIG.clientSecret);
+        refreshForm.append('refresh_token', tokenData.refresh_token);
+        try {
+          const refreshData = await fetchWithFallback(HUAWEI_CONFIG.tokenUrl, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: refreshForm.toString() });
+          if (refreshData && refreshData.access_token) {
+            tokenData = { ...tokenData, access_token: refreshData.access_token, refresh_token: refreshData.refresh_token || tokenData.refresh_token, expires_in: refreshData.expires_in, timestamp: Date.now() };
+            await setDoc(doc(db, "users", user.uid, "integrations", "huawei"), tokenData);
+          } else {
+            console.error("[Huawei] Refresh token invalide, reconnexion nécessaire.");
+            setHuaweiNeedsReconnect(true);
+            setIsSyncingHuawei(false);
+            return;
+          }
+        } catch (refreshErr) {
+          console.error("[Huawei] Erreur refresh token:", refreshErr);
+          setHuaweiNeedsReconnect(true);
+          setIsSyncingHuawei(false);
+          return;
+        }
+      }
+
+      const authHeaders = { 'Authorization': `Bearer ${tokenData.access_token}`, 'Content-Type': 'application/json' };
+      const now = Date.now();
+      const twoYearsAgo = now - (2 * 365 * 24 * 3600 * 1000);
+
+      // Fetch body weight, body fat, heart rate, activity en parallèle
+      const [weightData, bodyCompData, hrData, activityData] = await Promise.all([
+        // Body weight
+        fetchWithFallback(`${HUAWEI_CONFIG.apiBase}/sampleSet/bodyWeight/query`, { method: 'POST', headers: authHeaders, body: JSON.stringify({ startTime: twoYearsAgo, endTime: now, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }) }).catch(e => { console.warn("[Huawei] Weight fetch error:", e); return null; }),
+        // Body composition (fat, muscle, hydration, visceral fat, BMR)
+        fetchWithFallback(`${HUAWEI_CONFIG.apiBase}/sampleSet/bodyComposition/query`, { method: 'POST', headers: authHeaders, body: JSON.stringify({ startTime: twoYearsAgo, endTime: now, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }) }).catch(e => { console.warn("[Huawei] Body comp fetch error:", e); return null; }),
+        // Resting heart rate
+        fetchWithFallback(`${HUAWEI_CONFIG.apiBase}/sampleSet/heartRate/query`, { method: 'POST', headers: authHeaders, body: JSON.stringify({ startTime: twoYearsAgo, endTime: now, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }) }).catch(e => { console.warn("[Huawei] HR fetch error:", e); return null; }),
+        // Steps & distance (activity)
+        fetchWithFallback(`${HUAWEI_CONFIG.apiBase}/sampleSet/activitySummary/query`, { method: 'POST', headers: authHeaders, body: JSON.stringify({ startTime: twoYearsAgo, endTime: now, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }) }).catch(e => { console.warn("[Huawei] Activity fetch error:", e); return null; })
+      ]);
+
+      let newHealthLogs = [...healthLogs];
+      let updates = 0;
+
+      const upsertLog = (dateKey, isoDate, fields) => {
+        const logIndex = newHealthLogs.findIndex(l => getLocalDateKey(l.date) === dateKey);
+        if (logIndex === -1) {
+          newHealthLogs.push({ id: generateId(), date: isoDate, ...fields });
+          updates++;
+        } else {
+          const existing = newHealthLogs[logIndex];
+          const merged = { ...existing };
+          Object.entries(fields).forEach(([k, v]) => { if (v != null) merged[k] = v; });
+          newHealthLogs[logIndex] = merged;
+          updates++;
+        }
+      };
+
+      // Process weight data
+      if (weightData && weightData.samplePoints) {
+        weightData.samplePoints.forEach(p => {
+          const date = new Date(p.startTime || p.samplingTime);
+          const dateKey = getLocalDateKey(date.toISOString());
+          const weight = p.value?.[0]?.floatValue || p.fieldValues?.weight;
+          if (weight) upsertLog(dateKey, date.toISOString(), { weight: parseFloat(weight.toFixed(2)) });
+        });
+      }
+
+      // Process body composition
+      if (bodyCompData && bodyCompData.samplePoints) {
+        bodyCompData.samplePoints.forEach(p => {
+          const date = new Date(p.startTime || p.samplingTime);
+          const dateKey = getLocalDateKey(date.toISOString());
+          const fields = {};
+          const vals = p.value || [];
+          vals.forEach(v => {
+            if (v.fieldName === 'body_fat_rate' || v.fieldName === 'bodyFat') fields.bodyFat = parseFloat((v.floatValue).toFixed(2));
+            if (v.fieldName === 'muscle_mass' || v.fieldName === 'muscleMass') fields.muscleMass = parseFloat((v.floatValue).toFixed(2));
+            if (v.fieldName === 'moisture_rate' || v.fieldName === 'moisture') fields.hydration = parseFloat((v.floatValue).toFixed(2));
+            if (v.fieldName === 'visceral_fat_level' || v.fieldName === 'visceralFat') fields.visceralFat = parseFloat((v.floatValue).toFixed(1));
+            if (v.fieldName === 'basal_metabolism' || v.fieldName === 'bmr') fields.bmr = Math.round(v.floatValue);
+          });
+          if (Object.keys(fields).length > 0) upsertLog(dateKey, date.toISOString(), fields);
+        });
+      }
+
+      // Process heart rate
+      if (hrData && hrData.samplePoints) {
+        hrData.samplePoints.forEach(p => {
+          const date = new Date(p.startTime || p.samplingTime);
+          const dateKey = getLocalDateKey(date.toISOString());
+          const hr = p.value?.[0]?.floatValue || p.value?.[0]?.intValue || p.fieldValues?.restingHeartRate;
+          if (hr) upsertLog(dateKey, date.toISOString(), { restingHR: Math.round(hr) });
+        });
+      }
+
+      // Process activity (steps, distance)
+      if (activityData && activityData.samplePoints) {
+        activityData.samplePoints.forEach(p => {
+          const date = new Date(p.startTime || p.samplingTime);
+          const dateKey = getLocalDateKey(date.toISOString());
+          const fields = {};
+          const vals = p.value || [];
+          vals.forEach(v => {
+            if (v.fieldName === 'steps' || v.fieldName === 'step') fields.steps = Math.round(v.intValue || v.floatValue);
+            if (v.fieldName === 'distance') fields.distance = parseFloat(((v.floatValue || 0) / 1000).toFixed(2));
+          });
+          if (Object.keys(fields).length > 0) upsertLog(dateKey, date.toISOString(), fields);
+        });
+      }
+
+      if (updates > 0) {
+        newHealthLogs.sort((a, b) => new Date(a.date) - new Date(b.date));
+        setHealthLogs(newHealthLogs);
+      }
+    } catch (e) {
+      console.error("[Huawei] Sync Error:", e);
+    } finally {
+      setIsSyncingHuawei(false);
+    }
+  };
+
   const handleStartWithingsAuth = () => {
      window.location.href = `${WITHINGS_CONFIG.authUrl}?response_type=code&client_id=${WITHINGS_CONFIG.clientId}&state=${generateId()}&scope=${WITHINGS_CONFIG.scope}&redirect_uri=${encodeURIComponent(WITHINGS_CONFIG.redirectUri)}`;
   };
@@ -2304,6 +2479,16 @@ function App() {
       handleWithingsSync();
     }
   }, [user, isWithingsEnabled, dataLoaded]);
+
+  // Auto-sync Huawei au chargement (désactivé sur mobile — bouton manuel disponible)
+  const huaweiAutoSynced = useRef(false);
+  useEffect(() => {
+    if (isDemo || !user || !dataLoaded || huaweiAutoSynced.current || isMobileDevice) return;
+    if (isHuaweiEnabled) {
+      huaweiAutoSynced.current = true;
+      handleHuaweiSync();
+    }
+  }, [user, isHuaweiEnabled, dataLoaded]);
 
   // Sync Read (Firebase) - onSnapshot écoute les changements distants
   const isWriting = useRef(false); // Empêche onSnapshot de réagir à nos propres écritures
