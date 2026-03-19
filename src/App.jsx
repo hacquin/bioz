@@ -83,6 +83,7 @@ const DATA_TYPE_SOURCES = [
   { key: 'vascularAge', label: 'Âge vasculaire', sources: ['withings'] },
   { key: 'steps', label: 'Pas', sources: ['withings', 'huawei', 'strava'] },
   { key: 'distance', label: 'Distance', sources: ['withings', 'huawei', 'strava'] },
+  { key: 'endurance', label: 'Activités endurance', sources: ['strava', 'huawei'] },
 ];
 
 const LOCAL_PROXY = "/proxy.php?url=";
@@ -1611,7 +1612,7 @@ function SettingsView({ user, isWithingsEnabled, handleWithingsAuth, isStravaEna
 }
 
 // --- STRAVA VIEW ---
-function StravaView({ stravaLogs, onSync, isSyncing, isDemo }) {
+function EnduranceView({ stravaLogs, onSync, isSyncing, isDemo }) {
     const safeLogs = Array.isArray(stravaLogs) ? stravaLogs : [];
 
     const getActivityIcon = (act, className) => {
@@ -1672,49 +1673,115 @@ function StravaView({ stravaLogs, onSync, isSyncing, isDemo }) {
         return `${(act.average_speed * 3.6).toFixed(1)} km/h`;
     };
 
+    // --- Calcul des stats résumé (30 derniers jours) ---
+    const thirtyDaysAgo = Date.now() - 30 * 24 * 3600 * 1000;
+    const recentLogs = safeLogs.filter(a => a.start_date && new Date(a.start_date).getTime() > thirtyDaysAgo);
+
+    const cyclingTypes = ['Ride', 'VirtualRide', 'EBikeRide'];
+    const runningTypes = ['Run'];
+    const enduranceTypes = [...cyclingTypes, ...runningTypes, 'Swim', 'Rowing', 'VirtualRow', 'Walk', 'Hike'];
+
+    const cyclingLogs = recentLogs.filter(a => cyclingTypes.includes(a.type));
+    const runningLogs = recentLogs.filter(a => runningTypes.includes(a.type));
+    const enduranceLogs = recentLogs.filter(a => enduranceTypes.includes(a.type));
+
+    const sumDistance = (logs) => logs.reduce((s, a) => s + (a.distance || 0), 0);
+    const sumDuration = (logs) => logs.reduce((s, a) => s + (a.moving_time || 0), 0);
+    const avgSpeed = (logs) => {
+        const withSpeed = logs.filter(a => a.average_speed);
+        return withSpeed.length > 0 ? withSpeed.reduce((s, a) => s + a.average_speed, 0) / withSpeed.length : 0;
+    };
+    const avgHR = (logs) => {
+        const withHR = logs.filter(a => a.average_heartrate);
+        return withHR.length > 0 ? Math.round(withHR.reduce((s, a) => s + a.average_heartrate, 0) / withHR.length) : 0;
+    };
+
+    const cyclingDist = sumDistance(cyclingLogs);
+    const runningDist = sumDistance(runningLogs);
+    const cyclingDur = sumDuration(cyclingLogs);
+    const runningDur = sumDuration(runningLogs);
+    const cyclingSpeed = avgSpeed(cyclingLogs);
+    const runningSpeed = avgSpeed(runningLogs);
+    const enduranceHR = avgHR(enduranceLogs);
+
+    const formatPace = (speedMs) => {
+        if (!speedMs) return '—';
+        const paceSecPerKm = 1000 / speedMs;
+        const pm = Math.floor(paceSecPerKm / 60);
+        const ps = Math.round(paceSecPerKm % 60);
+        return `${pm}'${String(ps).padStart(2,'0')}" /km`;
+    };
+
+    const summaryCards = [
+        { label: 'Cyclisme — Distance', value: cyclingDist ? `${(cyclingDist / 1000).toFixed(1)} km` : '—', icon: <Bike size={18} />, color: 'text-blue-400', bg: 'bg-blue-500/10', border: 'border-blue-500/30' },
+        { label: 'Running — Distance', value: runningDist ? `${(runningDist / 1000).toFixed(1)} km` : '—', icon: <Footprints size={18} />, color: 'text-orange-400', bg: 'bg-orange-500/10', border: 'border-orange-500/30' },
+        { label: 'FC moy. endurance', value: enduranceHR ? `${enduranceHR} bpm` : '—', icon: <Heart size={18} />, color: 'text-red-400', bg: 'bg-red-500/10', border: 'border-red-500/30' },
+        { label: 'Cyclisme — Durée', value: cyclingDur ? formatDuration(cyclingDur) : '—', icon: <Clock size={18} />, color: 'text-blue-400', bg: 'bg-blue-500/10', border: 'border-blue-500/30' },
+        { label: 'Running — Durée', value: runningDur ? formatDuration(runningDur) : '—', icon: <Clock size={18} />, color: 'text-orange-400', bg: 'bg-orange-500/10', border: 'border-orange-500/30' },
+        { label: 'Cyclisme — Vit. moy.', value: cyclingSpeed ? `${(cyclingSpeed * 3.6).toFixed(1)} km/h` : '—', icon: <Bike size={18} />, color: 'text-blue-400', bg: 'bg-blue-500/10', border: 'border-blue-500/30' },
+        { label: 'Running — Allure moy.', value: formatPace(runningSpeed), icon: <Footprints size={18} />, color: 'text-orange-400', bg: 'bg-orange-500/10', border: 'border-orange-500/30' },
+    ];
+
     return (
         <div className="animate-fade-in space-y-6">
             <div className="flex justify-between items-center">
-                <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2"><MapIcon size={22} className="text-[#fc4c02]" /> Activités Strava</h2>
-                <button onClick={() => onSync()} disabled={isSyncing || isDemo} className="bg-[#fc4c02] hover:bg-[#e34402] text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-lg disabled:opacity-50 transition-colors">
+                <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2"><MapIcon size={22} className="text-emerald-400" /> Endurance</h2>
+                <button onClick={() => onSync()} disabled={isSyncing || isDemo} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-lg disabled:opacity-50 transition-colors">
                     <RefreshCw size={15} className={isSyncing ? "animate-spin" : ""}/>{isSyncing ? 'Sync...' : 'Synchroniser'}
                 </button>
             </div>
 
-            {safeLogs.length === 0 ? (
-                <div className="text-center text-slate-500 py-16 bg-slate-800/50 rounded-2xl border border-dashed border-slate-700"><MapIcon size={40} className="mx-auto mb-3 opacity-20"/><p className="font-medium">Aucune activité synchronisée.</p><p className="text-sm mt-1">Cliquez sur "Synchroniser" pour récupérer vos séances du jour.</p></div>
-            ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                    {safeLogs.map(act => {
-                        const colors = getActivityColor(act);
-                        return (
-                            <div key={act.id} className={`bg-slate-800 rounded-2xl border ${colors.border} shadow-md overflow-hidden hover:shadow-lg hover:scale-[1.01] transition-all duration-200`}>
-                                <div className={`${colors.bg} px-4 pt-4 pb-3 border-b border-slate-700/50`}>
-                                    <div className="flex items-start justify-between gap-2">
-                                        <div className="flex items-center gap-2 min-w-0">
-                                            <span className="shrink-0">{getActivityIcon(act, colors.accent)}</span>
-                                            <div className="min-w-0">
-                                                <h3 className="font-bold text-white text-sm leading-tight truncate">{act.name}</h3>
-                                                <span className={`text-xs font-semibold ${colors.accent}`}>{getActivityLabel(act)}</span>
+            {/* Cartes résumé — 30 derniers jours */}
+            <div>
+                <h3 className="text-sm font-semibold text-slate-400 mb-3 uppercase tracking-wider">30 derniers jours</h3>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                    {summaryCards.map((card, i) => (
+                        <div key={i} className={`${card.bg} border ${card.border} rounded-2xl p-4 text-center`}>
+                            <div className={`flex items-center justify-center gap-1.5 mb-2 ${card.color}`}>{card.icon}<span className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">{card.label}</span></div>
+                            <div className={`text-xl font-bold ${card.color}`}>{card.value}</div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            {/* Liste des activités */}
+            <div>
+                <h3 className="text-sm font-semibold text-slate-400 mb-3 uppercase tracking-wider">Activités récentes</h3>
+                {safeLogs.length === 0 ? (
+                    <div className="text-center text-slate-500 py-16 bg-slate-800/50 rounded-2xl border border-dashed border-slate-700"><MapIcon size={40} className="mx-auto mb-3 opacity-20"/><p className="font-medium">Aucune activité synchronisée.</p><p className="text-sm mt-1">Cliquez sur "Synchroniser" pour récupérer vos séances.</p></div>
+                ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                        {safeLogs.map(act => {
+                            const colors = getActivityColor(act);
+                            return (
+                                <div key={act.id} className={`bg-slate-800 rounded-2xl border ${colors.border} shadow-md overflow-hidden hover:shadow-lg hover:scale-[1.01] transition-all duration-200`}>
+                                    <div className={`${colors.bg} px-4 pt-4 pb-3 border-b border-slate-700/50`}>
+                                        <div className="flex items-start justify-between gap-2">
+                                            <div className="flex items-center gap-2 min-w-0">
+                                                <span className="shrink-0">{getActivityIcon(act, colors.accent)}</span>
+                                                <div className="min-w-0">
+                                                    <h3 className="font-bold text-white text-sm leading-tight truncate">{act.name}</h3>
+                                                    <span className={`text-xs font-semibold ${colors.accent}`}>{getActivityLabel(act)}</span>
+                                                </div>
+                                            </div>
+                                            <div className="text-right shrink-0">
+                                                <div className="text-xs text-slate-400">{act.start_date ? new Date(act.start_date).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }) : '—'}</div>
+                                                <div className="text-xs text-slate-500">{act.start_date ? new Date(act.start_date).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : ''}</div>
                                             </div>
                                         </div>
-                                        <div className="text-right shrink-0">
-                                            <div className="text-xs text-slate-400">{act.start_date ? new Date(act.start_date).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }) : '—'}</div>
-                                            <div className="text-xs text-slate-500">{act.start_date ? new Date(act.start_date).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : ''}</div>
-                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-px bg-slate-700/30 m-3 rounded-xl overflow-hidden">
+                                        <div className="bg-slate-800/80 p-3 text-center"><div className="text-[10px] uppercase tracking-wider text-slate-500 mb-1">Durée</div><div className="font-bold text-slate-100 text-base">{act.moving_time ? formatDuration(act.moving_time) : '—'}</div></div>
+                                        <div className="bg-slate-800/80 p-3 text-center"><div className="text-[10px] uppercase tracking-wider text-slate-500 mb-1">Distance</div><div className="font-bold text-slate-100 text-base">{act.distance ? `${(act.distance / 1000).toFixed(2)} km` : '—'}</div></div>
+                                        <div className="bg-slate-800/80 p-3 text-center"><div className="text-[10px] uppercase tracking-wider text-slate-500 mb-1">{act.type === 'Run' ? 'Allure' : 'Vit. moy.'}</div><div className={`font-bold text-base ${colors.accent}`}>{formatSpeed(act)}</div></div>
+                                        <div className="bg-slate-800/80 p-3 text-center"><div className="text-[10px] uppercase tracking-wider text-slate-500 mb-1">FC moy.</div><div className="font-bold text-slate-100 text-base flex items-center justify-center gap-1">{act.average_heartrate ? <><Heart size={13} className="text-red-400 shrink-0"/>{Math.round(act.average_heartrate)} bpm</> : <span className="text-slate-600">—</span>}</div></div>
                                     </div>
                                 </div>
-                                <div className="grid grid-cols-2 gap-px bg-slate-700/30 m-3 rounded-xl overflow-hidden">
-                                    <div className="bg-slate-800/80 p-3 text-center"><div className="text-[10px] uppercase tracking-wider text-slate-500 mb-1">Durée</div><div className="font-bold text-slate-100 text-base">{act.moving_time ? formatDuration(act.moving_time) : '—'}</div></div>
-                                    <div className="bg-slate-800/80 p-3 text-center"><div className="text-[10px] uppercase tracking-wider text-slate-500 mb-1">Distance</div><div className="font-bold text-slate-100 text-base">{act.distance ? `${(act.distance / 1000).toFixed(2)} km` : '—'}</div></div>
-                                    <div className="bg-slate-800/80 p-3 text-center"><div className="text-[10px] uppercase tracking-wider text-slate-500 mb-1">{act.type === 'Run' ? 'Allure' : 'Vit. moy.'}</div><div className={`font-bold text-base ${colors.accent}`}>{formatSpeed(act)}</div></div>
-                                    <div className="bg-slate-800/80 p-3 text-center"><div className="text-[10px] uppercase tracking-wider text-slate-500 mb-1">FC moy.</div><div className="font-bold text-slate-100 text-base flex items-center justify-center gap-1">{act.average_heartrate ? <><Heart size={13} className="text-red-400 shrink-0"/>{Math.round(act.average_heartrate)} bpm</> : <span className="text-slate-600">—</span>}</div></div>
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
-            )}
+                            );
+                        })}
+                    </div>
+                )}
+            </div>
         </div>
     );
 }
@@ -2768,7 +2835,7 @@ function App() {
       case 'dashboard': return dataLoaded ? <Dashboard healthLogs={healthLogs} stravaLogs={stravaLogs} /> : <div className="flex items-center justify-center h-64 text-slate-500">Chargement...</div>;
       case 'workout': return <HevyView hevyWorkouts={hevyWorkouts} loadingHevy={loadingHevy} fetchHevyWorkouts={demoFetchHevy} hevyError={hevyError} hevySyncStatus={hevySyncStatus} onDeleteWorkout={demoDeleteHevy} isDemo={isDemo} />;
       case 'health': return <HealthTracker user={user} db={db} healthLogs={healthLogs} setHealthLogs={demoSetHealthLogs} isSyncingWithings={isSyncingWithings} onWithingsSync={demoWithingsSync} goals={goals} isDemo={isDemo} />;
-      case 'strava': return <StravaView stravaLogs={stravaLogs} onSync={demoStravaSync} isSyncing={isSyncingStrava} isDemo={isDemo} />;
+      case 'endurance': return <EnduranceView stravaLogs={stravaLogs} onSync={demoStravaSync} isSyncing={isSyncingStrava} isDemo={isDemo} />;
       case 'settings': return <SettingsView user={user} isWithingsEnabled={isDemo || isWithingsEnabled} handleWithingsAuth={isDemo ? demoNoOp : handleStartWithingsAuth} isStravaEnabled={isDemo || isStravaEnabled} handleStravaAuth={isDemo ? demoNoOp : handleStartStravaAuth} isHuaweiEnabled={isDemo || isHuaweiEnabled} handleHuaweiAuth={isDemo ? demoNoOp : handleStartHuaweiAuth} huaweiNeedsReconnect={huaweiNeedsReconnect} withingsNeedsReconnect={false} hevyApiKey={hevyApiKey} onSaveHevyApiKey={isDemo ? demoNoOp : saveHevyApiKey} goals={goals} setGoals={demoSetGoals} dataSourcePrefs={dataSourcePrefs} setDataSourcePrefs={setDataSourcePrefs} connectedSources={connectedSources} isDemo={isDemo} />;
       default: return <div className="flex items-center justify-center h-64 text-slate-500">Chargement...</div>;
     }
@@ -2803,7 +2870,7 @@ function App() {
           <NavButton icon={BarChart2} label="Sport" active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} />
           <NavButton icon={Dumbbell} label="Musculation" active={activeTab === 'workout'} onClick={() => setActiveTab('workout')} />
           <NavButton icon={HeartPulse} label="Santé" active={activeTab === 'health'} onClick={() => setActiveTab('health')} />
-          <NavButton icon={MapIcon} label="Strava" active={activeTab === 'strava'} onClick={() => setActiveTab('strava')} />
+          <NavButton icon={MapIcon} label="Endurance" active={activeTab === 'endurance'} onClick={() => setActiveTab('endurance')} />
           <NavButton icon={Settings} label="Params" active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} />
         </div>
       </nav>
