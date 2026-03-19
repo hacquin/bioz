@@ -496,14 +496,14 @@ function Dashboard({ healthLogs, stravaLogs }) {
         <h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Bike size={16} className="text-blue-400"/> Cyclisme — Vit. moy. (km/h)</h3>
         <div className="h-56">
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={cyclingSpeedData}>
-              <defs><linearGradient id="bikeSpdGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#3b82f6" stopOpacity={0.6}/><stop offset="100%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient></defs>
+            <BarChart data={cyclingSpeedData}>
+              <defs><linearGradient id="bikeSpdGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#3b82f6" stopOpacity={1}/><stop offset="100%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient></defs>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.grid} />
               <XAxis dataKey="date" tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} padding={{ left: 10, right: 30 }} />
               <YAxis tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} domain={['auto', 'auto']} />
               <Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(v) => [`${v} km/h`, 'Vit. moy.']} />
-              <Area type="monotone" dataKey="speed" stroke="#3b82f6" fill="url(#bikeSpdGrad)" strokeWidth={2} name="Vit. moy. (km/h)" dot={false} connectNulls />
-            </AreaChart>
+              <Bar dataKey="speed" fill="url(#bikeSpdGrad)" radius={[4, 4, 0, 0]} name="Vit. moy. (km/h)" />
+            </BarChart>
           </ResponsiveContainer>
         </div>
       </div>}
