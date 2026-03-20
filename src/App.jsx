@@ -4,7 +4,7 @@ import {
   Bike, Mountain, Award, Waves, Flame, ChevronDown, ChevronUp, Clock, Plus, Trash2
 } from 'lucide-react';
 import { 
-  BarChart, Bar, LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ComposedChart, PieChart, Pie, Cell
+  BarChart, Bar, LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ComposedChart, PieChart, Pie, Cell, LabelList
 } from 'recharts';
 
 // --- FIREBASE IMPORTS ---
@@ -56,7 +56,7 @@ const STRAVA_CONFIG = {
 const HUAWEI_CONFIG = {
   clientId: import.meta.env.VITE_HUAWEI_CLIENT_ID,
   clientSecret: import.meta.env.VITE_HUAWEI_CLIENT_SECRET,
-  redirectUri: "https://fitness.hacquin.net",
+  redirectUri: "https://bioz.app",
   authUrl: "https://oauth-login.cloud.huawei.com/oauth2/v3/authorize",
   tokenUrl: "https://oauth-login.cloud.huawei.com/oauth2/v3/token",
   apiBase: "https://health-api.cloud.huawei.com/healthkit/v1",
@@ -665,8 +665,8 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings,
   };
   const isHealthCardVisible = (cardId) => !healthHiddenCards.includes(cardId);
 
-  const HEALTH_DEFAULT_ORDER = ['h_weight', 'h_waist', 'h_bp', 'h_restingHR', 'h_pwv', 'h_bodyFat', 'h_muscleMass', 'h_hydration', 'h_visceralFat', 'h_composition'];
-  const HEALTH_CARD_LABELS = { h_weight: 'Poids', h_waist: 'Tour de taille', h_bp: 'Tension Artérielle', h_restingHR: 'FC Repos', h_pwv: "Vitesse d'Onde de Pouls", h_bodyFat: 'Graisse Corporelle', h_muscleMass: 'Masse Musculaire', h_hydration: 'Hydratation', h_visceralFat: 'Graisse Viscérale', h_composition: 'Composition Corporelle' };
+  const HEALTH_DEFAULT_ORDER = ['h_weightFat', 'h_composition', 'h_muscleFatBar', 'h_weight', 'h_waist', 'h_bp', 'h_restingHR', 'h_pwv', 'h_bodyFat', 'h_muscleMass', 'h_hydration', 'h_visceralFat'];
+  const HEALTH_CARD_LABELS = { h_weightFat: 'Poids & Graisse', h_composition: 'Composition Corporelle', h_muscleFatBar: 'Répartition Muscle / Graisse', h_weight: 'Poids', h_waist: 'Tour de taille', h_bp: 'Tension Artérielle', h_restingHR: 'FC Repos', h_pwv: "Vitesse d'Onde de Pouls", h_bodyFat: 'Graisse Corporelle', h_muscleMass: 'Masse Musculaire', h_hydration: 'Hydratation', h_visceralFat: 'Graisse Viscérale' };
 
   const [healthCardOrder, setHealthCardOrder] = useState(() => {
     try {
@@ -940,6 +940,27 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings,
   };
   const muscleTrend = getDynamicTrend('muscleMass');
   const fatTrend = getDynamicTrend('bodyFat');
+
+  // Données agrégées semaine/mois pour les graphes comparatifs (Poids&Graisse + Composition)
+  const weeklyChartData = useMemo(() => {
+    const wfTf = timeFrame === 'day' ? 'week' : timeFrame;
+    const groups = {};
+    filteredLogs.forEach(log => {
+      if (!log.date) return;
+      const key = getGroupKey(log.date, wfTf);
+      const sortKey = getSortKey(log.date, wfTf);
+      if (!groups[key]) groups[key] = { date: key, sortKey, wSum: 0, fSum: 0, mSum: 0, cW: 0, cF: 0, cM: 0 };
+      if (log.weight) { groups[key].wSum += log.weight; groups[key].cW += 1; }
+      if (log.bodyFat) { groups[key].fSum += log.bodyFat; groups[key].cF += 1; }
+      if (log.muscleMass) { groups[key].mSum += log.muscleMass; groups[key].cM += 1; }
+    });
+    return Object.values(groups).sort((a, b) => a.sortKey - b.sortKey).map(g => ({
+      date: g.date,
+      weight: g.cW > 0 ? parseFloat((g.wSum / g.cW).toFixed(1)) : null,
+      bodyFat: g.cF > 0 ? parseFloat((g.fSum / g.cF).toFixed(1)) : null,
+      muscleMass: g.cM > 0 ? parseFloat((g.mSum / g.cM).toFixed(1)) : null,
+    })).filter(d => d.weight !== null || d.bodyFat !== null || d.muscleMass !== null);
+  }, [filteredLogs, timeFrame]);
 
   const currentWeight = latestWeight || START_WEIGHT; const lostWeight = Math.max(0, START_WEIGHT - currentWeight); const weightProgress = Math.min(100, Math.max(0, (lostWeight / (START_WEIGHT - TARGET_WEIGHT)) * 100));
   const currentFat = latestFat || START_FAT; const lostFat = Math.max(0, START_FAT - currentFat); const fatProgress = Math.min(100, Math.max(0, (lostFat / (START_FAT - TARGET_FAT)) * 100));
@@ -1352,9 +1373,47 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings,
         );
       })()}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
       {healthCardOrder.filter(id => isHealthCardVisible(id)).map(id => {
         const healthCardContent = {
+          h_weightFat: (() => {
+            const wfData = weeklyChartData.filter(d => d.weight !== null || d.bodyFat !== null);
+            const weights = wfData.map(d => d.weight).filter(Boolean);
+            const fats = wfData.map(d => d.bodyFat).filter(Boolean);
+            const wMin = weights.length ? Math.floor(Math.min(...weights) - 2) : 80;
+            const wMax = weights.length ? Math.ceil(Math.max(...weights) + 2) : 110;
+            const fMin = fats.length ? Math.floor(Math.min(...fats) - 2) : 15;
+            const fMax = fats.length ? Math.ceil(Math.max(...fats) + 2) : 35;
+            return (
+              <>
+                <div className="flex justify-between items-start mb-4">
+                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">POIDS & GRAISSE CORPORELLE</h3>
+                  <div className="flex gap-4">
+                    <div className="flex items-center gap-2 text-xs font-bold text-[#38bdf8]"><div className="w-2.5 h-2.5 rounded-sm bg-[#38bdf8]"></div> Poids (kg)</div>
+                    <div className="flex items-center gap-2 text-xs font-bold text-[#4ade80]"><div className="w-2.5 h-2.5 rounded-sm bg-[#4ade80]"></div> Graisse (%)</div>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-500 mb-3">{timeFrame === 'day' ? 'Agrégé par semaine' : `Vue ${timeFrame === 'week' ? 'hebdomadaire' : 'mensuelle'}`}</p>
+                <div className="h-72">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={weeklyChartData} margin={{ top: 5, right: 10, bottom: 5, left: 10 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={true} horizontal={true} stroke="#334155" opacity={0.5} />
+                      <XAxis dataKey="date" stroke="#94a3b8" tick={{fontSize: 10}} axisLine={false} tickLine={false} dy={10} padding={{ left: 10, right: 10 }} />
+                      <YAxis yAxisId="left" domain={[wMin, wMax]} stroke="#38bdf8" tick={{fontSize: 10}} axisLine={false} tickLine={false} tickFormatter={(v) => `${v}`} />
+                      <YAxis yAxisId="right" orientation="right" domain={[fMin, fMax]} stroke="#4ade80" tick={{fontSize: 10}} axisLine={false} tickLine={false} tickFormatter={(v) => `${v}`} />
+                      <Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{stroke: '#fff', strokeWidth: 1, strokeDasharray: '3 3'}} formatter={(value, name) => name === 'Poids (kg)' ? [`${value} kg`, name] : [`${value} %`, name]} />
+                      <Line yAxisId="left" type="monotone" dataKey="weight" stroke="#38bdf8" strokeWidth={2.5} dot={{ r: 3, fill: '#38bdf8', strokeWidth: 0 }} activeDot={{ r: 5, strokeWidth: 0 }} connectNulls name="Poids (kg)" />
+                      <Line yAxisId="right" type="monotone" dataKey="bodyFat" stroke="#4ade80" strokeWidth={2.5} dot={{ r: 3, fill: '#4ade80', strokeWidth: 0 }} activeDot={{ r: 5, strokeWidth: 0 }} connectNulls name="Graisse (%)" />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="mt-4 flex gap-4">
+                  {latestWeight && <div className="flex-1 bg-black/40 rounded-xl p-3 border border-slate-700/50"><div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Poids actuel</div><div className="text-xl font-bold text-[#38bdf8]">{latestWeight} <span className="text-xs text-slate-500">kg</span></div></div>}
+                  {latestFat && <div className="flex-1 bg-black/40 rounded-xl p-3 border border-slate-700/50"><div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Graisse actuelle</div><div className="text-xl font-bold text-[#4ade80]">{latestFat} <span className="text-xs text-slate-500">%</span></div></div>}
+                </div>
+              </>
+            );
+          })(),
           h_weight: <><h3 className="text-sm font-bold text-slate-300 mb-4">Poids</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={chartDataWithTrends}><defs><linearGradient id="violetGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#8b5cf6" stopOpacity={0.3}/><stop offset="100%" stopColor="#8b5cf6" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" /><XAxis dataKey="date" stroke="#94a3b8" tick={{fontSize:10}} padding={{ left: 10, right: 30 }} /><YAxis domain={safeDomain} allowDataOverflow={true} stroke="#94a3b8" tick={{fontSize:10}} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} /><Area type="monotone" dataKey="weight" stroke="#8b5cf6" fill="url(#violetGradient)" strokeWidth={2} name="Poids (kg)" dot={false} connectNulls/><Line type="monotone" dataKey="weightTrend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" /></ComposedChart></ResponsiveContainer></div>{latestWeight && (<div className="mt-3 flex items-center justify-between text-xs"><span className="text-slate-400">Dernière valeur : <span className="font-bold text-violet-400">{latestWeight} kg</span></span><span className={`font-semibold px-2 py-0.5 rounded-full ${latestWeight < 60 ? 'bg-blue-500/20 text-blue-400' : latestWeight < 75 ? 'bg-emerald-500/20 text-emerald-400' : latestWeight < 90 ? 'bg-yellow-500/20 text-yellow-400' : 'bg-red-500/20 text-red-400'}`}>{latestWeight < 60 ? '⬇ Insuffisant' : latestWeight < 75 ? '✓ Optimal' : latestWeight < 90 ? '⚠ Surpoids' : '⛔ Obésité'}</span></div>)}</>,
           h_waist: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Ruler size={16} className="text-orange-400"/> Tour de taille (cm)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={chartDataWithTrends}><defs><linearGradient id="orangeGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#fb923c" stopOpacity={0.3}/><stop offset="100%" stopColor="#fb923c" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" /><XAxis dataKey="date" stroke="#94a3b8" tick={{fontSize:10}} padding={{ left: 10, right: 30 }} /><YAxis domain={safeDomain} allowDataOverflow={true} stroke="#94a3b8" tick={{fontSize:10}} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} /><Area type="monotone" dataKey="waist" stroke="#fb923c" fill="url(#orangeGradient)" strokeWidth={2} name="Taille (cm)" dot={false} connectNulls/><Line type="monotone" dataKey="waistTrend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" /></ComposedChart></ResponsiveContainer></div>{latestWaist && (<div className="mt-3 flex items-center justify-between text-xs"><span className="text-slate-400">Dernière valeur : <span className="font-bold text-orange-400">{latestWaist} cm</span></span><span className={`font-semibold px-2 py-0.5 rounded-full ${latestWaist < 80 ? 'bg-emerald-500/20 text-emerald-400' : latestWaist < 88 ? 'bg-yellow-500/20 text-yellow-400' : 'bg-red-500/20 text-red-400'}`}>{latestWaist < 80 ? '✓ Optimal' : latestWaist < 88 ? '⚠ Risque modéré' : '⛔ Risque élevé'}</span></div>)}</>,
           h_bp: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Heart size={16} className="text-red-500"/> Tension Artérielle (mmHg)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={safeChartData}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" /><XAxis dataKey="date" stroke="#94a3b8" tick={{fontSize:10}} padding={{ left: 10, right: 30 }} /><YAxis stroke="#94a3b8" tick={{fontSize:10}} domain={[40, 180]} allowDataOverflow={true} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} /><Legend wrapperStyle={{fontSize: 10, paddingTop: 10}} /><Bar dataKey="bpRange" fill="#94a3b8" barSize={2} radius={[2, 2, 2, 2]} name="Plage" /><Line type="monotone" dataKey="systolic" stroke="#ef4444" strokeWidth={0} dot={{ r: 4, fill: '#ef4444', strokeWidth: 0 }} activeDot={{ r: 5 }} name="Systolique" isAnimationActive={false}/><Line type="monotone" dataKey="diastolic" stroke="#8b5cf6" strokeWidth={0} dot={{ r: 4, fill: '#8b5cf6', strokeWidth: 0 }} activeDot={{ r: 5 }} name="Diastolique" isAnimationActive={false}/></ComposedChart></ResponsiveContainer></div>{latestSystolic && latestDiastolic && (<div className="mt-3 flex items-center justify-between text-xs"><span className="text-slate-400">Dernière valeur : <span className="font-bold text-red-400">{latestSystolic}</span><span className="text-slate-500">/</span><span className="font-bold text-violet-400">{latestDiastolic}</span> mmHg</span><span className={`font-semibold px-2 py-0.5 rounded-full ${latestSystolic < 120 && latestDiastolic < 80 ? 'bg-emerald-500/20 text-emerald-400' : latestSystolic < 130 && latestDiastolic < 85 ? 'bg-yellow-500/20 text-yellow-400' : latestSystolic < 140 && latestDiastolic < 90 ? 'bg-orange-500/20 text-orange-400' : 'bg-red-500/20 text-red-400'}`}>{latestSystolic < 120 && latestDiastolic < 80 ? '✓ Optimale' : latestSystolic < 130 && latestDiastolic < 85 ? '✓ Normale' : latestSystolic < 140 && latestDiastolic < 90 ? '⚠ Normale haute' : '⛔ Hypertension'}</span></div>)}</>,
@@ -1364,14 +1423,90 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings,
           h_muscleMass: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Dumbbell size={16} className="text-emerald-500"/> Masse Musculaire (%)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><AreaChart data={safeChartData}><defs><linearGradient id="emeraldGradient2" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#10b981" stopOpacity={0.3}/><stop offset="100%" stopColor="#10b981" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" /><XAxis dataKey="date" stroke="#94a3b8" tick={{fontSize:10}} padding={{ left: 10, right: 30 }} /><YAxis domain={safeDomain} allowDataOverflow={true} stroke="#94a3b8" tick={{fontSize:10}} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} /><Area type="monotone" dataKey="muscleMass" stroke="#10b981" fill="url(#emeraldGradient2)" strokeWidth={2} name="Muscle (%)" connectNulls/></AreaChart></ResponsiveContainer></div>{latestMuscle && (<div className="mt-3 flex items-center justify-between text-xs"><span className="text-slate-400">Dernière valeur : <span className="font-bold text-emerald-400">{latestMuscle} %</span></span><span className={`font-semibold px-2 py-0.5 rounded-full ${latestMuscle > 40 ? 'bg-emerald-500/20 text-emerald-400' : latestMuscle > 33 ? 'bg-cyan-500/20 text-cyan-400' : latestMuscle > 28 ? 'bg-yellow-500/20 text-yellow-400' : 'bg-red-500/20 text-red-400'}`}>{latestMuscle > 40 ? '✓ Athlétique' : latestMuscle > 33 ? '✓ Bon' : latestMuscle > 28 ? '⚠ Faible' : '⛔ Sarcopénie'}</span></div>)}</>,
           h_hydration: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Droplet size={16} className="text-blue-400"/> Hydratation (%)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><BarChart data={safeChartData}><defs><linearGradient id="blueGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#60a5fa" stopOpacity={1}/><stop offset="100%" stopColor="#60a5fa" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" /><XAxis dataKey="date" stroke="#94a3b8" tick={{fontSize:10}} padding={{ left: 10, right: 30 }} /><YAxis stroke="#94a3b8" tick={{fontSize:10}} domain={[50, 65]} allowDataOverflow={true} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} /><Bar dataKey="hydration" fill="url(#blueGradient)" radius={[4, 4, 0, 0]} name="Eau %" /></BarChart></ResponsiveContainer></div>{latestHydration && (<div className="mt-3 flex items-center justify-between text-xs"><span className="text-slate-400">Dernière valeur : <span className="font-bold text-blue-400">{latestHydration} %</span></span><span className={`font-semibold px-2 py-0.5 rounded-full ${latestHydration >= 55 ? 'bg-emerald-500/20 text-emerald-400' : latestHydration >= 50 ? 'bg-yellow-500/20 text-yellow-400' : 'bg-red-500/20 text-red-400'}`}>{latestHydration >= 55 ? '✓ Bonne hydratation' : latestHydration >= 50 ? '⚠ Limite' : '⛔ Déshydratation'}</span></div>)}</>,
           h_visceralFat: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Flame size={16} className="text-amber-500"/> Graisse Viscérale (%)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={chartDataWithTrends}><defs><linearGradient id="amberGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#f59e0b" stopOpacity={0.8}/><stop offset="100%" stopColor="#f59e0b" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" /><XAxis dataKey="date" stroke="#94a3b8" tick={{fontSize:10}} padding={{ left: 10, right: 30 }} /><YAxis domain={safeDomain} allowDataOverflow={true} stroke="#94a3b8" tick={{fontSize:10}} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(v) => [`${v}`, 'Graisse viscérale %']} /><Area type="monotone" dataKey="visceralFat" stroke="#f59e0b" fill="url(#amberGradient)" strokeWidth={2} name="Graisse viscérale (%)" dot={false} connectNulls/><Line type="monotone" dataKey="visceralFatTrend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" /></ComposedChart></ResponsiveContainer></div>{latestVisceral && (<div className="mt-3 flex items-center justify-between text-xs"><span className="text-slate-400">Dernière valeur : <span className="font-bold text-amber-400">{latestVisceral}</span></span><span className={`font-semibold px-2 py-0.5 rounded-full ${latestVisceral <= 9 ? 'bg-emerald-500/20 text-emerald-400' : latestVisceral <= 14 ? 'bg-yellow-500/20 text-yellow-400' : 'bg-red-500/20 text-red-400'}`}>{latestVisceral <= 9 ? '✓ Normal' : latestVisceral <= 14 ? '⚠ Élevé' : '⛔ Très élevé'}</span></div>)}</>,
-          h_composition: <><div className="flex justify-between items-start mb-6"><div><h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">COMPOSITION CORPORELLE</h3><div className="flex items-center gap-2"><div className="bg-indigo-500/20 p-1 rounded-full"><ArrowRight size={16} className="text-indigo-400"/></div><h2 className="text-xl font-bold text-white">Stable</h2></div></div><div className="flex gap-4"><div className="flex items-center gap-2 text-xs font-bold text-[#2dd4bf]"><div className="w-2 h-2 rounded-full bg-[#2dd4bf] ring-2 ring-[#2dd4bf]/30"></div> Muscle</div><div className="flex items-center gap-2 text-xs font-bold text-[#e879f9]"><div className="w-2 h-2 rotate-45 bg-[#e879f9] ring-2 ring-[#e879f9]/30"></div> Graisse</div></div></div><div className="h-72 w-full relative min-h-[300px]">{safeChartData.length === 0 && (<div className="absolute inset-0 flex items-center justify-center text-slate-500 text-sm z-10 bg-slate-800/50 backdrop-blur-sm">En attente de données pour le graphique...</div>)}<ResponsiveContainer width="100%" height="100%"><LineChart data={safeChartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}><CartesianGrid strokeDasharray="3 3" vertical={true} horizontal={true} stroke="#334155" opacity={0.5} /><XAxis dataKey="date" stroke="#94a3b8" tick={{fontSize:10}} padding={{ left: 10, right: 30 }} axisLine={false} tickLine={false} dy={10} /><YAxis orientation="right" domain={[0, 90]} ticks={[0, 15, 30, 45, 60, 75, 90]} stroke="#94a3b8" tick={{fontSize:10}} axisLine={false} tickLine={false} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{stroke: '#fff', strokeWidth: 1, strokeDasharray: '3 3'}} /><Line type="monotone" dataKey="muscleMass" stroke="#2dd4bf" strokeWidth={3} dot={false} activeDot={{r: 6, strokeWidth: 0}} connectNulls={true} isAnimationActive={false} /><Line type="monotone" dataKey="bodyFat" stroke="#e879f9" strokeWidth={3} dot={false} activeDot={{r: 6, strokeWidth: 0}} connectNulls={true} isAnimationActive={false} /></LineChart></ResponsiveContainer></div><div className="grid grid-cols-2 gap-4 mt-6"><div className="bg-black/40 rounded-xl p-4 border border-slate-700/50"><div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">MASSE MUSCULAIRE</div><div className={`text-2xl font-bold ${muscleTrend >= 0 ? 'text-white' : 'text-slate-200'}`}>{muscleTrend > 0 ? '+' : ''}{muscleTrend}%</div></div><div className="bg-black/40 rounded-xl p-4 border border-slate-700/50"><div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">MASSE GRASSE</div><div className={`text-2xl font-bold ${fatTrend <= 0 ? 'text-white' : 'text-slate-200'}`}>{fatTrend > 0 ? '+' : ''}{fatTrend}%</div></div></div></>,
+          h_composition: (() => {
+            const compData = weeklyChartData.filter(d => d.muscleMass !== null || d.bodyFat !== null);
+            const muscles = compData.map(d => d.muscleMass).filter(Boolean);
+            const fatsC = compData.map(d => d.bodyFat).filter(Boolean);
+            const mMin = muscles.length ? Math.floor(Math.min(...muscles) - 2) : 30;
+            const mMax = muscles.length ? Math.ceil(Math.max(...muscles) + 2) : 50;
+            const fcMin = fatsC.length ? Math.floor(Math.min(...fatsC) - 2) : 15;
+            const fcMax = fatsC.length ? Math.ceil(Math.max(...fatsC) + 2) : 35;
+            return (
+              <>
+                <div className="flex justify-between items-start mb-4">
+                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">COMPOSITION CORPORELLE</h3>
+                  <div className="flex gap-4">
+                    <div className="flex items-center gap-2 text-xs font-bold text-[#2dd4bf]"><div className="w-2.5 h-2.5 rounded-sm bg-[#2dd4bf]"></div> Muscle (%)</div>
+                    <div className="flex items-center gap-2 text-xs font-bold text-[#e879f9]"><div className="w-2.5 h-2.5 rounded-sm bg-[#e879f9]"></div> Graisse (%)</div>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-500 mb-3">{timeFrame === 'day' ? 'Agrégé par semaine' : `Vue ${timeFrame === 'week' ? 'hebdomadaire' : 'mensuelle'}`}</p>
+                <div className="h-72">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={weeklyChartData} margin={{ top: 5, right: 10, bottom: 5, left: 10 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={true} horizontal={true} stroke="#334155" opacity={0.5} />
+                      <XAxis dataKey="date" stroke="#94a3b8" tick={{fontSize: 10}} axisLine={false} tickLine={false} dy={10} padding={{ left: 10, right: 10 }} />
+                      <YAxis yAxisId="left" domain={[mMin, mMax]} stroke="#2dd4bf" tick={{fontSize: 10}} axisLine={false} tickLine={false} tickFormatter={(v) => `${v}`} />
+                      <YAxis yAxisId="right" orientation="right" domain={[fcMin, fcMax]} stroke="#e879f9" tick={{fontSize: 10}} axisLine={false} tickLine={false} tickFormatter={(v) => `${v}`} />
+                      <Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{stroke: '#fff', strokeWidth: 1, strokeDasharray: '3 3'}} formatter={(value, name) => [`${value} %`, name]} />
+                      <Line yAxisId="left" type="monotone" dataKey="muscleMass" stroke="#2dd4bf" strokeWidth={2.5} dot={{ r: 3, fill: '#2dd4bf', strokeWidth: 0 }} activeDot={{ r: 5, strokeWidth: 0 }} connectNulls name="Muscle (%)" />
+                      <Line yAxisId="right" type="monotone" dataKey="bodyFat" stroke="#e879f9" strokeWidth={2.5} dot={{ r: 3, fill: '#e879f9', strokeWidth: 0 }} activeDot={{ r: 5, strokeWidth: 0 }} connectNulls name="Graisse (%)" />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="mt-4 flex gap-4">
+                  <div className="flex-1 bg-black/40 rounded-xl p-3 border border-slate-700/50"><div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Muscle</div><div className={`text-xl font-bold text-[#2dd4bf]`}>{muscleTrend > 0 ? '+' : ''}{muscleTrend}%</div></div>
+                  <div className="flex-1 bg-black/40 rounded-xl p-3 border border-slate-700/50"><div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Graisse</div><div className={`text-xl font-bold text-[#e879f9]`}>{fatTrend > 0 ? '+' : ''}{fatTrend}%</div></div>
+                </div>
+              </>
+            );
+          })(),
+          h_muscleFatBar: (() => {
+            const barData = weeklyChartData.filter(d => d.muscleMass !== null && d.bodyFat !== null && d.weight !== null).map(d => ({
+              date: d.date, musclePct: d.muscleMass, fatPct: d.bodyFat, weight: d.weight,
+            }));
+            return (
+              <>
+                <div className="flex justify-between items-start mb-4">
+                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">RÉPARTITION MUSCLE / GRAISSE</h3>
+                  <div className="flex gap-4">
+                    <div className="flex items-center gap-2 text-xs font-bold text-[#2dd4bf]"><div className="w-2.5 h-2.5 rounded-sm bg-[#2dd4bf]"></div> Muscle (%)</div>
+                    <div className="flex items-center gap-2 text-xs font-bold text-[#e879f9]"><div className="w-2.5 h-2.5 rounded-sm bg-[#e879f9]"></div> Graisse (%)</div>
+                    <div className="flex items-center gap-2 text-xs font-bold text-slate-400"><div className="w-4 h-0.5 bg-slate-300"></div> Poids (kg)</div>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-500 mb-3">{timeFrame === 'day' ? 'Agrégé par semaine' : `Vue ${timeFrame === 'week' ? 'hebdomadaire' : 'mensuelle'}`} — barres empilées muscle + graisse, courbe = poids</p>
+                <div className="h-72">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={barData} margin={{ top: 5, right: 10, bottom: 5, left: 10 }} barCategoryGap="20%">
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" opacity={0.5} />
+                      <XAxis dataKey="date" stroke="#94a3b8" tick={{fontSize: 10}} axisLine={false} tickLine={false} dy={10} />
+                      <YAxis yAxisId="left" stroke="#94a3b8" tick={{fontSize: 10}} axisLine={false} tickLine={false} tickFormatter={(v) => `${v}%`} domain={[0, 100]} />
+                      <YAxis yAxisId="right" orientation="right" stroke="#cbd5e1" tick={{fontSize: 10}} axisLine={false} tickLine={false} tickFormatter={(v) => `${v}`} domain={[89, 106]} />
+                      <Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.3}} formatter={(value, name) => {
+                        if (name === 'Poids') return [`${value} kg`, name];
+                        return [`${value}%`, name];
+                      }} />
+                      <Bar yAxisId="left" dataKey="fatPct" stackId="a" fill="#e879f9" fillOpacity={0.4} name="Graisse">
+                        <LabelList dataKey="fatPct" position="center" formatter={(v) => `${v}%`} style={{ fontSize: 9, fill: '#ffffff', fontWeight: 700 }} />
+                      </Bar>
+                      <Bar yAxisId="left" dataKey="musclePct" stackId="a" fill="#2dd4bf" fillOpacity={0.35} radius={[4, 4, 0, 0]} name="Muscle" />
+                      <Line yAxisId="right" type="monotone" dataKey="weight" stroke="#cbd5e1" strokeWidth={2.5} dot={{ r: 3, fill: '#cbd5e1', strokeWidth: 0 }} activeDot={{ r: 5, strokeWidth: 0 }} connectNulls name="Poids">
+                        <LabelList dataKey="weight" position="top" formatter={(v) => `${v}`} style={{ fontSize: 9, fill: '#cbd5e1', fontWeight: 600 }} offset={8} />
+                      </Line>
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+              </>
+            );
+          })(),
         }[id];
         if (!healthCardContent) return null;
         const isDragging = healthDragId === id;
         const isDropTarget = healthDropTargetId === id && healthDragId !== id;
         return (
           <div key={id}
-            className={`bg-slate-800 p-4 rounded-xl border-2 shadow-lg transition-all duration-150 ${id === 'h_composition' ? 'col-span-full' : 'min-h-[300px]'} ${isDragging ? 'border-violet-500 opacity-40 scale-95' : isDropTarget ? 'border-violet-400 ring-2 ring-violet-400/30 scale-[1.02]' : 'border-slate-700'}`}
+            className={`bg-slate-800 p-4 rounded-xl border-2 shadow-lg transition-all duration-150 ${id === 'h_weightFat' || id === 'h_composition' || id === 'h_muscleFatBar' ? 'col-span-full xl:col-span-2' : 'min-h-[300px]'} ${isDragging ? 'border-violet-500 opacity-40 scale-95' : isDropTarget ? 'border-violet-400 ring-2 ring-violet-400/30 scale-[1.02]' : 'border-slate-700'}`}
             draggable={!isMobile}
             onDragStart={(e) => handleHealthDragStart(e, id)}
             onDragOver={(e) => handleHealthDragOver(e, id)}
@@ -2199,7 +2334,7 @@ function App() {
   };
 
   const handleStartHuaweiAuth = () => {
-     window.location.href = `${HUAWEI_CONFIG.authUrl}?response_type=code&client_id=${HUAWEI_CONFIG.clientId}&state=huawei_${generateId()}&scope=${encodeURIComponent(HUAWEI_CONFIG.scope)}&redirect_uri=${encodeURIComponent(HUAWEI_CONFIG.redirectUri)}&access_type=offline`;
+     window.location.href = `${HUAWEI_CONFIG.authUrl}?response_type=code&client_id=${HUAWEI_CONFIG.clientId}&state=huawei_${generateId()}&scope=${encodeURIComponent(HUAWEI_CONFIG.scope)}&redirect_uri=${encodeURIComponent(HUAWEI_CONFIG.redirectUri)}`;
   };
   
   // --- HUAWEI OAUTH CALLBACK ---
