@@ -7,12 +7,16 @@ import {
   BarChart, Bar, LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ComposedChart, PieChart, Pie, Cell, LabelList
 } from 'recharts';
 
+import ReactECharts from 'echarts-for-react';
+
 // --- FIREBASE IMPORTS ---
 import { initializeApp } from "firebase/app";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, setPersistence, browserLocalPersistence } from "firebase/auth";
 import { getFirestore, doc, setDoc, onSnapshot, getDoc, initializeFirestore } from "firebase/firestore";
 
 import biozLogo from './BIOZ.png';
+import corpsHomme from './corps-homme-blanc.png';
+import corpsFemme from './corps-femme-blanc.png';
 import { DEMO_DATA } from './demoData';
 
 import video1 from './1.mp4';
@@ -665,8 +669,9 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings,
   };
   const isHealthCardVisible = (cardId) => !healthHiddenCards.includes(cardId);
 
-  const HEALTH_DEFAULT_ORDER = ['h_weightFat', 'h_composition', 'h_muscleFatBar', 'h_weight', 'h_waist', 'h_bp', 'h_restingHR', 'h_pwv', 'h_bodyFat', 'h_muscleMass', 'h_hydration', 'h_visceralFat'];
-  const HEALTH_CARD_LABELS = { h_weightFat: 'Poids & Graisse', h_composition: 'Composition Corporelle', h_muscleFatBar: 'Répartition Muscle / Graisse', h_weight: 'Poids', h_waist: 'Tour de taille', h_bp: 'Tension Artérielle', h_restingHR: 'FC Repos', h_pwv: "Vitesse d'Onde de Pouls", h_bodyFat: 'Graisse Corporelle', h_muscleMass: 'Masse Musculaire', h_hydration: 'Hydratation', h_visceralFat: 'Graisse Viscérale' };
+  const HEALTH_DEFAULT_ORDER = ['h_bodySilhouette', 'h_weightFat', 'h_composition', 'h_muscleFatBar', 'h_weight', 'h_waist', 'h_bp', 'h_restingHR', 'h_pwv', 'h_bodyFat', 'h_muscleMass', 'h_hydration', 'h_visceralFat', 'h_ketoneEchart', 'h_glucoseEchart', 'h_gkiEchart', 'h_glucoseKetoneChart'];
+  const HEALTH_CARD_LABELS = { h_bodySilhouette: 'Silhouette Corporelle', h_weightFat: 'Poids & Graisse', h_composition: 'Composition Corporelle', h_muscleFatBar: 'Répartition Muscle / Graisse', h_weight: 'Poids', h_waist: 'Tour de taille', h_bp: 'Tension Artérielle', h_restingHR: 'FC Repos', h_pwv: "Vitesse d'Onde de Pouls", h_bodyFat: 'Graisse Corporelle', h_muscleMass: 'Masse Musculaire', h_hydration: 'Hydratation', h_visceralFat: 'Graisse Viscérale', h_ketoneEchart: 'Cétones', h_glucoseEchart: 'Glucose', h_gkiEchart: 'GKI', h_glucoseKetoneChart: 'Glucose & Cétones (historique)' };
+  const [bodySilhouetteGender, setBodySilhouetteGender] = useState(() => localStorage.getItem('bioz_bodySilhouetteGender') || 'homme');
 
   const [healthCardOrder, setHealthCardOrder] = useState(() => {
     try {
@@ -744,6 +749,21 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings,
   const latestVascularAge = getLastKnownValue('vascularAge');
   const latestRestingHR = getLastKnownValue('restingHR');
 
+  // --- DONNÉES KETO-MOJO (en attente API) ---
+  const ketoData = [
+    { date: '15/11', glucose: 95, ketones: 0.8, gki: 95 / 18.016 / 0.8 },
+    { date: '01/12', glucose: 102, ketones: 0.5, gki: 102 / 18.016 / 0.5 },
+    { date: '15/12', glucose: 98, ketones: 0.7, gki: 98 / 18.016 / 0.7 },
+    { date: '10/01', glucose: 105, ketones: 0.4, gki: 105 / 18.016 / 0.4 },
+    { date: '01/02', glucose: 100, ketones: 0.6, gki: 100 / 18.016 / 0.6 },
+    { date: '15/02', glucose: 97, ketones: 0.9, gki: 97 / 18.016 / 0.9 },
+    { date: '01/03', glucose: 103, ketones: 0.5, gki: 103 / 18.016 / 0.5 },
+    { date: '21/03', glucose: 102, ketones: 0.5, gki: 102 / 18.016 / 0.5 },
+  ];
+  const latestGlucose = 102;
+  const latestKetones = 0.5;
+  const latestGKI = parseFloat((latestGlucose / 18.016 / latestKetones).toFixed(1));
+
   // --- BILAN IA ---
   const [aiBilan, setAiBilan] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
@@ -772,21 +792,81 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings,
   const generateAiBilan = async () => {
     setAiLoading(true);
     setAiError(null);
-    const recentLogs = [...healthLogs].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 10);
-    // Calcul des moyennes sur les 5 derniers jours pour aider Claude à analyser les tendances
+
+    // --- Pré-calcul des indicateurs côté JS ---
+    const sorted = [...healthLogs].sort((a, b) => new Date(b.date) - new Date(a.date));
+    const now = new Date();
+    const logsInRange = (days) => sorted.filter(l => (now - new Date(l.date)) / 86400000 <= days);
+    const last7 = logsInRange(7);
+    const prev7 = sorted.filter(l => { const d = (now - new Date(l.date)) / 86400000; return d > 7 && d <= 14; });
+    const last30 = logsInRange(30);
+    const prev30 = sorted.filter(l => { const d = (now - new Date(l.date)) / 86400000; return d > 30 && d <= 60; });
+
     const avg = (logs, key) => {
       const vals = logs.filter(l => l[key] != null).map(l => l[key]);
-      return vals.length ? (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1) : null;
+      return vals.length ? parseFloat((vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1)) : null;
     };
-    const last5 = recentLogs.slice(0, 5);
-    const prev5 = recentLogs.slice(5, 10);
-    const trends = {
-      weight:  { recent: avg(last5, 'weight'),  prev: avg(prev5, 'weight') },
-      bodyFat: { recent: avg(last5, 'bodyFat'), prev: avg(prev5, 'bodyFat') },
-      waist:   { recent: avg(last5, 'waist'),   prev: avg(prev5, 'waist') },
+    const delta = (recent, prev) => (recent != null && prev != null) ? parseFloat((recent - prev).toFixed(1)) : null;
+    const pct = (current, start, target) => (start !== target) ? Math.min(100, Math.max(0, Math.round(((start - current) / (start - target)) * 100))) : null;
+
+    const ind = {
+      weight:    { now: latestWeight, avg7: avg(last7, 'weight'), avg7prev: avg(prev7, 'weight'), avg30: avg(last30, 'weight'), avg30prev: avg(prev30, 'weight') },
+      bodyFat:   { now: latestFat, avg7: avg(last7, 'bodyFat'), avg7prev: avg(prev7, 'bodyFat'), avg30: avg(last30, 'bodyFat'), avg30prev: avg(prev30, 'bodyFat') },
+      muscle:    { now: latestMuscle, avg7: avg(last7, 'muscleMass'), avg7prev: avg(prev7, 'muscleMass'), avg30: avg(last30, 'muscleMass'), avg30prev: avg(prev30, 'muscleMass') },
+      hydration: { now: latestHydration, avg7: avg(last7, 'hydration'), avg7prev: avg(prev7, 'hydration') },
+      waist:     { now: latestWaist, avg7: avg(last7, 'waist'), avg7prev: avg(prev7, 'waist'), avg30: avg(last30, 'waist'), avg30prev: avg(prev30, 'waist') },
+      visceral:  { now: latestVisceral, avg7: avg(last7, 'visceralFat'), avg7prev: avg(prev7, 'visceralFat') },
+      cardio:    { sys: latestSystolic, dia: latestDiastolic, hr: latestRestingHR, pwv: latestPWV, vascAge: latestVascularAge, sysAvg7: avg(last7, 'systolic'), diaAvg7: avg(last7, 'diastolic'), hrAvg7: avg(last7, 'restingHR') },
+      bmr:       latestBMR,
     };
-    const systemPrompt = `Tu es un coach santé expert en nutrition cétogène. Tu t'adresses à un homme de 55 ans, 1,74 m, en régime cétogène. Objectifs : 95 kg (depuis 106), 15% de graisse (depuis 26%), 95 cm de tour de taille (depuis 107). TON : Pince-sans-rire, direct, avec une touche d'humour sec — une vraie vanne max par bilan, pas un sourire de façade. Tu sais reconnaître les progrès et les saluer sincèrement (même avec une pointe d'ironie), et tu dis franchement quand ça stagne sans t'appesantir. ANALYSE : Ne jamais commenter une variation d'un seul jour — la balance ment, les conditions changent. Tu analyses UNIQUEMENT les tendances sur les 5 derniers jours disponibles : si le poids moyen des 5 jours baisse par rapport aux 5 jours d'avant, c'est une vraie tendance. Une variation isolée ne signifie rien. HYDRATATION : Quand le poids baisse mais que le taux de graisse augmente, ne conclus PAS automatiquement à une perte musculaire. Vérifie d'abord le taux d'hydratation : une déshydratation fausse la mesure de graisse à la hausse (impédancemétrie). Mentionne cette hypothèse si l'hydratation est basse. PRIORITÉS : L'objectif prioritaire est la perte de tour de taille (graisse viscérale), puis le poids. La perte de muscle n'est PAS un problème tant que le taux de graisse reste sous 20%. Ne tire pas la sonnette d'alarme pour une baisse de masse musculaire si la graisse est sous contrôle. IMPORTANT : Le bilan est généré le matin. Ignore les données du jour en cours. FORMATAGE : Zéro markdown, zéro tiret, zéro étoile. Prose uniquement. Maximum 4-5 phrases pour le bilan, 3 conseils courts. Sépare les deux parties avec [CONSEILS] seul sur une ligne.`;
-    const userMessage = `Voici mes données de santé au ${new Date().toLocaleDateString('fr-FR')} :\n\nMESURES ACTUELLES :\n- Poids : ${latestWeight || 'non mesuré'} kg\n- Tour de taille : ${latestWaist || 'non mesuré'} cm\n- Graisse corporelle : ${latestFat || 'non mesuré'} %\n- Masse musculaire : ${latestMuscle || 'non mesuré'} %\n- Hydratation : ${latestHydration || 'non mesuré'} %\n- Tension : ${latestSystolic || '--'}/${latestDiastolic || '--'} mmHg\n- FC repos : ${latestRestingHR || 'non mesuré'} bpm\n- Vitesse onde de pouls : ${latestPWV || 'non mesuré'} m/s\n- Graisse viscérale : ${latestVisceral || 'non mesuré'}\n- Métabolisme de base : ${latestBMR || 'non mesuré'} kcal\n- Âge vasculaire : ${latestVascularAge || 'non mesuré'} ans\nTENDANCES SUR 5 JOURS (moyennes calculées — base ton analyse là-dessus, pas sur les variations quotidiennes) :\nPoids moyen J-5 à J-1 : ${trends.weight.recent || '—'} kg | Poids moyen J-10 à J-6 : ${trends.weight.prev || '—'} kg\nGraisse moyenne récente : ${trends.bodyFat.recent || '—'}% | Graisse période précédente : ${trends.bodyFat.prev || '—'}%\nTour de taille moyen récent : ${trends.waist.recent || '—'} cm | Période précédente : ${trends.waist.prev || '—'} cm\n\nMESURES BRUTES DES 10 DERNIERS JOURS (pour contexte uniquement) :\n${recentLogs.slice(0,10).map(l => `• ${new Date(l.date).toLocaleDateString('fr-FR')} — Poids: ${l.weight||'—'}kg, Graisse: ${l.bodyFat||'—'}%, Taille: ${l.waist||'—'}cm, Muscle: ${l.muscleMass||'—'}%`).join('\n')}\n\nFais mon bilan du jour en te basant sur les tendances, pas sur les variations d'un seul jour.`;
+
+    const f = (v) => v != null ? v : '—';
+    const fDelta = (v) => v != null ? (v > 0 ? `+${v}` : `${v}`) : '—';
+
+    const systemPrompt = `Tu es un coach santé expert en composition corporelle et nutrition cétogène. Ton interlocuteur est un homme de 55 ans, 1m74, en régime cétogène.
+
+TON : Direct, pince-sans-rire, une seule vanne max par bilan. Tu salues les vrais progrès et tu dis franchement quand ça stagne.
+
+RÈGLES D'ANALYSE :
+- Analyse UNIQUEMENT les deltas pré-calculés fournis. Ne refais pas les calculs.
+- Un delta 7j montre une tendance court terme. Un delta 30j montre une tendance de fond. Priorise le 30j.
+- Impédancemétrie : si hydratation < 55%, les mesures de graisse et muscle sont FAUSSÉES (graisse surestimée, muscle sous-estimé). Mentionne-le.
+- Priorités dans l'ordre : 1) tour de taille (graisse viscérale), 2) poids, 3) composition (graisse/muscle).
+- La perte de muscle n'est PAS alarmante si la graisse baisse aussi (remodelage normal en perte de poids).
+- PWV > 9 m/s ou FC repos > 80 bpm méritent un commentaire. Sinon, ne parle pas du cardio.
+- Ignore les données du jour en cours (bilan généré le matin).
+
+FORMAT STRICT (zéro markdown, zéro tiret, zéro étoile, prose uniquement) :
+[BILAN]
+3-4 phrases factuelles : ce qui progresse, ce qui stagne, ce qui régresse. Cite les chiffres de delta.
+[ALERTES]
+0 à 2 alertes courtes si nécessaire (déshydratation, stagnation >2 semaines, valeur cardio anormale). Si rien d'alarmant, écris "Rien à signaler."
+[ACTIONS]
+2-3 recommandations concrètes et actionnables pour les prochains jours.`;
+
+    const userMessage = `Bilan du ${new Date().toLocaleDateString('fr-FR')}
+
+OBJECTIFS : Poids ${goals.startWeight}→${goals.targetWeight} kg (${f(pct(ind.weight.now, goals.startWeight, goals.targetWeight))}% atteint) | Graisse ${goals.startFat}→${goals.targetFat}% (${f(pct(ind.bodyFat.now, goals.startFat, goals.targetFat))}% atteint) | Tour de taille ${goals.startWaist}→${goals.targetWaist} cm (${f(pct(ind.waist.now, goals.startWaist, goals.targetWaist))}% atteint)
+
+COMPOSITION CORPORELLE (valeur actuelle | delta 7j | delta 30j) :
+Poids : ${f(ind.weight.now)} kg | ${fDelta(delta(ind.weight.avg7, ind.weight.avg7prev))} | ${fDelta(delta(ind.weight.avg30, ind.weight.avg30prev))}
+Graisse : ${f(ind.bodyFat.now)}% | ${fDelta(delta(ind.bodyFat.avg7, ind.bodyFat.avg7prev))} | ${fDelta(delta(ind.bodyFat.avg30, ind.bodyFat.avg30prev))}
+Muscle : ${f(ind.muscle.now)}% | ${fDelta(delta(ind.muscle.avg7, ind.muscle.avg7prev))} | ${fDelta(delta(ind.muscle.avg30, ind.muscle.avg30prev))}
+Hydratation : ${f(ind.hydration.now)}% | ${fDelta(delta(ind.hydration.avg7, ind.hydration.avg7prev))}
+
+MORPHOLOGIE :
+Tour de taille : ${f(ind.waist.now)} cm | ${fDelta(delta(ind.waist.avg7, ind.waist.avg7prev))} | ${fDelta(delta(ind.waist.avg30, ind.waist.avg30prev))}
+Graisse viscérale : ${f(ind.visceral.now)} | ${fDelta(delta(ind.visceral.avg7, ind.visceral.avg7prev))}
+
+CARDIO-VASCULAIRE :
+Tension : ${f(ind.cardio.sys)}/${f(ind.cardio.dia)} mmHg (moy 7j : ${f(ind.cardio.sysAvg7)}/${f(ind.cardio.diaAvg7)})
+FC repos : ${f(ind.cardio.hr)} bpm (moy 7j : ${f(ind.cardio.hrAvg7)})
+Vitesse onde de pouls : ${f(ind.cardio.pwv)} m/s
+Âge vasculaire : ${f(ind.cardio.vascAge)} ans
+
+MÉTABOLISME :
+BMR : ${f(ind.bmr)} kcal`;
+
     try {
       const response = await fetch('/claude_proxy.php', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ system: systemPrompt, messages: [{ role: 'user', content: userMessage }] }) });
       if (!response.ok) throw new Error(`Erreur HTTP ${response.status}`);
@@ -969,30 +1049,6 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings,
 
   return (
     <div className="animate-fade-in space-y-6">
-      <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-lg">
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="font-bold text-slate-200 flex items-center gap-2"><Plus size={18} className="text-violet-400"/> Nouvelle mesure</h3>
-          {isDemo ? (
-            <span className="text-xs text-slate-500 italic">Lecture seule en démo</span>
-          ) : isSyncingWithings ? (
-            <span className="flex items-center gap-2 text-xs text-slate-400"><RefreshCw size={14} className="animate-spin text-violet-400"/> Sync Withings...</span>
-          ) : (
-            <button onClick={() => onWithingsSync()} className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-bold px-3 py-2 rounded-lg transition-colors border border-slate-600">
-              <RefreshCw size={14} className="text-violet-400"/> Sync Withings
-            </button>
-          )}
-        </div>
-        <div className={`grid grid-cols-2 md:grid-cols-3 gap-4 ${isDemo ? 'opacity-50 pointer-events-none' : ''}`}>
-            <input type="date" value={date} onChange={e => setDate(e.target.value)} className="bg-slate-900 border border-slate-600 rounded p-2 text-white" disabled={isDemo} />
-            <input type="text" value={weight} onChange={e => setWeight(e.target.value)} placeholder="Poids (kg)" className="bg-slate-900 border border-slate-600 rounded p-2 text-white" disabled={isDemo} />
-            <input type="text" value={waist} onChange={e => setWaist(e.target.value)} placeholder="Tour de taille (cm)" className="bg-slate-900 border border-slate-600 rounded p-2 text-white border-orange-500/50" disabled={isDemo} />
-            <input type="text" value={bodyFat} onChange={e => setBodyFat(e.target.value)} placeholder="Fat %" className="bg-slate-900 border border-slate-600 rounded p-2 text-white" disabled={isDemo} />
-            <input type="text" value={muscleMass} onChange={e => setMuscleMass(e.target.value)} placeholder="Mus %" className="bg-slate-900 border border-slate-600 rounded p-2 text-white" disabled={isDemo} />
-            <input type="text" value={hydration} onChange={e => setHydration(e.target.value)} placeholder="Eau %" className="bg-slate-900 border border-slate-600 rounded p-2 text-white" disabled={isDemo} />
-            <button onClick={handleSave} disabled={isDemo} className="col-span-2 md:col-span-3 w-full bg-violet-600 text-white font-bold p-2 rounded hover:bg-violet-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">Enregistrer</button>
-        </div>
-      </div>
-
       {/* --- CARTES BILAN IA --- */}
       <div className="space-y-4">
 
@@ -1042,27 +1098,23 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings,
           </div>
         )}
 
-        {/* Contenu en deux cartes */}
+        {/* Contenu en 3 cartes */}
         {aiBilan && !aiLoading && (() => {
-          // Nettoie le texte : supprime *, #, ** et les numéros de section
-          const clean = (text) => text
-            .replace(/\*\*/g, '')
-            .replace(/^\*\s*/,'')
-            .replace(/^#+\s*/,'')
-            .replace(/^[-•]\s*/, '')
-            .trim();
-
-          // Split sur le séparateur [CONSEILS]
-          const parts = aiBilan.split(/\[CONSEILS\]/i);
-          const bilanText = parts[0] || '';
-          const conseilText = parts[1] || '';
-          const bilanLines = bilanText.split('\n').map(l => clean(l)).filter(Boolean);
-          const conseilLines = conseilText.split('\n').map(l => clean(l)).filter(Boolean);
+          const clean = (text) => text.replace(/\*\*/g, '').replace(/^\*\s*/,'').replace(/^#+\s*/,'').replace(/^[-•]\s*/, '').trim();
+          // Parse les 3 sections [BILAN], [ALERTES], [ACTIONS] — fallback sur l'ancien format [CONSEILS]
+          const extractSection = (tag) => {
+            const regex = new RegExp(`\\[${tag}\\]([\\s\\S]*?)(?=\\[(?:BILAN|ALERTES|ACTIONS|CONSEILS)\\]|$)`, 'i');
+            const match = aiBilan.match(regex);
+            return match ? match[1].split('\n').map(l => clean(l)).filter(Boolean) : [];
+          };
+          const bilanLines = extractSection('BILAN');
+          const alertLines = extractSection('ALERTES');
+          const actionLines = extractSection('ACTIONS').length > 0 ? extractSection('ACTIONS') : extractSection('CONSEILS');
 
           return (
-            <>
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
               {/* Carte 1 — Bilan */}
-              <div className="bg-slate-800 border border-violet-500/30 rounded-xl overflow-hidden">
+              <div className="bg-slate-800 border border-violet-500/30 rounded-xl overflow-hidden xl:row-span-2">
                 <div className="bg-violet-500/10 px-5 py-3 border-b border-violet-500/20 flex items-center gap-2">
                   <HeartPulse size={15} className="text-violet-400 shrink-0" />
                   <span className="text-sm font-bold text-violet-300">Bilan du jour</span>
@@ -1074,15 +1126,30 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings,
                 </div>
               </div>
 
-              {/* Carte 2 — Conseils */}
-              {conseilLines.length > 0 && (
+              {/* Carte 2 — Alertes */}
+              {alertLines.length > 0 && (
+                <div className="bg-slate-800 border border-orange-500/30 rounded-xl overflow-hidden">
+                  <div className="bg-orange-500/10 px-5 py-3 border-b border-orange-500/20 flex items-center gap-2">
+                    <AlertCircle size={15} className="text-orange-400 shrink-0" />
+                    <span className="text-sm font-bold text-orange-300">Points d'attention</span>
+                  </div>
+                  <div className="px-5 py-4 space-y-3">
+                    {alertLines.map((line, i) => (
+                      <p key={i} className="text-slate-300 text-sm leading-relaxed">{line}</p>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Carte 3 — Actions */}
+              {actionLines.length > 0 && (
                 <div className="bg-slate-800 border border-emerald-500/30 rounded-xl overflow-hidden">
                   <div className="bg-emerald-500/10 px-5 py-3 border-b border-emerald-500/20 flex items-center gap-2">
                     <TrendingUp size={15} className="text-emerald-400 shrink-0" />
-                    <span className="text-sm font-bold text-emerald-300">Conseils personnalisés</span>
+                    <span className="text-sm font-bold text-emerald-300">Actions recommandées</span>
                   </div>
                   <div className="px-5 py-4 space-y-4">
-                    {conseilLines.map((line, i) => (
+                    {actionLines.map((line, i) => (
                       <div key={i} className="flex items-start gap-3">
                         <span className="text-emerald-500 font-bold text-sm mt-0.5 shrink-0">→</span>
                         <p className="text-slate-300 text-sm leading-relaxed">{line}</p>
@@ -1091,7 +1158,7 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings,
                   </div>
                 </div>
               )}
-            </>
+            </div>
           );
         })()}
 
@@ -1373,9 +1440,96 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings,
         );
       })()}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
       {healthCardOrder.filter(id => isHealthCardVisible(id)).map(id => {
         const healthCardContent = {
+          h_bodySilhouette: (() => {
+            const bodyImg = bodySilhouetteGender === 'homme' ? corpsHomme : corpsFemme;
+            const isHomme = bodySilhouetteGender === 'homme';
+            const refs = isHomme
+              ? { muscle: 40, fat: 20, hydration: 60, visceral: 9, muscleLabel: '36-44%', fatLabel: '15-25%', hydrationLabel: '55-65%', visceralLabel: '1-9' }
+              : { muscle: 33, fat: 28, hydration: 55, visceral: 9, muscleLabel: '28-38%', fatLabel: '20-35%', hydrationLabel: '50-60%', visceralLabel: '1-9' };
+            const metrics = [
+              { key: 'muscle', label: 'Muscle', value: latestMuscle, color: '#10b981', ref: refs.muscle, refLabel: refs.muscleLabel, max: 100, unit: '%' },
+              { key: 'fat', label: 'Graisse', value: latestFat, color: '#eab308', ref: refs.fat, refLabel: refs.fatLabel, max: 100, unit: '%' },
+              { key: 'hydration', label: 'Hydratation', value: latestHydration, color: '#3b82f6', ref: refs.hydration, refLabel: refs.hydrationLabel, max: 100, unit: '%' },
+              { key: 'visceral', label: 'Visc.', value: latestVisceral, color: '#f97316', ref: refs.visceral, refLabel: refs.visceralLabel, max: 30, unit: '' },
+            ];
+            const maskStyle = (img) => ({
+              WebkitMaskImage: `url(${img})`,
+              WebkitMaskSize: 'contain',
+              WebkitMaskRepeat: 'no-repeat',
+              WebkitMaskPosition: 'center',
+              maskImage: `url(${img})`,
+              maskSize: 'contain',
+              maskRepeat: 'no-repeat',
+              maskPosition: 'center',
+            });
+            return (
+              <>
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2"><User size={14} className="text-violet-400"/> SILHOUETTE CORPORELLE</h3>
+                  <button
+                    onClick={() => {
+                      const next = bodySilhouetteGender === 'homme' ? 'femme' : 'homme';
+                      setBodySilhouetteGender(next);
+                      localStorage.setItem('bioz_bodySilhouetteGender', next);
+                    }}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold transition-all bg-slate-700 hover:bg-slate-600 text-slate-300 border border-slate-600"
+                  >
+                    {isHomme ? '♂ Homme' : '♀ Femme'}
+                    <span className="text-[10px] text-slate-500">changer</span>
+                  </button>
+                </div>
+                <p className="text-[10px] text-slate-500 mb-4">Dernières valeurs mesurées vs moyennes OMS/ACSM ({isHomme ? 'homme' : 'femme'} adulte)</p>
+                <div className="flex justify-around items-start gap-2 sm:gap-6">
+                  {metrics.map(m => {
+                    const fillPct = m.value ? Math.min(100, Math.max(0, (m.value / m.max) * 100)) : 0;
+                    const refPct = Math.min(100, Math.max(0, (m.ref / m.max) * 100));
+                    const isLowerBetter = m.key === 'fat' || m.key === 'visceral';
+                    const isGood = isLowerBetter ? m.value <= m.ref : m.value >= m.ref;
+                    return (
+                      <div key={m.key} className="flex flex-col items-center flex-1" style={{ maxWidth: 130 }}>
+                        <div className="text-[11px] font-bold mb-3" style={{ color: m.color }}>{m.label}</div>
+                        {/* Silhouette container */}
+                        <div className="relative" style={{ width: '100%', maxWidth: 100, aspectRatio: '0.45' }}>
+                          {/* Fond gris — silhouette non remplie, masquée par la forme du corps */}
+                          <div className="absolute inset-0" style={{ ...maskStyle(bodyImg), background: '#334155' }} />
+                          {/* Remplissage coloré de bas en haut, masqué par la forme du corps */}
+                          <div className="absolute inset-0" style={{ clipPath: `inset(${100 - fillPct}% 0 0 0)` }}>
+                            <div className="w-full h-full" style={{ ...maskStyle(bodyImg), background: `linear-gradient(to top, ${m.color}, ${m.color}88)` }} />
+                          </div>
+                          {/* Contour blanc de la silhouette */}
+                          <img src={bodyImg} alt="" className="absolute inset-0 w-full h-full object-contain" style={{ opacity: 0.15 }} />
+                          {/* Repère moyenne OMS — trait horizontal */}
+                          <div className="absolute left-0 right-0" style={{ bottom: `${refPct}%`, transform: 'translateY(50%)' }}>
+                            <div className="flex items-center">
+                              <div className="flex-1 h-[2px] rounded-full" style={{ background: `${m.color}`, boxShadow: `0 0 6px ${m.color}88` }} />
+                            </div>
+                            <div className="absolute left-full ml-1 text-[9px] font-bold whitespace-nowrap" style={{ color: m.color, top: '50%', transform: 'translateY(-50%)' }}>
+                              {m.ref}{m.unit}
+                            </div>
+                          </div>
+                        </div>
+                        {/* Valeurs */}
+                        <div className="mt-3 text-center">
+                          <div className="text-lg font-black" style={{ color: m.color }}>{m.value ? `${m.value}${m.unit}` : '—'}</div>
+                          <div className="text-[10px] text-slate-500 mt-0.5">moy. {m.refLabel}</div>
+                          {m.value && (
+                            <div className={`text-[10px] font-bold mt-1 px-2 py-0.5 rounded-full ${
+                              isGood ? 'bg-emerald-500/20 text-emerald-400' : 'bg-yellow-500/20 text-yellow-400'
+                            }`}>
+                              {isGood ? '✓ Bon' : (isLowerBetter ? '⚠ Au-dessus' : '⚠ En-dessous')}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            );
+          })(),
           h_weightFat: (() => {
             const wfData = weeklyChartData.filter(d => d.weight !== null || d.bodyFat !== null);
             const weights = wfData.map(d => d.weight).filter(Boolean);
@@ -1500,13 +1654,160 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings,
               </>
             );
           })(),
+          h_glucoseKetoneChart: (() => {
+            // Screenshot 3: Graphe double axe Glucose + Cétones
+            const gValues = ketoData.map(d => d.glucose);
+            const kValues = ketoData.map(d => d.ketones);
+            const gMin = Math.floor(Math.min(...gValues) / 3) * 3 - 3;
+            const gMax = Math.ceil(Math.max(...gValues) / 3) * 3 + 3;
+            const kMin = 0;
+            const kMax = Math.ceil(Math.max(...kValues) * 2) / 2 + 0.5;
+            return (
+              <>
+                <div className="flex justify-between items-start mb-1">
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">GLUCOSE & CÉTONES — HISTORIQUE</h3>
+                    <p className="text-[10px] text-slate-500 mt-1">Source : Keto-Mojo <span className="text-amber-400/70">(en attente API)</span></p>
+                  </div>
+                  <div className="flex gap-4">
+                    <div className="flex items-center gap-2 text-xs font-bold text-[#a1a1aa]"><div className="w-3 h-0.5 bg-[#a1a1aa] rounded"></div><div className="w-2.5 h-2.5 rounded-full bg-[#a1a1aa]"></div> Glucose sanguin mg/dl</div>
+                    <div className="flex items-center gap-2 text-xs font-bold text-[#22d3ee]"><div className="w-3 h-0.5 bg-[#22d3ee] rounded" style={{borderTop: '2px dashed #22d3ee', height: 0}}></div><div className="w-2.5 h-2.5 rounded-full bg-[#22d3ee]"></div> Cétones sanguines mmol/L</div>
+                  </div>
+                </div>
+                <div className="h-72">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={ketoData} margin={{ top: 5, right: 10, bottom: 5, left: 10 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={true} horizontal={true} stroke="#334155" opacity={0.5} />
+                      <XAxis dataKey="date" stroke="#94a3b8" tick={{fontSize: 10}} axisLine={false} tickLine={false} dy={10} padding={{ left: 10, right: 10 }} />
+                      <YAxis yAxisId="left" domain={[gMin, gMax]} stroke="#a1a1aa" tick={{fontSize: 10}} axisLine={false} tickLine={false} label={{ value: 'Glucose', position: 'insideTopLeft', offset: -5, style: { fontSize: 11, fill: '#a1a1aa', fontWeight: 'bold' } }} />
+                      <YAxis yAxisId="right" orientation="right" domain={[kMin, kMax]} stroke="#22d3ee" tick={{fontSize: 10}} axisLine={false} tickLine={false} label={{ value: 'Cétones', position: 'insideTopRight', offset: -5, style: { fontSize: 11, fill: '#22d3ee', fontWeight: 'bold' } }} />
+                      <Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{stroke: '#fff', strokeWidth: 1, strokeDasharray: '3 3'}} formatter={(value, name) => name === 'Glucose sanguin' ? [`${value} mg/dl`, name] : [`${value} mmol/L`, name]} />
+                      <Line yAxisId="left" type="monotone" dataKey="glucose" stroke="#a1a1aa" strokeWidth={2} dot={{ r: 5, fill: '#a1a1aa', strokeWidth: 0 }} activeDot={{ r: 7, strokeWidth: 0 }} connectNulls name="Glucose sanguin" />
+                      <Line yAxisId="right" type="monotone" dataKey="ketones" stroke="#22d3ee" strokeWidth={2} strokeDasharray="6 3" dot={{ r: 5, fill: '#22d3ee', strokeWidth: 0 }} activeDot={{ r: 7, strokeWidth: 0 }} connectNulls name="Cétones sanguines" />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+              </>
+            );
+          })(),
+          h_ketoneEchart: (() => {
+            const val = latestKetones;
+            const ketoneStatus = val >= 3.0 ? { text: 'Cétose profonde', cls: 'text-emerald-400' } : val >= 1.5 ? { text: 'Cétose optimale', cls: 'text-cyan-400' } : val >= 0.5 ? { text: 'Cétose légère', cls: 'text-[#EBAA6D]' } : { text: 'Pas en cétose', cls: 'text-slate-400' };
+            const option = {
+              backgroundColor: 'transparent',
+              series: [{
+                type: 'gauge',
+                radius: '90%',
+                progress: { show: true, width: 18, roundCap: true, itemStyle: { color: { type: 'linear', x: 0, y: 0, x2: 1, y2: 0, colorStops: [{ offset: 0, color: '#EBAA6D' }, { offset: 1, color: '#F5D4A6' }] } } },
+                axisLine: { lineStyle: { width: 18, color: [[1, '#334155']] }, roundCap: true },
+                axisTick: { show: false },
+                splitLine: { length: 15, lineStyle: { width: 2, color: '#999' } },
+                axisLabel: { distance: 25, color: '#999', fontSize: 14 },
+                anchor: { show: true, showAbove: true, size: 25, itemStyle: { borderWidth: 10 } },
+                title: { show: false },
+                detail: { valueAnimation: true, fontSize: 46, fontWeight: 400, color: '#f8fafc', offsetCenter: [0, '70%'], formatter: v => v.toFixed(1) },
+                pointer: { itemStyle: { color: 'auto' } },
+                min: 0,
+                max: 9,
+                splitNumber: 9,
+                itemStyle: { color: '#EBAA6D' },
+                data: [{ value: val }]
+              }]
+            };
+            return (
+              <>
+                <div className="flex items-baseline gap-2 mb-0">
+                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">CÉTONES</h3>
+                  <span className="text-[10px] text-slate-500">— mmol/L</span>
+                </div>
+                <div className="flex-1 flex items-center justify-center" style={{ minHeight: 260 }}>
+                  <ReactECharts option={option} style={{ width: '100%', height: '100%', minHeight: 260 }} opts={{ renderer: 'svg' }} />
+                </div>
+                <p className={`text-xs font-semibold text-center ${ketoneStatus.cls}`}>{ketoneStatus.text}</p>
+              </>
+            );
+          })(),
+          h_glucoseEchart: (() => {
+            const val = latestGlucose;
+            const glucoseStatus = val < 70 ? { text: 'Hypoglycémie', cls: 'text-blue-400' } : val < 100 ? { text: 'Glycémie normale', cls: 'text-emerald-400' } : val < 126 ? { text: 'Pré-diabète (glycémie élevée)', cls: 'text-yellow-400' } : { text: 'Diabète', cls: 'text-red-400' };
+            const option = {
+              backgroundColor: 'transparent',
+              series: [{
+                type: 'gauge',
+                radius: '90%',
+                progress: { show: true, width: 18, roundCap: true, itemStyle: { color: { type: 'linear', x: 0, y: 0, x2: 1, y2: 0, colorStops: [{ offset: 0, color: '#EB1C23' }, { offset: 1, color: '#F5878B' }] } } },
+                axisLine: { lineStyle: { width: 18, color: [[1, '#334155']] }, roundCap: true },
+                axisTick: { show: false },
+                splitLine: { length: 15, lineStyle: { width: 2, color: '#999' } },
+                axisLabel: { distance: 25, color: '#999', fontSize: 14 },
+                anchor: { show: true, showAbove: true, size: 25, itemStyle: { borderWidth: 10 } },
+                title: { show: false },
+                detail: { valueAnimation: true, fontSize: 46, fontWeight: 400, color: '#f8fafc', offsetCenter: [0, '70%'] },
+                pointer: { itemStyle: { color: 'auto' } },
+                min: 40,
+                max: 130,
+                splitNumber: 9,
+                itemStyle: { color: '#EB1C23' },
+                data: [{ value: val }]
+              }]
+            };
+            return (
+              <>
+                <div className="flex items-baseline gap-2 mb-0">
+                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">GLUCOSE</h3>
+                  <span className="text-[10px] text-slate-500">— mg/dl</span>
+                </div>
+                <div className="flex-1 flex items-center justify-center" style={{ minHeight: 260 }}>
+                  <ReactECharts option={option} style={{ width: '100%', height: '100%', minHeight: 260 }} opts={{ renderer: 'svg' }} />
+                </div>
+                <p className={`text-xs font-semibold text-center ${glucoseStatus.cls}`}>{glucoseStatus.text}</p>
+              </>
+            );
+          })(),
+          h_gkiEchart: (() => {
+            const val = latestGKI;
+            const gkiStatus = val <= 1 ? { text: 'Cétose thérapeutique', cls: 'text-emerald-400' } : val <= 3 ? { text: 'Cétose élevée', cls: 'text-cyan-400' } : val <= 6 ? { text: 'Cétose modérée', cls: 'text-blue-400' } : val <= 9 ? { text: 'Cétose légère', cls: 'text-yellow-400' } : { text: 'Pas en cétose', cls: 'text-red-400' };
+            const option = {
+              backgroundColor: 'transparent',
+              series: [{
+                type: 'gauge',
+                radius: '90%',
+                progress: { show: true, width: 18, roundCap: true, itemStyle: { color: { type: 'linear', x: 0, y: 0, x2: 1, y2: 0, colorStops: [{ offset: 0, color: '#271BEB' }, { offset: 1, color: '#7B75F5' }] } } },
+                axisLine: { lineStyle: { width: 18, color: [[1, '#334155']] }, roundCap: true },
+                axisTick: { show: false },
+                splitLine: { length: 15, lineStyle: { width: 2, color: '#999' } },
+                axisLabel: { distance: 25, color: '#999', fontSize: 14 },
+                anchor: { show: true, showAbove: true, size: 25, itemStyle: { borderWidth: 10 } },
+                title: { show: false },
+                detail: { valueAnimation: true, fontSize: 46, fontWeight: 400, color: '#f8fafc', offsetCenter: [0, '70%'], formatter: v => v.toFixed(1) },
+                pointer: { itemStyle: { color: 'auto' } },
+                min: 0,
+                max: 12,
+                splitNumber: 12,
+                itemStyle: { color: '#271BEB' },
+                data: [{ value: val }]
+              }]
+            };
+            return (
+              <>
+                <div className="flex items-baseline gap-2 mb-0">
+                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">GKI</h3>
+                  <span className="text-[10px] text-slate-500">— Indice Glucose-Cétone</span>
+                </div>
+                <div className="flex-1 flex items-center justify-center" style={{ minHeight: 260 }}>
+                  <ReactECharts option={option} style={{ width: '100%', height: '100%', minHeight: 260 }} opts={{ renderer: 'svg' }} />
+                </div>
+                <p className={`text-xs font-semibold text-center ${gkiStatus.cls}`}>{gkiStatus.text}</p>
+              </>
+            );
+          })(),
         }[id];
         if (!healthCardContent) return null;
         const isDragging = healthDragId === id;
         const isDropTarget = healthDropTargetId === id && healthDragId !== id;
         return (
           <div key={id}
-            className={`bg-slate-800 p-4 rounded-xl border-2 shadow-lg transition-all duration-150 ${id === 'h_weightFat' || id === 'h_composition' || id === 'h_muscleFatBar' ? 'col-span-full xl:col-span-2' : 'min-h-[300px]'} ${isDragging ? 'border-violet-500 opacity-40 scale-95' : isDropTarget ? 'border-violet-400 ring-2 ring-violet-400/30 scale-[1.02]' : 'border-slate-700'}`}
+            className={`bg-slate-800 p-4 rounded-xl border-2 shadow-lg transition-all duration-150 flex flex-col ${id === 'h_glucoseKetoneChart' ? 'col-span-full xl:col-span-3' : id === 'h_weightFat' || id === 'h_composition' || id === 'h_muscleFatBar' || id === 'h_bodySilhouette' ? 'col-span-full xl:col-span-2' : 'min-h-[300px]'} ${isDragging ? 'border-violet-500 opacity-40 scale-95' : isDropTarget ? 'border-violet-400 ring-2 ring-violet-400/30 scale-[1.02]' : 'border-slate-700'}`}
             draggable={!isMobile}
             onDragStart={(e) => handleHealthDragStart(e, id)}
             onDragOver={(e) => handleHealthDragOver(e, id)}
@@ -1515,12 +1816,36 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings,
             onDragLeave={() => { if (healthDropTargetId === id) setHealthDropTargetId(null); }}
             style={!isMobile ? { cursor: isDragging ? 'grabbing' : 'grab' } : {}}
           >
-            <div style={isDragging ? { pointerEvents: 'none' } : {}}>
+            <div className="flex-1 flex flex-col" style={isDragging ? { pointerEvents: 'none' } : {}}>
               {healthCardContent}
             </div>
           </div>
         );
       })}
+      </div>
+
+      <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-lg">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="font-bold text-slate-200 flex items-center gap-2"><Plus size={18} className="text-violet-400"/> Nouvelle mesure</h3>
+          {isDemo ? (
+            <span className="text-xs text-slate-500 italic">Lecture seule en démo</span>
+          ) : isSyncingWithings ? (
+            <span className="flex items-center gap-2 text-xs text-slate-400"><RefreshCw size={14} className="animate-spin text-violet-400"/> Sync Withings...</span>
+          ) : (
+            <button onClick={() => onWithingsSync()} className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-bold px-3 py-2 rounded-lg transition-colors border border-slate-600">
+              <RefreshCw size={14} className="text-violet-400"/> Sync Withings
+            </button>
+          )}
+        </div>
+        <div className={`grid grid-cols-2 md:grid-cols-3 gap-4 ${isDemo ? 'opacity-50 pointer-events-none' : ''}`}>
+            <input type="date" value={date} onChange={e => setDate(e.target.value)} className="bg-slate-900 border border-slate-600 rounded p-2 text-white" disabled={isDemo} />
+            <input type="text" value={weight} onChange={e => setWeight(e.target.value)} placeholder="Poids (kg)" className="bg-slate-900 border border-slate-600 rounded p-2 text-white" disabled={isDemo} />
+            <input type="text" value={waist} onChange={e => setWaist(e.target.value)} placeholder="Tour de taille (cm)" className="bg-slate-900 border border-slate-600 rounded p-2 text-white border-orange-500/50" disabled={isDemo} />
+            <input type="text" value={bodyFat} onChange={e => setBodyFat(e.target.value)} placeholder="Fat %" className="bg-slate-900 border border-slate-600 rounded p-2 text-white" disabled={isDemo} />
+            <input type="text" value={muscleMass} onChange={e => setMuscleMass(e.target.value)} placeholder="Mus %" className="bg-slate-900 border border-slate-600 rounded p-2 text-white" disabled={isDemo} />
+            <input type="text" value={hydration} onChange={e => setHydration(e.target.value)} placeholder="Eau %" className="bg-slate-900 border border-slate-600 rounded p-2 text-white" disabled={isDemo} />
+            <button onClick={handleSave} disabled={isDemo} className="col-span-2 md:col-span-3 w-full bg-violet-600 text-white font-bold p-2 rounded hover:bg-violet-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">Enregistrer</button>
+        </div>
       </div>
 
       <div className="space-y-2 col-span-full">
