@@ -39,24 +39,37 @@ const latestGKI = parseFloat((latestGlucose / 18.016 / latestKetones).toFixed(1)
 // Objectifs macro par défaut (régime cétogène)
 const DEFAULT_TARGETS = { carbs: 25, fat: 156, protein: 125, calories: 2500 };
 
-// Données hebdomadaires de démo (en attendant les vraies données Cronometer)
-const weeklyRaw = [
-  { day: 'L', calories: 1950, petitDej: 500, dejeuner: 500, diner: 450, encas: 500, carbs: 9, fat: 140, protein: 48 },
-  { day: 'M', calories: 1920, petitDej: 480, dejeuner: 520, diner: 420, encas: 500, carbs: 7, fat: 118, protein: 42 },
-  { day: 'M', calories: 2050, petitDej: 490, dejeuner: 560, diner: 500, encas: 500, carbs: 12, fat: 92, protein: 26 },
-  { day: 'J', calories: 1880, petitDej: 470, dejeuner: 480, diner: 430, encas: 500, carbs: 10, fat: 108, protein: 34 },
-  { day: 'V', calories: 2100, petitDej: 320, dejeuner: 680, diner: 600, encas: 500, carbs: 11, fat: 102, protein: 38 },
-  { day: 'S', calories: 2700, petitDej: 550, dejeuner: 650, diner: 800, encas: 700, carbs: 8, fat: 132, protein: 50 },
-  { day: 'D', calories: 1050, petitDej: 420, dejeuner: 130, diner: 500, encas: 0, carbs: 9, fat: 65, protein: 32 },
-];
-// Compute % of target for each macro
-const weeklyData = weeklyRaw.map(d => ({
-  ...d,
-  carbsObj: 100, fatObj: 100, protObj: 100, // background bars at 100%
-  carbsPctTarget: Math.round(d.carbs / DEFAULT_TARGETS.carbs * 100),
-  fatPctTarget: Math.round(d.fat / DEFAULT_TARGETS.fat * 100),
-  protPctTarget: Math.round(d.protein / DEFAULT_TARGETS.protein * 100),
-}));
+const DAY_LABELS = ['D', 'L', 'M', 'M', 'J', 'V', 'S'];
+
+function buildWeeklyData(nutritionDocs) {
+  // Get last 7 days
+  const days = [];
+  const today = new Date();
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const key = d.toISOString().split('T')[0];
+    const label = DAY_LABELS[d.getDay()];
+    const doc = nutritionDocs.find(n => n.date === key);
+    days.push({
+      day: label,
+      date: key,
+      calories: doc?.calories || 0,
+      carbs: doc?.carbs || 0,
+      fat: doc?.fat || 0,
+      protein: doc?.protein || 0,
+      petitDej: doc?.petitDej || 0,
+      dejeuner: doc?.dejeuner || 0,
+      diner: doc?.diner || 0,
+      encas: doc?.encas || 0,
+      carbsObj: 100, fatObj: 100, protObj: 100,
+      carbsPctTarget: doc ? Math.round((doc.carbs || 0) / DEFAULT_TARGETS.carbs * 100) : 0,
+      fatPctTarget: doc ? Math.round((doc.fat || 0) / DEFAULT_TARGETS.fat * 100) : 0,
+      protPctTarget: doc ? Math.round((doc.protein || 0) / DEFAULT_TARGETS.protein * 100) : 0,
+    });
+  }
+  return days;
+}
 
 // --- GAUGE BUILDER ---
 function buildGaugeOption(value, min, max, splitNumber, color, formatter) {
@@ -181,13 +194,29 @@ export default function NutritionImport({ user, db, isDemo }) {
   const ketoDrag = { dragId: ketoDragId, dropTargetId: ketoDropTargetId, ...makeDragHandlers(setKetoCardOrder, setKetoDragId, setKetoDropTargetId, 'bioz_ketoCardOrder') };
 
   const [todayData, setTodayData] = useState(null);
+  const [weeklyData, setWeeklyData] = useState(() => buildWeeklyData([]));
 
   useEffect(() => {
     if (!user || !db || isDemo) return;
-    const today = new Date().toISOString().split('T')[0];
-    getDoc(doc(db, 'users', user.uid, 'nutrition', today)).then(snap => {
-      if (snap.exists()) setTodayData(snap.data());
-    }).catch(() => {});
+    // Fetch all nutrition docs for the last 7 days + today
+    const fetchNutrition = async () => {
+      const today = new Date();
+      const docs = [];
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(today);
+        d.setDate(d.getDate() - i);
+        const key = d.toISOString().split('T')[0];
+        try {
+          const snap = await getDoc(doc(db, 'users', user.uid, 'nutrition', key));
+          if (snap.exists()) docs.push(snap.data());
+        } catch {}
+      }
+      setWeeklyData(buildWeeklyData(docs));
+      const todayKey = today.toISOString().split('T')[0];
+      const todayDoc = docs.find(d => d.date === todayKey);
+      if (todayDoc) setTodayData(todayDoc);
+    };
+    fetchNutrition();
   }, [user, db, isDemo]);
 
   // --- COMPUTED VALUES ---

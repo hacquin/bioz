@@ -1924,6 +1924,14 @@ function SettingsView({ user, db, isWithingsEnabled, handleWithingsAuth, isStrav
   const csvReset = () => { setCsvParsedRows(null); setCsvError(null); setCsvResult(null); setCsvConflicts(null); };
   const csvFormatDate = (s) => { const [y, m, d] = s.split('-'); return `${d}/${m}/${y}`; };
 
+  // Parse une ligne CSV en gérant les guillemets
+  const csvParseLine = (line) => {
+    const result = []; let cur = '', inQ = false;
+    for (let j = 0; j < line.length; j++) { const c = line[j]; if (c === '"') inQ = !inQ; else if (c === ',' && !inQ) { result.push(cur); cur = ''; } else cur += c; }
+    result.push(cur); return result;
+  };
+
+  // Détecte le format et parse le CSV
   const csvParseFile = async (file) => {
     csvReset();
     if (!file.name.endsWith('.csv')) { setCsvError('Le fichier doit être au format CSV.'); return; }
@@ -1932,30 +1940,75 @@ function SettingsView({ user, db, isWithingsEnabled, handleWithingsAuth, isStrav
       const lines = text.trim().split('\n');
       if (lines.length < 2) throw new Error('Fichier CSV vide ou invalide');
       const headers = lines[0].split(',').map(h => h.trim());
-      const reqCols = ['Date', 'Energy (kcal)'];
-      for (const col of reqCols) { if (!headers.includes(col)) throw new Error(`Colonne manquante : "${col}". Est-ce bien un export "Daily Summary" ?`); }
-      const colMap = { 'Date': 'date', 'Energy (kcal)': 'calories', 'Carbs (g)': 'carbs', 'Fat (g)': 'fat', 'Protein (g)': 'protein', 'Fiber (g)': 'fiber', 'Sugars (g)': 'sugars', 'Sodium (mg)': 'sodium' };
-      const indices = {};
-      for (const [csv, field] of Object.entries(colMap)) { const idx = headers.indexOf(csv); if (idx !== -1) indices[field] = idx; }
-      const rows = [];
-      for (let i = 1; i < lines.length; i++) {
-        const line = lines[i].trim(); if (!line) continue;
-        // Parse CSV line with quote handling
-        const vals = []; let cur = '', inQ = false;
-        for (let j = 0; j < line.length; j++) { const c = line[j]; if (c === '"') inQ = !inQ; else if (c === ',' && !inQ) { vals.push(cur); cur = ''; } else cur += c; }
-        vals.push(cur);
-        const dateStr = vals[indices.date]?.trim();
-        if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) continue;
-        const row = { date: dateStr, source: 'cronometer' }; let hasData = false;
-        for (const [field, idx] of Object.entries(indices)) {
-          if (field === 'date') continue;
-          const v = parseFloat(vals[idx]);
-          if (!isNaN(v) && v > 0) { row[field] = Math.round(v * 100) / 100; hasData = true; } else row[field] = 0;
+
+      // Détection auto du format : Servings a "Day" + "Group", Daily Summary a "Date"
+      const isServings = headers.includes('Day') && headers.includes('Group');
+
+      if (isServings) {
+        // --- FORMAT SERVINGS ---
+        const dayIdx = headers.indexOf('Day');
+        const groupIdx = headers.indexOf('Group');
+        const kcalIdx = headers.indexOf('Energy (kcal)');
+        const carbsIdx = headers.indexOf('Carbs (g)');
+        const fatIdx = headers.indexOf('Fat (g)');
+        const protIdx = headers.indexOf('Protein (g)');
+        const fiberIdx = headers.indexOf('Fiber (g)');
+        const sugarsIdx = headers.indexOf('Sugars (g)');
+        const sodiumIdx = headers.indexOf('Sodium (mg)');
+        if (kcalIdx === -1) throw new Error('Colonne "Energy (kcal)" manquante.');
+
+        const GROUP_MAP = { 'Breakfast': 'petitDej', 'Lunch': 'dejeuner', 'Dinner': 'diner', 'Snack': 'encas' };
+        const byDay = {};
+        for (let i = 1; i < lines.length; i++) {
+          const line = lines[i].trim(); if (!line) continue;
+          const vals = csvParseLine(line);
+          const dateStr = vals[dayIdx]?.trim();
+          if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) continue;
+          const group = vals[groupIdx]?.trim();
+          const mealKey = GROUP_MAP[group] || 'encas';
+          const kcal = parseFloat(vals[kcalIdx]) || 0;
+          if (!byDay[dateStr]) byDay[dateStr] = { date: dateStr, source: 'cronometer-servings', calories: 0, carbs: 0, fat: 0, protein: 0, fiber: 0, sugars: 0, sodium: 0, petitDej: 0, dejeuner: 0, diner: 0, encas: 0 };
+          const d = byDay[dateStr];
+          d.calories += kcal;
+          d[mealKey] += kcal;
+          if (carbsIdx !== -1) d.carbs += parseFloat(vals[carbsIdx]) || 0;
+          if (fatIdx !== -1) d.fat += parseFloat(vals[fatIdx]) || 0;
+          if (protIdx !== -1) d.protein += parseFloat(vals[protIdx]) || 0;
+          if (fiberIdx !== -1) d.fiber += parseFloat(vals[fiberIdx]) || 0;
+          if (sugarsIdx !== -1) d.sugars += parseFloat(vals[sugarsIdx]) || 0;
+          if (sodiumIdx !== -1) d.sodium += parseFloat(vals[sodiumIdx]) || 0;
         }
-        if (hasData) rows.push(row);
+        // Arrondir
+        const rows = Object.values(byDay).map(d => {
+          for (const k of ['calories','carbs','fat','protein','fiber','sugars','sodium','petitDej','dejeuner','diner','encas']) d[k] = Math.round(d[k] * 100) / 100;
+          return d;
+        });
+        if (rows.length === 0) throw new Error('Aucune donnée nutritionnelle trouvée.');
+        setCsvParsedRows(rows);
+      } else {
+        // --- FORMAT DAILY SUMMARY ---
+        const reqCols = ['Date', 'Energy (kcal)'];
+        for (const col of reqCols) { if (!headers.includes(col)) throw new Error(`Colonne manquante : "${col}". Est-ce bien un export Cronometer ?`); }
+        const colMap = { 'Date': 'date', 'Energy (kcal)': 'calories', 'Carbs (g)': 'carbs', 'Fat (g)': 'fat', 'Protein (g)': 'protein', 'Fiber (g)': 'fiber', 'Sugars (g)': 'sugars', 'Sodium (mg)': 'sodium' };
+        const indices = {};
+        for (const [csv, field] of Object.entries(colMap)) { const idx = headers.indexOf(csv); if (idx !== -1) indices[field] = idx; }
+        const rows = [];
+        for (let i = 1; i < lines.length; i++) {
+          const line = lines[i].trim(); if (!line) continue;
+          const vals = csvParseLine(line);
+          const dateStr = vals[indices.date]?.trim();
+          if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) continue;
+          const row = { date: dateStr, source: 'cronometer' }; let hasData = false;
+          for (const [field, idx] of Object.entries(indices)) {
+            if (field === 'date') continue;
+            const v = parseFloat(vals[idx]);
+            if (!isNaN(v) && v > 0) { row[field] = Math.round(v * 100) / 100; hasData = true; } else row[field] = 0;
+          }
+          if (hasData) rows.push(row);
+        }
+        if (rows.length === 0) throw new Error('Aucune donnée nutritionnelle trouvée.');
+        setCsvParsedRows(rows);
       }
-      if (rows.length === 0) throw new Error('Aucune donnée nutritionnelle trouvée.');
-      setCsvParsedRows(rows);
     } catch (e) { setCsvError(e.message); }
   };
 
@@ -1968,7 +2021,12 @@ function SettingsView({ user, db, isWithingsEnabled, handleWithingsAuth, isStrav
         const docRef = doc(db, 'users', user.uid, 'nutrition', row.date);
         const existing = await getDoc(docRef);
         if (existing.exists() && !overwrite) { conflicts.push(row.date); continue; }
-        await setDoc(docRef, { calories: row.calories || 0, carbs: row.carbs || 0, fat: row.fat || 0, protein: row.protein || 0, fiber: row.fiber || 0, sugars: row.sugars || 0, sodium: row.sodium || 0, date: row.date, source: 'cronometer' });
+        // Merge : conserver les champs existants (ex: macros du Daily Summary + repas du Servings)
+        const data = { date: row.date, source: row.source || 'cronometer' };
+        for (const k of ['calories','carbs','fat','protein','fiber','sugars','sodium','petitDej','dejeuner','diner','encas']) {
+          if (row[k] !== undefined) data[k] = row[k];
+        }
+        await setDoc(docRef, data, { merge: true });
         imported++;
       }
       if (conflicts.length > 0 && !overwrite) setCsvConflicts(conflicts);
@@ -2111,14 +2169,14 @@ function SettingsView({ user, db, isWithingsEnabled, handleWithingsAuth, isStrav
        {/* CRONOMETER IMPORT */}
        <section className="bg-slate-800 p-4 rounded-xl border border-slate-700">
           <h3 className="font-bold text-slate-200 mb-4 flex items-center gap-2"><Upload size={18} className="text-green-400"/> Import Cronometer</h3>
-          <p className="text-xs text-slate-500 mb-3">Importez vos données nutritionnelles depuis un export CSV Cronometer (Daily Summary).</p>
+          <p className="text-xs text-slate-500 mb-3">Importez vos données nutritionnelles depuis un export CSV Cronometer. Formats supportés : <b>Daily Summary</b> (macros) et <b>Servings</b> (détail par repas).</p>
           <div className="space-y-3">
             <div className="flex items-center gap-3">
               <a href="https://cronometer.com" target="_blank" rel="noopener noreferrer"
                 className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
                 <ExternalLink size={16} /> Ouvrir Cronometer
               </a>
-              <span className="text-[10px] text-slate-500">Profile → ⚙️ → Export Data → Daily Summary → Export</span>
+              <span className="text-[10px] text-slate-500">Profile → ⚙️ → Export Data → Export</span>
             </div>
             <div
               onDrop={(e) => { e.preventDefault(); setCsvDragOver(false); const f = e.dataTransfer.files[0]; if (f) csvParseFile(f); }}
@@ -2465,7 +2523,7 @@ function LoginScreen({ onLogin, onDemo, version }) {
       <div className="mb-8 text-center">
         <img src={biozLogo} alt="BIOZ" className="h-16 mx-auto mb-4" />
         <p className="text-slate-400">Un briefing sport santé quotidien alimenté par toutes tes applications.</p>
-        <div className="text-xs text-slate-600 mt-2 font-mono">Version Bêta : 1.0</div>
+        <div className="text-xs text-slate-600 mt-2 font-mono">Version Bêta : 1.1</div>
       </div>
       <div className="w-full max-w-sm bg-slate-800 rounded-2xl border border-slate-700 p-6 shadow-2xl">
         <div className="space-y-4">
