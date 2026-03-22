@@ -688,8 +688,8 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings,
   };
   const isHealthCardVisible = (cardId) => !healthHiddenCards.includes(cardId);
 
-  const HEALTH_DEFAULT_ORDER = ['h_bodySilhouette', 'h_weightFat', 'h_composition', 'h_muscleFatBar', 'h_weight', 'h_waist', 'h_bp', 'h_restingHR', 'h_pwv', 'h_bodyFat', 'h_muscleMass', 'h_hydration', 'h_visceralFat', 'h_ketoneEchart', 'h_glucoseEchart', 'h_gkiEchart', 'h_glucoseKetoneChart'];
-  const HEALTH_CARD_LABELS = { h_bodySilhouette: 'Silhouette Corporelle', h_weightFat: 'Poids & Graisse', h_composition: 'Composition Corporelle', h_muscleFatBar: 'Répartition Muscle / Graisse', h_weight: 'Poids', h_waist: 'Tour de taille', h_bp: 'Tension Artérielle', h_restingHR: 'FC Repos', h_pwv: "Vitesse d'Onde de Pouls", h_bodyFat: 'Graisse Corporelle', h_muscleMass: 'Masse Musculaire', h_hydration: 'Hydratation', h_visceralFat: 'Graisse Viscérale', h_ketoneEchart: 'Cétones', h_glucoseEchart: 'Glucose', h_gkiEchart: 'GKI', h_glucoseKetoneChart: 'Glucose & Cétones (historique)' };
+  const HEALTH_DEFAULT_ORDER = ['h_bodySilhouette', 'h_weightFat', 'h_composition', 'h_muscleFatBar', 'h_weight', 'h_waist', 'h_bp', 'h_restingHR', 'h_pwv', 'h_bodyFat', 'h_muscleMass', 'h_hydration', 'h_visceralFat'];
+  const HEALTH_CARD_LABELS = { h_bodySilhouette: 'Silhouette Corporelle', h_weightFat: 'Poids & Graisse', h_composition: 'Composition Corporelle', h_muscleFatBar: 'Répartition Muscle / Graisse', h_weight: 'Poids', h_waist: 'Tour de taille', h_bp: 'Tension Artérielle', h_restingHR: 'FC Repos', h_pwv: "Vitesse d'Onde de Pouls", h_bodyFat: 'Graisse Corporelle', h_muscleMass: 'Masse Musculaire', h_hydration: 'Hydratation', h_visceralFat: 'Graisse Viscérale' };
   const [bodySilhouetteGender, setBodySilhouetteGender] = useState(() => localStorage.getItem('bioz_bodySilhouetteGender') || 'homme');
 
   const [healthCardOrder, setHealthCardOrder] = useState(() => {

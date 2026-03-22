@@ -87,7 +87,7 @@ function buildGaugeOption(value, min, max, splitNumber, color, formatter) {
       detail: { valueAnimation: true, fontSize: 46, fontWeight: 400, color: '#f8fafc', offsetCenter: [0, '70%'], formatter: formatter || (v => `${v}`) },
       pointer: { itemStyle: { color: 'auto' } },
       min, max, splitNumber,
-      itemStyle: { color: color[0] },
+      itemStyle: { color: color[1] },
       data: [{ value: Math.min(value, max) }]
     }]
   };
@@ -251,7 +251,7 @@ export default function NutritionImport({ user, db, isDemo }) {
           <span className="text-[10px] text-slate-500">— g / jour</span>
         </div>
         <div className="flex-1 flex items-center justify-center" style={{ minHeight: 260 }}>
-          <ReactECharts option={buildGaugeOption(Math.round(carbs), 0, DEFAULT_TARGETS.carbs, 5, ['#f18701', '#f9b234'])} style={{ width: '100%', height: '100%', minHeight: 260 }} opts={{ renderer: 'svg' }} />
+          <ReactECharts option={buildGaugeOption(Math.round(carbs), 0, DEFAULT_TARGETS.carbs, 5, ['rgba(241,135,1,0)', '#f18701'])} style={{ width: '100%', height: '100%', minHeight: 260 }} opts={{ renderer: 'svg' }} />
         </div>
         <p className={`text-xs font-semibold text-center ${carbsStatus.cls}`}>{carbsStatus.text}</p>
       </>
@@ -263,7 +263,7 @@ export default function NutritionImport({ user, db, isDemo }) {
           <span className="text-[10px] text-slate-500">— g / jour</span>
         </div>
         <div className="flex-1 flex items-center justify-center" style={{ minHeight: 260 }}>
-          <ReactECharts option={buildGaugeOption(Math.round(fat), 0, DEFAULT_TARGETS.fat, 4, ['#7678ed', '#a5a6f6'])} style={{ width: '100%', height: '100%', minHeight: 260 }} opts={{ renderer: 'svg' }} />
+          <ReactECharts option={buildGaugeOption(Math.round(fat), 0, DEFAULT_TARGETS.fat, 4, ['rgba(118,120,237,0)', '#7678ed'])} style={{ width: '100%', height: '100%', minHeight: 260 }} opts={{ renderer: 'svg' }} />
         </div>
         <p className={`text-xs font-semibold text-center ${fatStatus.cls}`}>{fatStatus.text}</p>
       </>
@@ -275,7 +275,7 @@ export default function NutritionImport({ user, db, isDemo }) {
           <span className="text-[10px] text-slate-500">— g / jour</span>
         </div>
         <div className="flex-1 flex items-center justify-center" style={{ minHeight: 260 }}>
-          <ReactECharts option={buildGaugeOption(Math.round(protein), 0, DEFAULT_TARGETS.protein, 5, ['#f7b801', '#fad44a'])} style={{ width: '100%', height: '100%', minHeight: 260 }} opts={{ renderer: 'svg' }} />
+          <ReactECharts option={buildGaugeOption(Math.round(protein), 0, DEFAULT_TARGETS.protein, 5, ['rgba(247,184,1,0)', '#f7b801'])} style={{ width: '100%', height: '100%', minHeight: 260 }} opts={{ renderer: 'svg' }} />
         </div>
         <p className={`text-xs font-semibold text-center ${protStatus.cls}`}>{protStatus.text}</p>
       </>
