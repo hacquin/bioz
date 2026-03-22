@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Dumbbell, Activity, Calendar, BarChart2, Save, Settings, X, AlertCircle, Filter, Scale, TrendingUp, LogOut, User, Droplet, RefreshCw, Cloud, CloudLightning, Ruler, Target, Footprints, Percent, Heart, HeartPulse, Map as MapIcon, ArrowRight,
-  Bike, Mountain, Award, Waves, Flame, ChevronDown, ChevronUp, Clock, Plus, Trash2
+  Bike, Mountain, Award, Waves, Flame, ChevronDown, ChevronUp, Clock, Plus, Trash2, UtensilsCrossed, Upload, FileText, ExternalLink, CheckCircle2
 } from 'lucide-react';
 import { 
   BarChart, Bar, LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ComposedChart, PieChart, Pie, Cell, LabelList
@@ -18,6 +18,7 @@ import biozLogo from './BIOZ.png';
 import corpsHomme from './corps-homme-blanc.png';
 import corpsFemme from './corps-femme-blanc.png';
 import { DEMO_DATA } from './demoData';
+import NutritionImport from './NutritionImport';
 
 import video1 from './1.mp4';
 import video2 from './2.mp4';
@@ -31,8 +32,8 @@ const ONBOARDING_VIDEOS_MOBILE = [video1, video2, video3, video4];
 const ONBOARDING_VIDEOS_LAPTOP = [video1L, video2L, video3L, video4L];
 
 // --- VERSIONING ---
-const APP_VERSION = "v2.35.0 (Stable Switch)";
-console.log(`[Bodycontrol] Démarrage de l'application ${APP_VERSION}`);
+const APP_VERSION = "v2.36.0 (iOS Sync Fix)";
+console.log(`[BIOZ] Démarrage de l'application ${APP_VERSION}`);
 
 // --- WITHINGS CONFIGURATION ---
 const WITHINGS_CONFIG = {
@@ -141,6 +142,24 @@ const PIE_COLORS = ['#fc4c02', '#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4
 function NavButton({ icon: Icon, label, active, onClick }) { return (<button onClick={onClick} className={`flex flex-col items-center justify-center p-2 rounded-xl w-full transition-all active:scale-95 touch-manipulation ${active ? 'text-violet-400 bg-slate-700/50' : 'text-slate-500 hover:text-slate-300'}`}><Icon size={24} strokeWidth={active ? 2.5 : 2} className="mb-1" /><span className="text-[10px] font-medium tracking-wide">{label}</span></button>); }
 function Modal({ isOpen, onClose, title, children, confirmText, onConfirm, isDestructive }) { if (!isOpen) return null; return (<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in"><div className="bg-slate-800 border border-slate-700 rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-slide-up"><div className="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-800"><h3 className="font-bold text-lg text-white flex items-center gap-2">{isDestructive && <AlertCircle className="w-5 h-5 text-red-500" />}{title}</h3><button onClick={onClose} className="text-slate-400 hover:text-white p-1"><X size={24} /></button></div><div className="p-6 text-slate-300">{children}</div><div className="p-4 bg-slate-900/50 flex gap-3 justify-end">{onConfirm && (<><button onClick={onClose} className="px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-700 font-medium">Annuler</button><button onClick={() => { onConfirm(); onClose(); }} className={`px-4 py-3 rounded-lg text-white font-medium shadow-lg ${isDestructive ? 'bg-red-600 hover:bg-red-700' : 'bg-violet-600 hover:bg-violet-700'}`}>{confirmText || 'Confirmer'}</button></>)}{!onConfirm && <button onClick={onClose} className="px-4 py-3 bg-slate-700 rounded-lg text-white font-medium hover:bg-slate-600">Fermer</button>}</div></div></div>); }
 function WaterModal({ isOpen, onClose, onAdd }) { if (!isOpen) return null; return (<Modal isOpen={isOpen} onClose={onClose} title="Ajouter de l'eau" confirmText={null} onConfirm={null}><div className="grid grid-cols-2 gap-4"><button onClick={() => onAdd(300)} className="bg-blue-600/20 hover:bg-blue-600/40 border-2 border-blue-500 p-6 rounded-2xl flex flex-col items-center gap-3 transition-all active:scale-95"><Droplet size={40} className="text-blue-400" /> <span className="text-xl font-bold text-blue-200">30 cl</span></button><button onClick={() => onAdd(500)} className="bg-blue-600/20 hover:bg-blue-600/40 border-2 border-blue-500 p-6 rounded-2xl flex flex-col items-center gap-3 transition-all active:scale-95"><div className="relative"><Droplet size={48} className="text-blue-400" /> <span className="absolute -top-1 -right-2 font-bold text-xl text-blue-300">+</span></div><span className="text-xl font-bold text-blue-200">50 cl</span></button></div><p className="text-center text-slate-400 text-sm mt-4">Sélectionnez la quantité bue</p></Modal>); }
+
+// --- LAZY CARD: ne rend le contenu que quand la carte est visible (IntersectionObserver) ---
+function LazyCard({ children, height = 300, className = "", style = {}, ...props }) {
+  const ref = useRef(null);
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(([e]) => { if (e.isIntersecting) { setVisible(true); obs.disconnect(); } }, { rootMargin: '200px' });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+  return (
+    <div ref={ref} className={className} style={style} {...props}>
+      {visible ? children : <div style={{ minHeight: height }} className="flex items-center justify-center text-slate-600 text-xs animate-pulse">Chargement...</div>}
+    </div>
+  );
+}
 
 // ============================================================================
 // 2. COMPOSANTS VUES
@@ -398,9 +417,9 @@ function Dashboard({ healthLogs, stravaLogs }) {
             onDragLeave={() => { if (dropTargetId === id) setDropTargetId(null); }}
             style={!isMobile ? { cursor: isDragging ? 'grabbing' : 'grab' } : {}}
           >
-            <div style={isDragging ? { pointerEvents: 'none' } : {}}>
+            <LazyCard height={224} style={isDragging ? { pointerEvents: 'none' } : {}}>
               {cardContent}
-            </div>
+            </LazyCard>
           </div>
         );
       })}
@@ -642,7 +661,7 @@ function HevyView({ hevyWorkouts, loadingHevy, hevyError, hevySyncStatus, fetchH
   );
 }
 
-function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings, onWithingsSync, goals, isDemo }) {
+function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings, onWithingsSync, goals, isDemo, onAddWater, onOpenWaterModal }) {
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [weight, setWeight] = useState('');
   const [bodyFat, setBodyFat] = useState('');
@@ -1199,6 +1218,32 @@ BMR : ${f(ind.bmr)} kcal`;
         <div className="bg-slate-800 p-3 rounded-xl border border-slate-700 flex flex-col items-center justify-center text-center hover:bg-slate-700 transition-colors"><span className="text-slate-400 text-xs uppercase font-bold tracking-wide">Âge vasc.</span><div className="text-xl font-bold text-rose-400 mt-1">{latestVascularAge || '--'} <span className="text-xs text-slate-500">ans</span></div></div>
         <div className="bg-slate-800 p-3 rounded-xl border border-slate-700 flex flex-col items-center justify-center text-center hover:bg-slate-700 transition-colors"><span className="text-slate-400 text-xs uppercase font-bold tracking-wide">Pas / Dist.</span><div className="text-xl font-bold text-cyan-400 mt-1">{latestSteps || '--'} <span className="text-xs text-slate-500">/ {latestDist || '-'} km</span></div></div>
       </div>
+
+      {/* --- BARRE EAU --- */}
+      {(() => {
+        const todayKey = getLocalDateKey(new Date());
+        const todayLog = healthLogs.find(l => l.date && getLocalDateKey(l.date) === todayKey);
+        const waterMl = todayLog?.waterIntake || 0;
+        const waterGoal = 2500;
+        const waterPct = Math.min(100, Math.round((waterMl / waterGoal) * 100));
+        return (
+          <div className="bg-slate-800 rounded-xl border border-slate-700 p-4 flex items-center gap-4">
+            <button onClick={() => !isDemo && onOpenWaterModal()} className={`shrink-0 bg-blue-600/20 text-blue-400 p-2.5 rounded-full border border-blue-500/50 active:scale-95 transition-all ${isDemo ? 'opacity-50 cursor-not-allowed' : ''}`}>
+              <Droplet size={22} fill="currentColor" className="opacity-80"/>
+            </button>
+            <div className="flex-1 min-w-0">
+              <div className="flex justify-between items-baseline mb-1.5">
+                <span className="text-xs font-bold text-slate-300">Eau du jour</span>
+                <span className="text-xs text-slate-400"><span className="text-blue-400 font-bold">{waterMl >= 1000 ? (waterMl / 1000).toFixed(1) + ' L' : waterMl + ' ml'}</span> / {waterGoal / 1000}L</span>
+              </div>
+              <div className="w-full bg-slate-700 rounded-full h-2.5 overflow-hidden">
+                <div className="bg-gradient-to-r from-blue-500 to-cyan-400 h-full rounded-full transition-all duration-500 ease-out" style={{ width: `${waterPct}%` }}/>
+              </div>
+              <div className="text-[10px] text-slate-500 mt-1">{waterPct}% de l'objectif</div>
+            </div>
+          </div>
+        );
+      })()}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {[
@@ -1816,9 +1861,9 @@ BMR : ${f(ind.bmr)} kcal`;
             onDragLeave={() => { if (healthDropTargetId === id) setHealthDropTargetId(null); }}
             style={!isMobile ? { cursor: isDragging ? 'grabbing' : 'grab' } : {}}
           >
-            <div className="flex-1 flex flex-col" style={isDragging ? { pointerEvents: 'none' } : {}}>
+            <LazyCard height={300} className="flex-1 flex flex-col" style={isDragging ? { pointerEvents: 'none' } : {}}>
               {healthCardContent}
-            </div>
+            </LazyCard>
           </div>
         );
       })}
@@ -1863,9 +1908,77 @@ BMR : ${f(ind.bmr)} kcal`;
 }
 
 // --- SETTINGS VIEW ---
-function SettingsView({ user, isWithingsEnabled, handleWithingsAuth, isStravaEnabled, handleStravaAuth, isHuaweiEnabled, handleHuaweiAuth, huaweiNeedsReconnect, withingsNeedsReconnect, hevyApiKey, onSaveHevyApiKey, goals, setGoals, dataSourcePrefs, setDataSourcePrefs, connectedSources, isDemo }) {
+function SettingsView({ user, db, isWithingsEnabled, handleWithingsAuth, isStravaEnabled, handleStravaAuth, isHuaweiEnabled, handleHuaweiAuth, huaweiNeedsReconnect, withingsNeedsReconnect, hevyApiKey, onSaveHevyApiKey, goals, setGoals, dataSourcePrefs, setDataSourcePrefs, connectedSources, isDemo }) {
   const [hevyKeyInput, setHevyKeyInput] = useState(hevyApiKey || '');
   const [hevyKeySaved, setHevyKeySaved] = useState(false);
+
+  // --- CRONOMETER IMPORT STATE ---
+  const [csvDragOver, setCsvDragOver] = useState(false);
+  const [csvParsedRows, setCsvParsedRows] = useState(null);
+  const [csvError, setCsvError] = useState(null);
+  const [csvImporting, setCsvImporting] = useState(false);
+  const [csvResult, setCsvResult] = useState(null);
+  const [csvConflicts, setCsvConflicts] = useState(null);
+  const csvFileRef = useRef(null);
+
+  const csvReset = () => { setCsvParsedRows(null); setCsvError(null); setCsvResult(null); setCsvConflicts(null); };
+  const csvFormatDate = (s) => { const [y, m, d] = s.split('-'); return `${d}/${m}/${y}`; };
+
+  const csvParseFile = async (file) => {
+    csvReset();
+    if (!file.name.endsWith('.csv')) { setCsvError('Le fichier doit être au format CSV.'); return; }
+    try {
+      const text = await file.text();
+      const lines = text.trim().split('\n');
+      if (lines.length < 2) throw new Error('Fichier CSV vide ou invalide');
+      const headers = lines[0].split(',').map(h => h.trim());
+      const reqCols = ['Date', 'Energy (kcal)'];
+      for (const col of reqCols) { if (!headers.includes(col)) throw new Error(`Colonne manquante : "${col}". Est-ce bien un export "Daily Summary" ?`); }
+      const colMap = { 'Date': 'date', 'Energy (kcal)': 'calories', 'Carbs (g)': 'carbs', 'Fat (g)': 'fat', 'Protein (g)': 'protein', 'Fiber (g)': 'fiber', 'Sugars (g)': 'sugars', 'Sodium (mg)': 'sodium' };
+      const indices = {};
+      for (const [csv, field] of Object.entries(colMap)) { const idx = headers.indexOf(csv); if (idx !== -1) indices[field] = idx; }
+      const rows = [];
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim(); if (!line) continue;
+        // Parse CSV line with quote handling
+        const vals = []; let cur = '', inQ = false;
+        for (let j = 0; j < line.length; j++) { const c = line[j]; if (c === '"') inQ = !inQ; else if (c === ',' && !inQ) { vals.push(cur); cur = ''; } else cur += c; }
+        vals.push(cur);
+        const dateStr = vals[indices.date]?.trim();
+        if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) continue;
+        const row = { date: dateStr, source: 'cronometer' }; let hasData = false;
+        for (const [field, idx] of Object.entries(indices)) {
+          if (field === 'date') continue;
+          const v = parseFloat(vals[idx]);
+          if (!isNaN(v) && v > 0) { row[field] = Math.round(v * 100) / 100; hasData = true; } else row[field] = 0;
+        }
+        if (hasData) rows.push(row);
+      }
+      if (rows.length === 0) throw new Error('Aucune donnée nutritionnelle trouvée.');
+      setCsvParsedRows(rows);
+    } catch (e) { setCsvError(e.message); }
+  };
+
+  const csvDoImport = async (overwrite = false) => {
+    if (!csvParsedRows || !user || !db || isDemo) return;
+    setCsvImporting(true); setCsvError(null);
+    try {
+      let imported = 0; const conflicts = [];
+      for (const row of csvParsedRows) {
+        const docRef = doc(db, 'users', user.uid, 'nutrition', row.date);
+        const existing = await getDoc(docRef);
+        if (existing.exists() && !overwrite) { conflicts.push(row.date); continue; }
+        await setDoc(docRef, { calories: row.calories || 0, carbs: row.carbs || 0, fat: row.fat || 0, protein: row.protein || 0, fiber: row.fiber || 0, sugars: row.sugars || 0, sodium: row.sodium || 0, date: row.date, source: 'cronometer' });
+        imported++;
+      }
+      if (conflicts.length > 0 && !overwrite) setCsvConflicts(conflicts);
+      if (imported > 0) {
+        const dates = csvParsedRows.filter(r => !conflicts.includes(r.date)).map(r => r.date).sort();
+        setCsvResult({ count: imported, skipped: conflicts.length, from: csvFormatDate(dates[0]), to: csvFormatDate(dates[dates.length - 1]) });
+      } else if (conflicts.length === 0) setCsvError('Aucun jour importé.');
+    } catch (e) { setCsvError(`Erreur : ${e.message}`); }
+    finally { setCsvImporting(false); }
+  };
   const updateGoal = (key, value) => {
     const num = parseFloat(value);
     if (!isNaN(num)) setGoals(prev => ({ ...prev, [key]: num }));
@@ -1993,6 +2106,78 @@ function SettingsView({ user, isWithingsEnabled, handleWithingsAuth, isStravaEna
             ))}
           </div>
           <p className="text-[10px] text-slate-500 mt-3 text-center">Les modifications sont sauvegardées automatiquement</p>
+       </section>
+
+       {/* CRONOMETER IMPORT */}
+       <section className="bg-slate-800 p-4 rounded-xl border border-slate-700">
+          <h3 className="font-bold text-slate-200 mb-4 flex items-center gap-2"><Upload size={18} className="text-green-400"/> Import Cronometer</h3>
+          <p className="text-xs text-slate-500 mb-3">Importez vos données nutritionnelles depuis un export CSV Cronometer (Daily Summary).</p>
+          <div className="space-y-3">
+            <div className="flex items-center gap-3">
+              <a href="https://cronometer.com" target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+                <ExternalLink size={16} /> Ouvrir Cronometer
+              </a>
+              <span className="text-[10px] text-slate-500">Profile → ⚙️ → Export Data → Daily Summary → Export</span>
+            </div>
+            <div
+              onDrop={(e) => { e.preventDefault(); setCsvDragOver(false); const f = e.dataTransfer.files[0]; if (f) csvParseFile(f); }}
+              onDragOver={(e) => { e.preventDefault(); setCsvDragOver(true); }}
+              onDragLeave={() => setCsvDragOver(false)}
+              onClick={() => csvFileRef.current?.click()}
+              className={`border-2 border-dashed rounded-xl p-5 text-center cursor-pointer transition-all ${csvDragOver ? 'border-green-400 bg-green-500/10' : 'border-slate-600 hover:border-slate-500 hover:bg-slate-700/30'}`}>
+              <Upload size={24} className={`mx-auto mb-2 ${csvDragOver ? 'text-green-400' : 'text-slate-500'}`} />
+              <p className="text-sm text-slate-300">Glissez votre fichier CSV ici</p>
+              <p className="text-xs text-slate-500 mt-1">ou cliquez pour parcourir</p>
+            </div>
+            <input ref={csvFileRef} type="file" accept=".csv" onChange={(e) => { const f = e.target.files[0]; if (f) csvParseFile(f); e.target.value = ''; }} className="hidden" />
+
+            {csvError && <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 flex items-start gap-2"><AlertCircle size={16} className="text-red-400 shrink-0 mt-0.5" /><p className="text-xs text-red-300">{csvError}</p></div>}
+
+            {csvParsedRows && !csvResult && !csvConflicts && (
+              <div className="bg-slate-900/50 p-3 rounded-lg border border-slate-600/50">
+                <div className="flex items-center gap-2 mb-2"><FileText size={16} className="text-green-400" /><span className="text-sm font-semibold text-slate-200">{csvParsedRows.length} jour{csvParsedRows.length > 1 ? 's' : ''}</span><span className="text-xs text-slate-500">du {csvFormatDate(csvParsedRows[0].date)} au {csvFormatDate(csvParsedRows[csvParsedRows.length - 1].date)}</span></div>
+                <button onClick={() => csvDoImport(false)} disabled={csvImporting || isDemo} className={`w-full py-2 rounded-lg text-sm font-semibold transition-all ${csvImporting ? 'bg-slate-600 text-slate-400 cursor-wait' : isDemo ? 'bg-slate-600 text-slate-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-500 text-white active:scale-[0.98]'}`}>{csvImporting ? 'Import en cours…' : isDemo ? 'Désactivé en démo' : `Importer ${csvParsedRows.length} jour${csvParsedRows.length > 1 ? 's' : ''}`}</button>
+              </div>
+            )}
+
+            {csvConflicts && csvConflicts.length > 0 && (
+              <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3">
+                <p className="text-xs text-yellow-300 font-semibold mb-2">{csvConflicts.length} jour{csvConflicts.length > 1 ? 's' : ''} déjà présent{csvConflicts.length > 1 ? 's' : ''}</p>
+                <div className="flex gap-2">
+                  <button onClick={() => { setCsvConflicts(null); setCsvResult(null); csvDoImport(true); }} disabled={csvImporting} className="flex-1 py-1.5 rounded-lg text-xs font-semibold bg-yellow-600 hover:bg-yellow-500 text-white transition-colors">{csvImporting ? 'Import…' : 'Écraser tout'}</button>
+                  <button onClick={csvReset} className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-700 hover:bg-slate-600 text-slate-300 transition-colors">Annuler</button>
+                </div>
+              </div>
+            )}
+
+            {csvResult && (
+              <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-3 flex items-start gap-2">
+                <CheckCircle2 size={16} className="text-green-400 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-xs text-green-300 font-semibold">{csvResult.count} jour{csvResult.count > 1 ? 's' : ''} importé{csvResult.count > 1 ? 's' : ''}, du {csvResult.from} au {csvResult.to}</p>
+                  {csvResult.skipped > 0 && <p className="text-[10px] text-slate-400 mt-0.5">{csvResult.skipped} ignoré{csvResult.skipped > 1 ? 's' : ''}</p>}
+                  <button onClick={csvReset} className="text-[10px] text-slate-400 hover:text-slate-300 underline mt-1">Importer un autre fichier</button>
+                </div>
+              </div>
+            )}
+          </div>
+       </section>
+
+       {/* KETO-MOJO */}
+       <section className="bg-slate-800 p-4 rounded-xl border border-slate-700">
+          <h3 className="font-bold text-slate-200 mb-4 flex items-center gap-2">
+            <div className="bg-[#EBAA6D] text-slate-900 font-bold w-8 h-8 rounded-full flex items-center justify-center text-xs">KM</div>
+            Keto-Mojo
+          </h3>
+          <p className="text-sm text-slate-300 mb-3">Synchronisez automatiquement vos mesures de glucose et cétones sanguines.</p>
+          <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 mb-3">
+            <p className="text-xs text-amber-300">En attente de la disponibilité de l'API Keto-Mojo. La connexion sera activée dès que l'API sera ouverte aux développeurs.</p>
+          </div>
+          <a href="https://keto-mojo.com" target="_blank" rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 bg-[#EBAA6D] hover:bg-[#d4944f] text-slate-900 text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+            <ExternalLink size={16} /> keto-mojo.com
+          </a>
        </section>
     </div>
   );
@@ -3124,13 +3309,15 @@ function App() {
           }
 
           const now = Math.floor(Date.now() / 1000);
-          const twoYearsAgo = now - (2 * 365 * 24 * 3600);
-          
+          // Données limitées à l'année en cours
+          const jan1 = Math.floor(new Date(new Date().getFullYear(), 0, 1).getTime() / 1000);
+          const monthsSinceJan = new Date().getMonth() + 1;
+
           const [measResponse1, measResponse2, actDataArray] = await Promise.all([
-              fetchWithFallback(`${WITHINGS_CONFIG.measureUrl}?action=getmeas&meastype=1,6,11,76,77,91,170,226,155&category=1&startdate=${twoYearsAgo}&enddate=${now}`, { method: 'GET', headers: { 'Authorization': `Bearer ${tokenData.access_token}` } }),
-              fetchWithFallback(`${WITHINGS_CONFIG.measureUrl}?action=getmeas&meastype=9,10&category=1&startdate=${twoYearsAgo}&enddate=${now}`, { method: 'GET', headers: { 'Authorization': `Bearer ${tokenData.access_token}` } }),
+              fetchWithFallback(`${WITHINGS_CONFIG.measureUrl}?action=getmeas&meastype=1,6,11,76,77,91,170,226,155&category=1&startdate=${jan1}&enddate=${now}`, { method: 'GET', headers: { 'Authorization': `Bearer ${tokenData.access_token}` } }),
+              fetchWithFallback(`${WITHINGS_CONFIG.measureUrl}?action=getmeas&meastype=9,10&category=1&startdate=${jan1}&enddate=${now}`, { method: 'GET', headers: { 'Authorization': `Bearer ${tokenData.access_token}` } }),
               Promise.all(
-                  Array.from({length: 24}, (_, i) => {
+                  Array.from({length: monthsSinceJan}, (_, i) => {
                       const endTs = now - (i * 30 * 24 * 3600);
                       const startTs = endTs - (30 * 24 * 3600);
                       const startDateStr = new Date(startTs * 1000).toISOString().split('T')[0];
@@ -3203,8 +3390,9 @@ function App() {
   };
 
   if (showSplash || loadingAuth) return (
-    <div className="min-h-screen bg-black flex items-center justify-center">
+    <div className="min-h-screen bg-black flex flex-col items-center justify-center gap-2">
       <img src={new URL('./picto-transparent.png', import.meta.url).href} alt="BIOZ" className="w-24 h-24 md:w-32 md:h-32" />
+      <div className="text-slate-600 text-[10px] font-mono">{APP_VERSION}</div>
     </div>
   );
 
@@ -3228,9 +3416,10 @@ function App() {
     switch(activeTab) {
       case 'dashboard': return dataLoaded ? <Dashboard healthLogs={healthLogs} stravaLogs={stravaLogs} /> : <div className="flex items-center justify-center h-64 text-slate-500">Chargement...</div>;
       case 'workout': return <HevyView hevyWorkouts={hevyWorkouts} loadingHevy={loadingHevy} fetchHevyWorkouts={demoFetchHevy} hevyError={hevyError} hevySyncStatus={hevySyncStatus} onDeleteWorkout={demoDeleteHevy} isDemo={isDemo} />;
-      case 'health': return <HealthTracker user={user} db={db} healthLogs={healthLogs} setHealthLogs={demoSetHealthLogs} isSyncingWithings={isSyncingWithings} onWithingsSync={demoWithingsSync} goals={goals} isDemo={isDemo} />;
+      case 'health': return <HealthTracker user={user} db={db} healthLogs={healthLogs} setHealthLogs={demoSetHealthLogs} isSyncingWithings={isSyncingWithings} onWithingsSync={demoWithingsSync} goals={goals} isDemo={isDemo} onAddWater={(amount) => { handleAddWater(amount); }} onOpenWaterModal={() => setShowWaterModal(true)} />;
       case 'endurance': return <EnduranceView stravaLogs={stravaLogs} onSync={demoStravaSync} isSyncing={isSyncingStrava} isDemo={isDemo} />;
-      case 'settings': return <SettingsView user={user} isWithingsEnabled={isDemo || isWithingsEnabled} handleWithingsAuth={isDemo ? demoNoOp : handleStartWithingsAuth} isStravaEnabled={isDemo || isStravaEnabled} handleStravaAuth={isDemo ? demoNoOp : handleStartStravaAuth} isHuaweiEnabled={isDemo || isHuaweiEnabled} handleHuaweiAuth={isDemo ? demoNoOp : handleStartHuaweiAuth} huaweiNeedsReconnect={huaweiNeedsReconnect} withingsNeedsReconnect={false} hevyApiKey={hevyApiKey} onSaveHevyApiKey={isDemo ? demoNoOp : saveHevyApiKey} goals={goals} setGoals={demoSetGoals} dataSourcePrefs={dataSourcePrefs} setDataSourcePrefs={setDataSourcePrefs} connectedSources={connectedSources} isDemo={isDemo} />;
+      case 'nutrition': return <NutritionImport user={user} db={db} isDemo={isDemo} />;
+      case 'settings': return <SettingsView user={user} db={db} isWithingsEnabled={isDemo || isWithingsEnabled} handleWithingsAuth={isDemo ? demoNoOp : handleStartWithingsAuth} isStravaEnabled={isDemo || isStravaEnabled} handleStravaAuth={isDemo ? demoNoOp : handleStartStravaAuth} isHuaweiEnabled={isDemo || isHuaweiEnabled} handleHuaweiAuth={isDemo ? demoNoOp : handleStartHuaweiAuth} huaweiNeedsReconnect={huaweiNeedsReconnect} withingsNeedsReconnect={false} hevyApiKey={hevyApiKey} onSaveHevyApiKey={isDemo ? demoNoOp : saveHevyApiKey} goals={goals} setGoals={demoSetGoals} dataSourcePrefs={dataSourcePrefs} setDataSourcePrefs={setDataSourcePrefs} connectedSources={connectedSources} isDemo={isDemo} />;
       default: return <div className="flex items-center justify-center h-64 text-slate-500">Chargement...</div>;
     }
   };
@@ -3247,9 +3436,9 @@ function App() {
         <div className="max-w-[98%] mx-auto flex justify-between items-center">
           <img src={new URL('./BIOZ.png', import.meta.url).href} alt="Bodycontrol" className="h-11" />
           <div className="flex items-center gap-3">
-             <button onClick={() => !isDemo && setShowWaterModal(true)} className={`bg-blue-600/20 text-blue-400 p-2 rounded-full hover:bg-blue-600/40 border border-blue-500/50 mr-2 flex items-center justify-center active:scale-95 transition-all shadow-lg shadow-blue-900/20 ${isDemo ? 'opacity-50 cursor-not-allowed' : ''}`}><Droplet size={20} fill="currentColor" className="opacity-80"/></button>
              {!isDemo && <div className="text-xs">{syncStatus === 'syncing' && <CloudLightning className="text-yellow-400 animate-pulse" size={20} />}{syncStatus === 'saved' && <Cloud className="text-green-400" size={20} />}{syncStatus === 'error' && <AlertCircle className="text-red-500" size={20} />}{syncStatus === 'idle' && <Cloud className="text-slate-600" size={20} />}</div>}
              <div className="hidden md:flex items-center gap-2 text-sm text-slate-400"><User size={16}/> {isDemo ? 'Visiteur Démo' : (user?.displayName || user?.email || 'Anonyme')}</div>
+             <button onClick={() => setActiveTab('settings')} className={`p-2 rounded-full transition-colors ${activeTab === 'settings' ? 'text-violet-400 bg-slate-700/50' : 'text-slate-400 hover:text-slate-300 hover:bg-slate-700'}`}><Settings size={20} /></button>
              {isDemo ? (
                <button onClick={handleExitDemo} className="text-slate-400 hover:text-red-400 transition-colors p-2 rounded-full hover:bg-slate-700"><LogOut size={20} /></button>
              ) : (
@@ -3265,10 +3454,10 @@ function App() {
           <NavButton icon={Dumbbell} label="Musculation" active={activeTab === 'workout'} onClick={() => setActiveTab('workout')} />
           <NavButton icon={HeartPulse} label="Santé" active={activeTab === 'health'} onClick={() => setActiveTab('health')} />
           <NavButton icon={MapIcon} label="Endurance" active={activeTab === 'endurance'} onClick={() => setActiveTab('endurance')} />
-          <NavButton icon={Settings} label="Params" active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} />
+          <NavButton icon={UtensilsCrossed} label="Nutrition" active={activeTab === 'nutrition'} onClick={() => setActiveTab('nutrition')} />
         </div>
       </nav>
-      <WaterModal isOpen={showWaterModal} onClose={() => setShowWaterModal(false)} onAdd={handleAddWater} />
+      <WaterModal isOpen={showWaterModal} onClose={() => setShowWaterModal(false)} onAdd={(amount) => { handleAddWater(amount); setShowWaterModal(false); }} />
     </div>
   );
 }
