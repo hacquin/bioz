@@ -135,7 +135,7 @@ function CardSection({ title, cardIds, cardContent, wideCards = [], dragState, i
 }
 
 
-export default function NutritionImport({ user, db, isDemo }) {
+export default function NutritionImport({ user, db, isDemo, demoNutritionDocs }) {
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
   // --- DRAG & DROP STATE (per section) ---
@@ -197,8 +197,15 @@ export default function NutritionImport({ user, db, isDemo }) {
   const [weeklyData, setWeeklyData] = useState(() => buildWeeklyData([]));
 
   useEffect(() => {
-    if (!user || !db || isDemo) return;
-    // Fetch all nutrition docs for the last 7 days + today
+    if (isDemo && demoNutritionDocs) {
+      // Mode démo : utiliser les données fictives
+      setWeeklyData(buildWeeklyData(demoNutritionDocs));
+      const todayKey = new Date().toISOString().split('T')[0];
+      const todayDoc = demoNutritionDocs.find(d => d.date === todayKey);
+      if (todayDoc) setTodayData(todayDoc);
+      return;
+    }
+    if (!user || !db) return;
     const fetchNutrition = async () => {
       const today = new Date();
       const docs = [];
@@ -217,7 +224,7 @@ export default function NutritionImport({ user, db, isDemo }) {
       if (todayDoc) setTodayData(todayDoc);
     };
     fetchNutrition();
-  }, [user, db, isDemo]);
+  }, [user, db, isDemo, demoNutritionDocs]);
 
   // --- COMPUTED VALUES ---
   const carbs = todayData?.carbs || 0;
@@ -488,8 +495,80 @@ export default function NutritionImport({ user, db, isDemo }) {
   const MACRO_WIDE = ['n_weeklyMacros', 'n_weeklyCalories'];
   const KETO_WIDE = ['n_ketoChart'];
 
+  // --- COACH NUTRITION (Claude AI) ---
+  const [coachAdvice, setCoachAdvice] = useState('');
+  const [coachLoading, setCoachLoading] = useState(false);
+  const [coachError, setCoachError] = useState('');
+
+  const fetchCoachAdvice = async () => {
+    setCoachLoading(true);
+    setCoachError('');
+    try {
+      const todayMacros = {
+        glucides: Math.round(carbs),
+        lipides: Math.round(fat),
+        proteines: Math.round(protein),
+        objectifs: { glucides: DEFAULT_TARGETS.carbs, lipides: DEFAULT_TARGETS.fat, proteines: DEFAULT_TARGETS.protein, calories: DEFAULT_TARGETS.calories },
+      };
+      const weekly = weeklyData.map(d => ({ jour: d.day, date: d.date, calories: d.calories, glucides: d.carbs, lipides: d.fat, proteines: d.protein }));
+      const keto = { glucose: latestGlucose, cetones: latestKetones, gki: latestGKI };
+
+      const systemPrompt = "Tu es un coach nutrition expert en régime cétogène. Tu donnes des avis personnalisés, directs, motivants et concrets. Tu réponds toujours en français.";
+      const userMessage = `Analyse ces données nutritionnelles et donne un avis personnalisé en exactement 4 phrases courtes et percutantes.
+
+Données du jour : ${JSON.stringify(todayMacros)}
+Données de la semaine : ${JSON.stringify(weekly)}
+Données cétogène : ${JSON.stringify(keto)}
+
+Règles :
+- Exactement 4 phrases, pas plus, pas moins
+- Sois direct, motivant et concret
+- Mentionne les points positifs ET les axes d'amélioration
+- Adapte tes conseils au régime cétogène`;
+
+      const res = await fetch('/claude_proxy.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ system: systemPrompt, messages: [{ role: 'user', content: userMessage }] }),
+      });
+      if (!res.ok) throw new Error(`Erreur HTTP ${res.status}`);
+      const data = await res.json();
+      setCoachAdvice(data.content?.[0]?.text || 'Aucune réponse.');
+    } catch (e) {
+      setCoachError("Impossible de générer l'avis. Vérifiez votre connexion ou le proxy PHP.");
+      console.error('Erreur coach nutrition IA', e);
+    } finally {
+      setCoachLoading(false);
+    }
+  };
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+      {/* AVIS DU COACH NUTRITION */}
+      <div className="col-span-full bg-gradient-to-r from-slate-800 via-slate-800 to-slate-700 p-5 rounded-xl border-2 border-violet-500/40 shadow-lg shadow-violet-500/10">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <span className="text-2xl">🧠</span>
+            <h2 className="text-sm font-bold text-violet-300 uppercase tracking-widest">Avis du Coach Nutrition</h2>
+            <span className="text-[10px] text-slate-500 bg-slate-700 px-2 py-0.5 rounded-full">Claude AI</span>
+          </div>
+          <button
+            onClick={fetchCoachAdvice}
+            disabled={coachLoading}
+            className="text-xs bg-violet-600 hover:bg-violet-500 disabled:bg-slate-600 text-white px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5"
+          >
+            {coachLoading ? (
+              <><svg className="animate-spin h-3 w-3" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg> Analyse...</>
+            ) : coachAdvice ? '🔄 Actualiser' : '✨ Analyser'}
+          </button>
+        </div>
+        {coachError && <p className="text-xs text-red-400 mb-2">{coachError}</p>}
+        {coachAdvice ? (
+          <p className="text-sm text-slate-200 leading-relaxed whitespace-pre-line">{coachAdvice}</p>
+        ) : !coachLoading && !coachError ? (
+          <p className="text-xs text-slate-500 italic">Cliquez sur "Analyser" pour obtenir l'avis personnalisé de votre coach IA basé sur vos données nutritionnelles.</p>
+        ) : null}
+      </div>
       <CardSection title="Macronutrition du jour" cardIds={macroCardOrder} cardContent={allCards} wideCards={MACRO_WIDE} dragState={macroDrag} isMobile={isMobile} />
       <CardSection title="Régime cétogène" cardIds={ketoCardOrder} cardContent={allCards} wideCards={KETO_WIDE} dragState={ketoDrag} isMobile={isMobile} />
     </div>
