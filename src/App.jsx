@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Dumbbell, Activity, Calendar, BarChart2, Save, Settings, X, AlertCircle, Filter, Scale, TrendingUp, LogOut, User, Droplet, RefreshCw, Cloud, CloudLightning, Ruler, Target, Footprints, Percent, Heart, HeartPulse, Map as MapIcon, ArrowRight,
-  Bike, Mountain, Award, Waves, Flame, ChevronDown, ChevronUp, Clock, Plus, Trash2, UtensilsCrossed, Upload, FileText, ExternalLink, CheckCircle2
+  Bike, Mountain, Award, Waves, Flame, ChevronDown, ChevronUp, Clock, Plus, Trash2, UtensilsCrossed, Upload, FileText, ExternalLink, CheckCircle2, Download
 } from 'lucide-react';
 import { 
   BarChart, Bar, LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ComposedChart, PieChart, Pie, Cell, LabelList
@@ -1377,11 +1377,10 @@ BMR : ${f(ind.bmr)} kcal`;
           },
         ];
 
-        // FIX PERF: useMemo sur les régressions
-        const regressions = useMemo(() => metrics.map(m => ({
+        const regressions = metrics.map(m => ({
           ...m,
           reg: weightedRegression(healthLogs, m.key),
-        })), [healthLogs]);
+        }));
 
         const hasEnoughData = regressions.some(r => r.reg !== null);
         if (!hasEnoughData) return null;
@@ -2164,6 +2163,54 @@ function SettingsView({ user, db, isWithingsEnabled, handleWithingsAuth, isStrav
             ))}
           </div>
           <p className="text-[10px] text-slate-500 mt-3 text-center">Les modifications sont sauvegardées automatiquement</p>
+       </section>
+
+       {/* SAUVEGARDE */}
+       <section className="bg-slate-800 p-4 rounded-xl border border-slate-700">
+          <h3 className="font-bold text-slate-200 mb-4 flex items-center gap-2"><Download size={18} className="text-cyan-400"/> Sauvegarde des données</h3>
+          <p className="text-xs text-slate-500 mb-3">Téléchargez une copie complète de vos données (santé, objectifs, intégrations).</p>
+          <button
+            disabled={isDemo}
+            onClick={async () => {
+              if (!user || !db) return;
+              try {
+                const docSnap = await getDoc(doc(db, "users", user.uid));
+                if (!docSnap.exists()) { alert("Aucune donnée trouvée."); return; }
+                const data = docSnap.data();
+                const backup = { exportDate: new Date().toISOString(), uid: user.uid, ...data };
+                const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a'); a.href = url;
+                a.download = `bioz-backup-${new Date().toISOString().slice(0,10)}.json`;
+                a.click(); URL.revokeObjectURL(url);
+              } catch(e) { console.error("Backup error:", e); alert("Erreur lors de l'export."); }
+            }}
+            className={`w-full py-3 rounded-lg text-sm font-bold transition-colors ${isDemo ? 'bg-slate-700 text-slate-500 cursor-not-allowed' : 'bg-cyan-600 hover:bg-cyan-500 text-white'}`}
+          >
+            <Download size={16} className="inline mr-2" />Télécharger la sauvegarde (.json)
+          </button>
+          <div className="mt-3">
+            <label
+              className={`w-full py-3 rounded-lg text-sm font-bold transition-colors flex items-center justify-center cursor-pointer ${isDemo ? 'bg-slate-700 text-slate-500 cursor-not-allowed' : 'bg-slate-700 hover:bg-slate-600 text-slate-200 border border-slate-600'}`}
+            >
+              <Upload size={16} className="inline mr-2" />Restaurer depuis un backup (.json)
+              <input type="file" accept=".json" className="hidden" disabled={isDemo} onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file || !user || !db) return;
+                if (!confirm("Attention : cette action va REMPLACER toutes vos données actuelles par celles du fichier. Continuer ?")) { e.target.value = ''; return; }
+                try {
+                  const text = await file.text();
+                  const backup = JSON.parse(text);
+                  const { exportDate, uid, ...restoreData } = backup;
+                  await setDoc(doc(db, "users", user.uid), restoreData, { merge: true });
+                  alert(`Données restaurées depuis le backup du ${exportDate ? new Date(exportDate).toLocaleDateString('fr-FR') : 'inconnu'}. Rechargement...`);
+                  window.location.reload();
+                } catch(err) { console.error("Restore error:", err); alert("Erreur : fichier invalide ou problème de connexion."); }
+                e.target.value = '';
+              }} />
+            </label>
+            <p className="text-[10px] text-slate-500 mt-2 text-center">Utilisez un fichier .json précédemment exporté depuis cette page</p>
+          </div>
        </section>
 
        {/* CRONOMETER IMPORT */}
@@ -3385,7 +3432,18 @@ function App() {
               )
           ]);
 
-          let newHealthLogs = [...healthLogs];
+          // FIX: toujours lire les données fraîches depuis Firestore avant de fusionner
+          // Evite d'écraser les saisies manuelles (waist, etc.) si healthLogs n'est pas encore chargé en state
+          let baseHealthLogs = healthLogs;
+          if (user && db) {
+            try {
+              const docSnap = await getDoc(doc(db, "users", user.uid));
+              if (docSnap.exists() && docSnap.data().healthLogs && docSnap.data().healthLogs.length > baseHealthLogs.length) {
+                baseHealthLogs = docSnap.data().healthLogs;
+              }
+            } catch(e) { console.error("[Withings] Cloud fetch before sync failed:", e); }
+          }
+          let newHealthLogs = [...baseHealthLogs];
           let updates = 0;
 
           const processGroups = (response) => {
@@ -3476,7 +3534,7 @@ function App() {
       case 'workout': return <HevyView hevyWorkouts={hevyWorkouts} loadingHevy={loadingHevy} fetchHevyWorkouts={demoFetchHevy} hevyError={hevyError} hevySyncStatus={hevySyncStatus} onDeleteWorkout={demoDeleteHevy} isDemo={isDemo} />;
       case 'health': return <HealthTracker user={user} db={db} healthLogs={healthLogs} setHealthLogs={demoSetHealthLogs} isSyncingWithings={isSyncingWithings} onWithingsSync={demoWithingsSync} goals={goals} isDemo={isDemo} onAddWater={(amount) => { handleAddWater(amount); }} onOpenWaterModal={() => setShowWaterModal(true)} />;
       case 'endurance': return <EnduranceView stravaLogs={stravaLogs} onSync={demoStravaSync} isSyncing={isSyncingStrava} isDemo={isDemo} />;
-      case 'nutrition': return <NutritionImport user={user} db={db} isDemo={isDemo} />;
+      case 'nutrition': return <NutritionImport user={user} db={db} isDemo={isDemo} demoNutritionDocs={isDemo ? DEMO_DATA.nutritionDocs : null} />;
       case 'settings': return <SettingsView user={user} db={db} isWithingsEnabled={isDemo || isWithingsEnabled} handleWithingsAuth={isDemo ? demoNoOp : handleStartWithingsAuth} isStravaEnabled={isDemo || isStravaEnabled} handleStravaAuth={isDemo ? demoNoOp : handleStartStravaAuth} isHuaweiEnabled={isDemo || isHuaweiEnabled} handleHuaweiAuth={isDemo ? demoNoOp : handleStartHuaweiAuth} huaweiNeedsReconnect={huaweiNeedsReconnect} withingsNeedsReconnect={false} hevyApiKey={hevyApiKey} onSaveHevyApiKey={isDemo ? demoNoOp : saveHevyApiKey} goals={goals} setGoals={demoSetGoals} dataSourcePrefs={dataSourcePrefs} setDataSourcePrefs={setDataSourcePrefs} connectedSources={connectedSources} isDemo={isDemo} />;
       default: return <div className="flex items-center justify-center h-64 text-slate-500">Chargement...</div>;
     }
