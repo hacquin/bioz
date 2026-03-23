@@ -349,7 +349,7 @@ export default function NutritionImport({ user, db, isDemo, demoNutritionDocs })
         },
         grid: { top: 10, right: 10, bottom: 40, left: 45 },
         xAxis: { type: 'category', data: days, axisLine: { lineStyle: { color: '#475569' } }, axisTick: { show: false }, axisLabel: { color: '#94a3b8', fontSize: 13, fontWeight: 600 } },
-        yAxis: { type: 'value', max: 120, axisLabel: { color: '#64748b', fontSize: 12, formatter: '{value}%' }, splitLine: { lineStyle: { color: '#334155', type: 'dashed' } }, axisLine: { show: false }, axisTick: { show: false } },
+        yAxis: { type: 'value', max: 140, axisLabel: { color: '#64748b', fontSize: 12, formatter: '{value}%' }, splitLine: { lineStyle: { color: '#334155', type: 'dashed' } }, axisLine: { show: false }, axisTick: { show: false } },
         series,
       };
       return (
