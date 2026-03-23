@@ -36,12 +36,13 @@ const latestGlucose = 102;
 const latestKetones = 0.5;
 const latestGKI = parseFloat((latestGlucose / 18.016 / latestKetones).toFixed(1));
 
-// Objectifs macro par défaut (régime cétogène)
-const DEFAULT_TARGETS = { carbs: 25, fat: 156, protein: 125, calories: 2500 };
+// Objectifs macro keto (Mifflin-St Jeor: 87kg, 174cm, 55 ans, homme, activité modérée, déficit perte de poids)
+// Répartition: 8% glucides / 25% protéines / 67% lipides
+const DEFAULT_TARGETS = { calories: 2200, carbs: 44, protein: 138, fat: 164 };
 
 const DAY_LABELS = ['D', 'L', 'M', 'M', 'J', 'V', 'S'];
 
-function buildWeeklyData(nutritionDocs) {
+function buildWeeklyData(nutritionDocs, macroTargets = DEFAULT_TARGETS) {
   // Get last 7 days
   const days = [];
   const today = new Date();
@@ -63,9 +64,9 @@ function buildWeeklyData(nutritionDocs) {
       diner: doc?.diner || 0,
       encas: doc?.encas || 0,
       carbsObj: 100, fatObj: 100, protObj: 100,
-      carbsPctTarget: doc ? Math.round((doc.carbs || 0) / DEFAULT_TARGETS.carbs * 100) : 0,
-      fatPctTarget: doc ? Math.round((doc.fat || 0) / DEFAULT_TARGETS.fat * 100) : 0,
-      protPctTarget: doc ? Math.round((doc.protein || 0) / DEFAULT_TARGETS.protein * 100) : 0,
+      carbsPctTarget: doc ? Math.round((doc.carbs || 0) / macroTargets.carbs * 100) : 0,
+      fatPctTarget: doc ? Math.round((doc.fat || 0) / macroTargets.fat * 100) : 0,
+      protPctTarget: doc ? Math.round((doc.protein || 0) / macroTargets.protein * 100) : 0,
     });
   }
   return days;
@@ -135,8 +136,16 @@ function CardSection({ title, cardIds, cardContent, wideCards = [], dragState, i
 }
 
 
-export default function NutritionImport({ user, db, isDemo, demoNutritionDocs }) {
+export default function NutritionImport({ user, db, isDemo, demoNutritionDocs, goals }) {
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+  // Objectifs macro calculés depuis les paramètres utilisateur
+  const targets = (goals?.targetCalories && goals?.pctCarbs != null) ? {
+    calories: goals.targetCalories,
+    carbs: Math.round(goals.targetCalories * goals.pctCarbs / 100 / 4),
+    protein: Math.round(goals.targetCalories * goals.pctProtein / 100 / 4),
+    fat: Math.round(goals.targetCalories * goals.pctFat / 100 / 9),
+  } : DEFAULT_TARGETS;
 
   // --- DRAG & DROP STATE (per section) ---
   const [macroDragId, setMacroDragId] = useState(null);
@@ -194,12 +203,12 @@ export default function NutritionImport({ user, db, isDemo, demoNutritionDocs })
   const ketoDrag = { dragId: ketoDragId, dropTargetId: ketoDropTargetId, ...makeDragHandlers(setKetoCardOrder, setKetoDragId, setKetoDropTargetId, 'bioz_ketoCardOrder') };
 
   const [todayData, setTodayData] = useState(null);
-  const [weeklyData, setWeeklyData] = useState(() => buildWeeklyData([]));
+  const [weeklyData, setWeeklyData] = useState(() => buildWeeklyData([], DEFAULT_TARGETS));
 
   useEffect(() => {
     if (isDemo && demoNutritionDocs) {
       // Mode démo : utiliser les données fictives
-      setWeeklyData(buildWeeklyData(demoNutritionDocs));
+      setWeeklyData(buildWeeklyData(demoNutritionDocs, targets));
       const todayKey = new Date().toISOString().split('T')[0];
       const todayDoc = demoNutritionDocs.find(d => d.date === todayKey);
       if (todayDoc) setTodayData(todayDoc);
@@ -218,7 +227,7 @@ export default function NutritionImport({ user, db, isDemo, demoNutritionDocs })
           if (snap.exists()) docs.push(snap.data());
         } catch {}
       }
-      setWeeklyData(buildWeeklyData(docs));
+      setWeeklyData(buildWeeklyData(docs, targets));
       const todayKey = today.toISOString().split('T')[0];
       const todayDoc = docs.find(d => d.date === todayKey);
       if (todayDoc) setTodayData(todayDoc);
@@ -231,11 +240,11 @@ export default function NutritionImport({ user, db, isDemo, demoNutritionDocs })
   const fat = todayData?.fat || 0;
   const protein = todayData?.protein || 0;
 
-  const carbsPct = carbs > 0 ? Math.round(carbs / DEFAULT_TARGETS.carbs * 100) : 0;
+  const carbsPct = carbs > 0 ? Math.round(carbs / targets.carbs * 100) : 0;
   const carbsStatus = carbsPct >= 100 ? { text: `${carbsPct}% de l'objectif`, cls: 'text-red-400' } : carbsPct >= 80 ? { text: `${carbsPct}% de l'objectif`, cls: 'text-yellow-400' } : { text: `${carbsPct}% de l'objectif`, cls: 'text-emerald-400' };
-  const fatPct = fat > 0 ? Math.round(fat / DEFAULT_TARGETS.fat * 100) : 0;
+  const fatPct = fat > 0 ? Math.round(fat / targets.fat * 100) : 0;
   const fatStatus = fatPct >= 80 ? { text: `${fatPct}% de l'objectif`, cls: 'text-emerald-400' } : fatPct >= 50 ? { text: `${fatPct}% de l'objectif`, cls: 'text-cyan-400' } : { text: `${fatPct}% de l'objectif`, cls: 'text-slate-400' };
-  const protPct = protein > 0 ? Math.round(protein / DEFAULT_TARGETS.protein * 100) : 0;
+  const protPct = protein > 0 ? Math.round(protein / targets.protein * 100) : 0;
   const protStatus = protPct >= 80 ? { text: `${protPct}% de l'objectif`, cls: 'text-emerald-400' } : protPct >= 50 ? { text: `${protPct}% de l'objectif`, cls: 'text-cyan-400' } : { text: `${protPct}% de l'objectif`, cls: 'text-slate-400' };
 
   const ketoneStatus = latestKetones >= 3.0 ? { text: 'Cétose profonde', cls: 'text-emerald-400' } : latestKetones >= 1.5 ? { text: 'Cétose optimale', cls: 'text-cyan-400' } : latestKetones >= 0.5 ? { text: 'Cétose légère', cls: 'text-[#EBAA6D]' } : { text: 'Pas en cétose', cls: 'text-slate-400' };
@@ -258,7 +267,7 @@ export default function NutritionImport({ user, db, isDemo, demoNutritionDocs })
           <span className="text-[10px] text-slate-500">— g / jour</span>
         </div>
         <div className="flex-1 flex items-center justify-center" style={{ minHeight: 260 }}>
-          <ReactECharts option={buildGaugeOption(Math.round(carbs), 0, DEFAULT_TARGETS.carbs, 5, ['rgba(241,135,1,0)', '#f18701'])} style={{ width: '100%', height: '100%', minHeight: 260 }} opts={{ renderer: 'svg' }} />
+          <ReactECharts option={buildGaugeOption(Math.round(carbs), 0, targets.carbs, 5, ['rgba(241,135,1,0)', '#f18701'])} style={{ width: '100%', height: '100%', minHeight: 260 }} opts={{ renderer: 'svg' }} />
         </div>
         <p className={`text-xs font-semibold text-center ${carbsStatus.cls}`}>{carbsStatus.text}</p>
       </>
@@ -270,7 +279,7 @@ export default function NutritionImport({ user, db, isDemo, demoNutritionDocs })
           <span className="text-[10px] text-slate-500">— g / jour</span>
         </div>
         <div className="flex-1 flex items-center justify-center" style={{ minHeight: 260 }}>
-          <ReactECharts option={buildGaugeOption(Math.round(fat), 0, DEFAULT_TARGETS.fat, 4, ['rgba(118,120,237,0)', '#7678ed'])} style={{ width: '100%', height: '100%', minHeight: 260 }} opts={{ renderer: 'svg' }} />
+          <ReactECharts option={buildGaugeOption(Math.round(fat), 0, targets.fat, 4, ['rgba(118,120,237,0)', '#7678ed'])} style={{ width: '100%', height: '100%', minHeight: 260 }} opts={{ renderer: 'svg' }} />
         </div>
         <p className={`text-xs font-semibold text-center ${fatStatus.cls}`}>{fatStatus.text}</p>
       </>
@@ -282,7 +291,7 @@ export default function NutritionImport({ user, db, isDemo, demoNutritionDocs })
           <span className="text-[10px] text-slate-500">— g / jour</span>
         </div>
         <div className="flex-1 flex items-center justify-center" style={{ minHeight: 260 }}>
-          <ReactECharts option={buildGaugeOption(Math.round(protein), 0, DEFAULT_TARGETS.protein, 5, ['rgba(247,184,1,0)', '#f7b801'])} style={{ width: '100%', height: '100%', minHeight: 260 }} opts={{ renderer: 'svg' }} />
+          <ReactECharts option={buildGaugeOption(Math.round(protein), 0, targets.protein, 5, ['rgba(247,184,1,0)', '#f7b801'])} style={{ width: '100%', height: '100%', minHeight: 260 }} opts={{ renderer: 'svg' }} />
         </div>
         <p className={`text-xs font-semibold text-center ${protStatus.cls}`}>{protStatus.text}</p>
       </>
@@ -412,8 +421,8 @@ export default function NutritionImport({ user, db, isDemo, demoNutritionDocs })
           // Ligne objectif kcal
           {
             type: 'line',
-            name: `Objectif (${DEFAULT_TARGETS.calories} kcal)`,
-            data: days.map(() => DEFAULT_TARGETS.calories),
+            name: `Objectif (${targets.calories} kcal)`,
+            data: days.map(() => targets.calories),
             symbol: 'none',
             lineStyle: { color: '#94a3b8', width: 2, type: 'dashed' },
             itemStyle: { color: '#94a3b8' },
@@ -508,7 +517,7 @@ export default function NutritionImport({ user, db, isDemo, demoNutritionDocs })
         glucides: Math.round(carbs),
         lipides: Math.round(fat),
         proteines: Math.round(protein),
-        objectifs: { glucides: DEFAULT_TARGETS.carbs, lipides: DEFAULT_TARGETS.fat, proteines: DEFAULT_TARGETS.protein, calories: DEFAULT_TARGETS.calories },
+        objectifs: { glucides: targets.carbs, lipides: targets.fat, proteines: targets.protein, calories: targets.calories },
       };
       const weekly = weeklyData.map(d => ({ jour: d.day, date: d.date, calories: d.calories, glucides: d.carbs, lipides: d.fat, proteines: d.protein }));
       const keto = { glucose: latestGlucose, cetones: latestKetones, gki: latestGKI };

@@ -2162,6 +2162,41 @@ function SettingsView({ user, db, isWithingsEnabled, handleWithingsAuth, isStrav
               </div>
             ))}
           </div>
+          {/* NUTRITION KETO */}
+          <div className="bg-slate-900/50 p-3 rounded-lg border border-slate-600/50 mt-4">
+            <div className="text-sm font-bold text-emerald-400 mb-2">Nutrition — Régime cétogène</div>
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <div>
+                <label className="text-[10px] text-slate-500 uppercase tracking-wider">Obj. Calories</label>
+                <input type="number" value={goals.targetCalories} onChange={e => updateGoal('targetCalories', e.target.value)} disabled={isDemo} className={`w-full bg-slate-800 border border-slate-600 rounded p-2 text-white text-sm mt-1 ${isDemo ? 'opacity-50 cursor-not-allowed' : ''}`} />
+              </div>
+              <div className="flex items-end">
+                <span className="text-xs text-slate-400 pb-2">kcal / jour</span>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              {[
+                { label: 'Glucides', key: 'pctCarbs', color: 'text-orange-400' },
+                { label: 'Protéines', key: 'pctProtein', color: 'text-yellow-400' },
+                { label: 'Lipides', key: 'pctFat', color: 'text-violet-400' },
+              ].map(({ label, key, color }) => {
+                const pct = goals[key] || 0;
+                const cal = goals.targetCalories || 0;
+                const divisor = key === 'pctFat' ? 9 : 4;
+                const grams = Math.round(cal * pct / 100 / divisor);
+                return (
+                  <div key={key}>
+                    <label className={`text-[10px] uppercase tracking-wider ${color}`}>{label} (%)</label>
+                    <input type="number" value={goals[key]} onChange={e => updateGoal(key, e.target.value)} disabled={isDemo} className={`w-full bg-slate-800 border border-slate-600 rounded p-2 text-white text-sm mt-1 ${isDemo ? 'opacity-50 cursor-not-allowed' : ''}`} />
+                    <div className="text-[10px] text-slate-500 mt-1">= {grams}g / jour</div>
+                  </div>
+                );
+              })}
+            </div>
+            {(goals.pctCarbs + goals.pctProtein + goals.pctFat) !== 100 && (
+              <p className="text-[10px] text-red-400 mt-2 text-center">Total : {goals.pctCarbs + goals.pctProtein + goals.pctFat}% — doit faire 100%</p>
+            )}
+          </div>
           <p className="text-[10px] text-slate-500 mt-3 text-center">Les modifications sont sauvegardées automatiquement</p>
        </section>
 
@@ -2649,6 +2684,7 @@ function App() {
     startWeight: 106, targetWeight: 95,
     startFat: 26, targetFat: 15,
     startWaist: 107, targetWaist: 95,
+    targetCalories: 2200, pctCarbs: 8, pctProtein: 25, pctFat: 67,
   });
 
   // HEVY STATE
@@ -3534,7 +3570,7 @@ function App() {
       case 'workout': return <HevyView hevyWorkouts={hevyWorkouts} loadingHevy={loadingHevy} fetchHevyWorkouts={demoFetchHevy} hevyError={hevyError} hevySyncStatus={hevySyncStatus} onDeleteWorkout={demoDeleteHevy} isDemo={isDemo} />;
       case 'health': return <HealthTracker user={user} db={db} healthLogs={healthLogs} setHealthLogs={demoSetHealthLogs} isSyncingWithings={isSyncingWithings} onWithingsSync={demoWithingsSync} goals={goals} isDemo={isDemo} onAddWater={(amount) => { handleAddWater(amount); }} onOpenWaterModal={() => setShowWaterModal(true)} />;
       case 'endurance': return <EnduranceView stravaLogs={stravaLogs} onSync={demoStravaSync} isSyncing={isSyncingStrava} isDemo={isDemo} />;
-      case 'nutrition': return <NutritionImport user={user} db={db} isDemo={isDemo} demoNutritionDocs={isDemo ? DEMO_DATA.nutritionDocs : null} />;
+      case 'nutrition': return <NutritionImport user={user} db={db} isDemo={isDemo} demoNutritionDocs={isDemo ? DEMO_DATA.nutritionDocs : null} goals={goals} />;
       case 'settings': return <SettingsView user={user} db={db} isWithingsEnabled={isDemo || isWithingsEnabled} handleWithingsAuth={isDemo ? demoNoOp : handleStartWithingsAuth} isStravaEnabled={isDemo || isStravaEnabled} handleStravaAuth={isDemo ? demoNoOp : handleStartStravaAuth} isHuaweiEnabled={isDemo || isHuaweiEnabled} handleHuaweiAuth={isDemo ? demoNoOp : handleStartHuaweiAuth} huaweiNeedsReconnect={huaweiNeedsReconnect} withingsNeedsReconnect={false} hevyApiKey={hevyApiKey} onSaveHevyApiKey={isDemo ? demoNoOp : saveHevyApiKey} goals={goals} setGoals={demoSetGoals} dataSourcePrefs={dataSourcePrefs} setDataSourcePrefs={setDataSourcePrefs} connectedSources={connectedSources} isDemo={isDemo} />;
       default: return <div className="flex items-center justify-center h-64 text-slate-500">Chargement...</div>;
     }
