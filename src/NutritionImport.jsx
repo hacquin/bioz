@@ -82,7 +82,8 @@ function buildWeeklyData(nutritionDocs, macroTargets = DEFAULT_TARGETS) {
 }
 
 // --- GAUGE BUILDER ---
-function buildGaugeOption(value, min, max, splitNumber, color, formatter) {
+function buildGaugeOption(value, min, max, splitNumber, color, formatter, reverse) {
+  const displayValue = reverse ? (max - value + min) : Math.min(value, max);
   return {
     backgroundColor: 'transparent',
     series: [{
@@ -91,14 +92,14 @@ function buildGaugeOption(value, min, max, splitNumber, color, formatter) {
       axisLine: { lineStyle: { width: 18, color: [[1, '#334155']] }, roundCap: true },
       axisTick: { show: false },
       splitLine: { length: 15, lineStyle: { width: 2, color: '#999' } },
-      axisLabel: { distance: 25, color: '#999', fontSize: 14 },
+      axisLabel: { distance: 25, color: '#999', fontSize: 14, formatter: reverse ? (v => `${max + min - v}`) : undefined },
       anchor: { show: true, showAbove: true, size: 25, itemStyle: { borderWidth: 10 } },
       title: { show: false },
-      detail: { valueAnimation: true, fontSize: 46, fontWeight: 400, color: '#f8fafc', offsetCenter: [0, '70%'], formatter: formatter || (v => `${v}`) },
+      detail: { valueAnimation: true, fontSize: 46, fontWeight: 400, color: '#f8fafc', offsetCenter: [0, '70%'], formatter: formatter || (v => reverse ? `${max + min - v}` : `${v}`) },
       pointer: { itemStyle: { color: 'auto' } },
       min, max, splitNumber,
       itemStyle: { color: color[1] },
-      data: [{ value: Math.min(value, max) }]
+      data: [{ value: Math.min(displayValue, max) }]
     }]
   };
 }
@@ -480,7 +481,7 @@ export default function NutritionImport({ user, db, isDemo, demoNutritionDocs, g
       <>
         <div className="flex items-baseline gap-2 mb-0"><h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">GKI</h3><span className="text-[10px] text-slate-500">— Indice Glucose-Cétone</span></div>
         <div className="flex-1 flex items-center justify-center" style={{ minHeight: 260 }}>
-          <ReactECharts option={buildGaugeOption(latestGKI, 0, 12, 12, latestGKI <= 4 ? ['#10b981', '#34d399'] : latestGKI <= 9 ? ['#f59e0b', '#fbbf24'] : ['#ef4444', '#f87171'], v => v.toFixed(1))} style={{ width: '100%', height: '100%', minHeight: 260 }} opts={{ renderer: 'svg' }} />
+          <ReactECharts option={buildGaugeOption(latestGKI, 0, 12, 12, latestGKI <= 4 ? ['#10b981', '#34d399'] : latestGKI <= 9 ? ['#f59e0b', '#fbbf24'] : ['#ef4444', '#f87171'], v => (12 - v).toFixed(1), true)} style={{ width: '100%', height: '100%', minHeight: 260 }} opts={{ renderer: 'svg' }} />
         </div>
         <p className={`text-xs font-semibold text-center ${gkiStatus.cls}`}>{gkiStatus.text}</p>
       </>
