@@ -1923,7 +1923,7 @@ BMR : ${f(ind.bmr)} kcal`;
 }
 
 // --- SETTINGS VIEW ---
-function SettingsView({ user, db, isWithingsEnabled, handleWithingsAuth, isStravaEnabled, handleStravaAuth, isHuaweiEnabled, handleHuaweiAuth, huaweiNeedsReconnect, withingsNeedsReconnect, hevyApiKey, onSaveHevyApiKey, goals, setGoals, dataSourcePrefs, setDataSourcePrefs, connectedSources, isDemo }) {
+function SettingsView({ user, db, isWithingsEnabled, handleWithingsAuth, isStravaEnabled, handleStravaAuth, isHuaweiEnabled, handleHuaweiAuth, huaweiNeedsReconnect, withingsNeedsReconnect, hevyApiKey, onSaveHevyApiKey, goals, setGoals, dataSourcePrefs, setDataSourcePrefs, connectedSources, isDemo, setNutritionVersion }) {
   const [hevyKeyInput, setHevyKeyInput] = useState(hevyApiKey || '');
   const [hevyKeySaved, setHevyKeySaved] = useState(false);
 
@@ -1934,7 +1934,6 @@ function SettingsView({ user, db, isWithingsEnabled, handleWithingsAuth, isStrav
   const [csvImporting, setCsvImporting] = useState(false);
   const [csvResult, setCsvResult] = useState(null);
   const [csvConflicts, setCsvConflicts] = useState(null);
-  const [nutritionVersion, setNutritionVersion] = useState(0);
   const csvFileRef = useRef(null);
 
   const csvReset = () => { setCsvParsedRows(null); setCsvError(null); setCsvResult(null); setCsvConflicts(null); };
@@ -2708,6 +2707,9 @@ function App() {
   const [hevySyncStatus, setHevySyncStatus] = useState(null); // Message de succès (vert)
   const lastHevyFetch = useRef(null);                         // Timestamp du dernier fetch
   const [hevyApiKey, setHevyApiKey] = useState('');            // Clé API Hevy personnelle (per-user)
+
+  // NUTRITION VERSION (incremented after CSV import to trigger refresh)
+  const [nutritionVersion, setNutritionVersion] = useState(0);
 
   // WITHINGS STATE
   const [isSyncingWithings, setIsSyncingWithings] = useState(false);
@@ -3588,7 +3590,7 @@ function App() {
       case 'health': return <HealthTracker user={user} db={db} healthLogs={healthLogs} setHealthLogs={demoSetHealthLogs} isSyncingWithings={isSyncingWithings} onWithingsSync={demoWithingsSync} goals={goals} isDemo={isDemo} onAddWater={(amount) => { handleAddWater(amount); }} onOpenWaterModal={() => setShowWaterModal(true)} />;
       case 'endurance': return <EnduranceView stravaLogs={stravaLogs} onSync={demoStravaSync} isSyncing={isSyncingStrava} isDemo={isDemo} />;
       case 'nutrition': return <NutritionImport user={user} db={db} isDemo={isDemo} demoNutritionDocs={isDemo ? DEMO_DATA.nutritionDocs : null} goals={goals} healthLogs={healthLogs} nutritionVersion={nutritionVersion} />;
-      case 'settings': return <SettingsView user={user} db={db} isWithingsEnabled={isDemo || isWithingsEnabled} handleWithingsAuth={isDemo ? demoNoOp : handleStartWithingsAuth} isStravaEnabled={isDemo || isStravaEnabled} handleStravaAuth={isDemo ? demoNoOp : handleStartStravaAuth} isHuaweiEnabled={isDemo || isHuaweiEnabled} handleHuaweiAuth={isDemo ? demoNoOp : handleStartHuaweiAuth} huaweiNeedsReconnect={huaweiNeedsReconnect} withingsNeedsReconnect={false} hevyApiKey={hevyApiKey} onSaveHevyApiKey={isDemo ? demoNoOp : saveHevyApiKey} goals={goals} setGoals={demoSetGoals} dataSourcePrefs={dataSourcePrefs} setDataSourcePrefs={setDataSourcePrefs} connectedSources={connectedSources} isDemo={isDemo} />;
+      case 'settings': return <SettingsView user={user} db={db} isWithingsEnabled={isDemo || isWithingsEnabled} handleWithingsAuth={isDemo ? demoNoOp : handleStartWithingsAuth} isStravaEnabled={isDemo || isStravaEnabled} handleStravaAuth={isDemo ? demoNoOp : handleStartStravaAuth} isHuaweiEnabled={isDemo || isHuaweiEnabled} handleHuaweiAuth={isDemo ? demoNoOp : handleStartHuaweiAuth} huaweiNeedsReconnect={huaweiNeedsReconnect} withingsNeedsReconnect={false} hevyApiKey={hevyApiKey} onSaveHevyApiKey={isDemo ? demoNoOp : saveHevyApiKey} goals={goals} setGoals={demoSetGoals} dataSourcePrefs={dataSourcePrefs} setDataSourcePrefs={setDataSourcePrefs} connectedSources={connectedSources} isDemo={isDemo} setNutritionVersion={setNutritionVersion} />;
       default: return <div className="flex items-center justify-center h-64 text-slate-500">Chargement...</div>;
     }
   };
