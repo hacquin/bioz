@@ -383,7 +383,7 @@ export default function NutritionImport({ user, db, isDemo, demoNutritionDocs, g
             <span className="text-[10px] text-slate-500">— % de l'objectif</span>
           </div>
           <div className="flex-1" style={{ minHeight: 280 }}>
-            <ReactECharts option={option} style={{ width: '100%', height: '100%', minHeight: 280 }} opts={{ renderer: 'svg' }} />
+            <ReactECharts option={option} notMerge={true} style={{ width: '100%', height: '100%', minHeight: 280 }} opts={{ renderer: 'svg' }} />
           </div>
         </>
       );
@@ -452,7 +452,7 @@ export default function NutritionImport({ user, db, isDemo, demoNutritionDocs, g
             <span className="text-[10px] text-slate-500">— Calories par repas</span>
           </div>
           <div className="flex-1" style={{ minHeight: 280 }}>
-            <ReactECharts option={option} style={{ width: '100%', height: '100%', minHeight: 280 }} opts={{ renderer: 'svg' }} />
+            <ReactECharts option={option} notMerge={true} style={{ width: '100%', height: '100%', minHeight: 280 }} opts={{ renderer: 'svg' }} />
           </div>
         </>
       );
