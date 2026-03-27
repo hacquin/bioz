@@ -229,6 +229,32 @@ const generateDemoHevyWorkouts = () => {
   return workouts.sort((a, b) => new Date(b.start_time) - new Date(a.start_time)).slice(0, 50);
 };
 
+const generateDemoNutritionDocs = () => {
+  const docs = [];
+  const today = new Date();
+  // Générer 30 jours de données nutrition (régime cétogène)
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    // Skip ~20% des jours
+    if (Math.random() < 0.2 && i > 0 && i < 28) continue;
+    const date = d.toISOString().split('T')[0];
+    const carbs = 8 + Math.round(Math.random() * 18); // 8-26g (keto)
+    const fat = 90 + Math.round(Math.random() * 70); // 90-160g
+    const protein = 70 + Math.round(Math.random() * 60); // 70-130g
+    const fiber = 3 + Math.round(Math.random() * 10);
+    const sugars = 1 + Math.round(Math.random() * 6);
+    const sodium = 1200 + Math.round(Math.random() * 1500);
+    const petitDej = 200 + Math.round(Math.random() * 400);
+    const dejeuner = 300 + Math.round(Math.random() * 500);
+    const diner = 250 + Math.round(Math.random() * 450);
+    const encas = Math.random() > 0.4 ? 100 + Math.round(Math.random() * 300) : 0;
+    const calories = petitDej + dejeuner + diner + encas;
+    docs.push({ date, calories, carbs, fat, protein, fiber, sugars, sodium, petitDej, dejeuner, diner, encas, source: 'cronometer' });
+  }
+  return docs;
+};
+
 export const DEMO_DATA = {
   healthLogs: generateDemoHealthLogs(),
   stravaLogs: generateDemoStravaLogs(),
@@ -241,6 +267,7 @@ export const DEMO_DATA = {
     startWaist: 107,
     targetWaist: 95,
   },
+  nutritionDocs: generateDemoNutritionDocs(),
   aiBilan: {
     text: "La tendance sur cinq jours confirme une descente régulière : le poids moyen passe sous les 99 kg et le tour de taille flirte avec les 99 cm, ce qui est plutôt encourageant pour quelqu'un qui a démarré à 107. La graisse corporelle suit le mouvement autour de 20%, dans le bon sens. L'hydratation est correcte, pas de signal d'alerte de ce côté.\n\n[CONSEILS]\nContinue sur cette lancée cétogène sans changer une virgule, la machine tourne.\nPense à mesurer ta tension plus régulièrement, deux points de données par semaine c'est le minimum pour repérer une tendance.\nUn petit rameur ou une marche rapide les jours off musculation ferait du bien au cardio sans taper dans la récup.",
     date: new Date().toISOString().split('T')[0],

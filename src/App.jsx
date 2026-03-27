@@ -668,8 +668,10 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings,
   const [muscleMass, setMuscleMass] = useState('');
   const [hydration, setHydration] = useState('');
   const [steps, setSteps] = useState('');
-  const [distance, setDistance] = useState(''); 
-  const [waist, setWaist] = useState(''); 
+  const [distance, setDistance] = useState('');
+  const [waist, setWaist] = useState('');
+  const [glucose, setGlucose] = useState('');
+  const [ketones, setKetones] = useState(''); 
 
   const [startDate, setStartDate] = useState('2026-01-01');
   const [endDate, setEndDate] = useState(() => new Date().toISOString().split('T')[0]);
@@ -768,20 +770,25 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings,
   const latestVascularAge = getLastKnownValue('vascularAge');
   const latestRestingHR = getLastKnownValue('restingHR');
 
-  // --- DONNÉES KETO-MOJO (en attente API) ---
-  const ketoData = [
-    { date: '15/11', glucose: 95, ketones: 0.8, gki: 95 / 18.016 / 0.8 },
-    { date: '01/12', glucose: 102, ketones: 0.5, gki: 102 / 18.016 / 0.5 },
-    { date: '15/12', glucose: 98, ketones: 0.7, gki: 98 / 18.016 / 0.7 },
-    { date: '10/01', glucose: 105, ketones: 0.4, gki: 105 / 18.016 / 0.4 },
-    { date: '01/02', glucose: 100, ketones: 0.6, gki: 100 / 18.016 / 0.6 },
-    { date: '15/02', glucose: 97, ketones: 0.9, gki: 97 / 18.016 / 0.9 },
-    { date: '01/03', glucose: 103, ketones: 0.5, gki: 103 / 18.016 / 0.5 },
-    { date: '21/03', glucose: 102, ketones: 0.5, gki: 102 / 18.016 / 0.5 },
-  ];
-  const latestGlucose = 102;
-  const latestKetones = 0.5;
-  const latestGKI = parseFloat((latestGlucose / 18.016 / latestKetones).toFixed(1));
+  // --- DONNÉES KETO (glucose & cétones depuis saisie manuelle) ---
+  const latestGlucose = getLastKnownValue('glucose');
+  const latestKetones = getLastKnownValue('ketones');
+  const latestGKI = (latestGlucose && latestKetones) ? parseFloat((latestGlucose / 18.016 / latestKetones).toFixed(1)) : null;
+
+  const ketoData = useMemo(() => {
+    return [...healthLogs]
+      .filter(l => l.glucose || l.ketones)
+      .sort((a, b) => new Date(a.date) - new Date(b.date))
+      .map(l => {
+        const d = new Date(l.date);
+        return {
+          date: `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`,
+          glucose: l.glucose || null,
+          ketones: l.ketones || null,
+          gki: (l.glucose && l.ketones) ? l.glucose / 18.016 / l.ketones : null,
+        };
+      });
+  }, [healthLogs]);
 
   // --- BILAN IA ---
   const [aiBilan, setAiBilan] = useState(null);
@@ -912,8 +919,10 @@ BMR : ${f(ind.bmr)} kcal`;
     const cleanWaist = waist ? parseFloat(waist.replace(',', '.')) : null;
     const cleanSteps = steps ? parseInt(steps) : null;
     const cleanDistance = distance ? parseFloat(distance.replace(',', '.')) : null;
+    const cleanGlucose = glucose ? parseFloat(glucose.replace(',', '.')) : null;
+    const cleanKetones = ketones ? parseFloat(ketones.replace(',', '.')) : null;
 
-    if (!cleanWeight && !cleanSteps && !cleanWaist && !cleanHydration && !cleanDistance) return;
+    if (!cleanWeight && !cleanSteps && !cleanWaist && !cleanHydration && !cleanDistance && !cleanGlucose && !cleanKetones) return;
 
     // FIX P2: On lit TOUJOURS les données les plus récentes depuis Firestore avant de fusionner
     // Cela évite d'écraser des saisies faites sur un autre device entre temps
@@ -931,17 +940,17 @@ BMR : ${f(ind.bmr)} kcal`;
     let updatedLogs;
     if (existingIndex >= 0) {
         const existing = latestLogs[existingIndex];
-        const updatedEntry = { ...existing, weight: cleanWeight || existing.weight, bodyFat: cleanBodyFat || existing.bodyFat, muscleMass: cleanMuscleMass || existing.muscleMass, hydration: cleanHydration || existing.hydration, steps: cleanSteps || existing.steps, distance: cleanDistance || existing.distance, waist: cleanWaist || existing.waist };
+        const updatedEntry = { ...existing, weight: cleanWeight || existing.weight, bodyFat: cleanBodyFat || existing.bodyFat, muscleMass: cleanMuscleMass || existing.muscleMass, hydration: cleanHydration || existing.hydration, steps: cleanSteps || existing.steps, distance: cleanDistance || existing.distance, waist: cleanWaist || existing.waist, glucose: cleanGlucose || existing.glucose, ketones: cleanKetones || existing.ketones };
         updatedLogs = [...latestLogs];
         updatedLogs[existingIndex] = updatedEntry;
     } else {
-        const newEntry = { id: generateId(), date: new Date(date).toISOString(), weight: cleanWeight, bodyFat: cleanBodyFat, muscleMass: cleanMuscleMass, hydration: cleanHydration, steps: cleanSteps, distance: cleanDistance, waist: cleanWaist };
+        const newEntry = { id: generateId(), date: new Date(date).toISOString(), weight: cleanWeight, bodyFat: cleanBodyFat, muscleMass: cleanMuscleMass, hydration: cleanHydration, steps: cleanSteps, distance: cleanDistance, waist: cleanWaist, glucose: cleanGlucose, ketones: cleanKetones };
         updatedLogs = [...latestLogs, newEntry];
     }
     
     updatedLogs.sort((a, b) => new Date(a.date) - new Date(b.date));
     setHealthLogs(updatedLogs);
-    setWeight(''); setBodyFat(''); setMuscleMass(''); setHydration(''); setSteps(''); setWaist(''); setDistance('');
+    setWeight(''); setBodyFat(''); setMuscleMass(''); setHydration(''); setSteps(''); setWaist(''); setDistance(''); setGlucose(''); setKetones('');
   };
 
   const deleteEntry = async (id) => { 
@@ -968,7 +977,7 @@ BMR : ${f(ind.bmr)} kcal`;
       logs.forEach(log => {
           const key = getGroupKey(log.date, timeFrame);
           const sortKey = getSortKey(log.date, timeFrame);
-          if (!groups[key]) groups[key] = { date: key, sortKey, weightSum: 0, fatSum: 0, musSum: 0, hydraSum: 0, stepSum:0, waistSum: 0, distSum: 0, sysSum: 0, diaSum: 0, countW: 0, countS: 0, countWaist: 0, countSys: 0, countDia: 0, pwvSum: 0, countPwv: 0, visceralSum: 0, countVisc: 0, bmrSum: 0, countBmr: 0, hrSum: 0, countHr: 0 };
+          if (!groups[key]) groups[key] = { date: key, sortKey, weightSum: 0, fatSum: 0, musSum: 0, hydraSum: 0, stepSum:0, waistSum: 0, distSum: 0, sysSum: 0, diaSum: 0, countW: 0, countS: 0, countWaist: 0, countSys: 0, countDia: 0, pwvSum: 0, countPwv: 0, visceralSum: 0, countVisc: 0, bmrSum: 0, countBmr: 0, hrSum: 0, countHr: 0, glucoseSum: 0, countGlucose: 0, ketonesSum: 0, countKetones: 0 };
           if (log.weight) { groups[key].weightSum += log.weight; groups[key].countW += 1; }
           if (log.bodyFat) groups[key].fatSum += log.bodyFat;
           if (log.muscleMass) groups[key].musSum += log.muscleMass;
@@ -982,6 +991,8 @@ BMR : ${f(ind.bmr)} kcal`;
           if (log.visceralFat) { groups[key].visceralSum += log.visceralFat; groups[key].countVisc += 1; }
           if (log.bmr) { groups[key].bmrSum += log.bmr; groups[key].countBmr += 1; }
           if (log.restingHR) { groups[key].hrSum += log.restingHR; groups[key].countHr += 1; }
+          if (log.glucose) { groups[key].glucoseSum += log.glucose; groups[key].countGlucose += 1; }
+          if (log.ketones) { groups[key].ketonesSum += log.ketones; groups[key].countKetones += 1; }
       });
       return Object.values(groups).sort((a, b) => a.sortKey - b.sortKey).map(g => ({
             date: g.date,
@@ -997,7 +1008,9 @@ BMR : ${f(ind.bmr)} kcal`;
             pwv: g.countPwv > 0 ? parseFloat((g.pwvSum / g.countPwv).toFixed(1)) : null,
             visceralFat: g.countVisc > 0 ? parseFloat((g.visceralSum / g.countVisc).toFixed(1)) : null,
             bmr: g.countBmr > 0 ? Math.round(g.bmrSum / g.countBmr) : null,
-            restingHR: g.countHr > 0 ? Math.round(g.hrSum / g.countHr) : null
+            restingHR: g.countHr > 0 ? Math.round(g.hrSum / g.countHr) : null,
+            glucose: g.countGlucose > 0 ? Math.round(g.glucoseSum / g.countGlucose) : null,
+            ketones: g.countKetones > 0 ? parseFloat((g.ketonesSum / g.countKetones).toFixed(2)) : null
       }));
   };
 
@@ -1711,7 +1724,7 @@ BMR : ${f(ind.bmr)} kcal`;
                 <div className="flex justify-between items-start mb-1">
                   <div>
                     <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">GLUCOSE & CÉTONES — HISTORIQUE</h3>
-                    <p className="text-[10px] text-slate-500 mt-1">Source : Keto-Mojo <span className="text-amber-400/70">(en attente API)</span></p>
+                    <p className="text-[10px] text-slate-500 mt-1">Source : Saisie manuelle</p>
                   </div>
                   <div className="flex gap-4">
                     <div className="flex items-center gap-2 text-xs font-bold text-[#a1a1aa]"><div className="w-3 h-0.5 bg-[#a1a1aa] rounded"></div><div className="w-2.5 h-2.5 rounded-full bg-[#a1a1aa]"></div> Glucose sanguin mg/dl</div>
@@ -1735,7 +1748,7 @@ BMR : ${f(ind.bmr)} kcal`;
             );
           })(),
           h_ketoneEchart: (() => {
-            const val = latestKetones;
+            const val = latestKetones || 0;
             const ketoneStatus = val >= 3.0 ? { text: 'Cétose profonde', cls: 'text-emerald-400' } : val >= 1.5 ? { text: 'Cétose optimale', cls: 'text-cyan-400' } : val >= 0.5 ? { text: 'Cétose légère', cls: 'text-[#EBAA6D]' } : { text: 'Pas en cétose', cls: 'text-slate-400' };
             const option = {
               backgroundColor: 'transparent',
@@ -1772,7 +1785,7 @@ BMR : ${f(ind.bmr)} kcal`;
             );
           })(),
           h_glucoseEchart: (() => {
-            const val = latestGlucose;
+            const val = latestGlucose || 0;
             const glucoseStatus = val < 70 ? { text: 'Hypoglycémie', cls: 'text-blue-400' } : val < 100 ? { text: 'Glycémie normale', cls: 'text-emerald-400' } : val < 126 ? { text: 'Pré-diabète (glycémie élevée)', cls: 'text-yellow-400' } : { text: 'Diabète', cls: 'text-red-400' };
             const option = {
               backgroundColor: 'transparent',
@@ -1809,7 +1822,7 @@ BMR : ${f(ind.bmr)} kcal`;
             );
           })(),
           h_gkiEchart: (() => {
-            const val = latestGKI;
+            const val = latestGKI || 0;
             const gkiStatus = val <= 1 ? { text: 'Cétose thérapeutique', cls: 'text-emerald-400' } : val <= 3 ? { text: 'Cétose élevée', cls: 'text-cyan-400' } : val <= 6 ? { text: 'Cétose modérée', cls: 'text-blue-400' } : val <= 9 ? { text: 'Cétose légère', cls: 'text-yellow-400' } : { text: 'Pas en cétose', cls: 'text-red-400' };
             const option = {
               backgroundColor: 'transparent',
@@ -1888,6 +1901,8 @@ BMR : ${f(ind.bmr)} kcal`;
             <input type="text" value={bodyFat} onChange={e => setBodyFat(e.target.value)} placeholder="Fat %" className="bg-slate-900 border border-slate-600 rounded p-2 text-white" disabled={isDemo} />
             <input type="text" value={muscleMass} onChange={e => setMuscleMass(e.target.value)} placeholder="Mus %" className="bg-slate-900 border border-slate-600 rounded p-2 text-white" disabled={isDemo} />
             <input type="text" value={hydration} onChange={e => setHydration(e.target.value)} placeholder="Eau %" className="bg-slate-900 border border-slate-600 rounded p-2 text-white" disabled={isDemo} />
+            <input type="text" value={glucose} onChange={e => setGlucose(e.target.value)} placeholder="Glucose (mg/dl)" className="bg-slate-900 border border-slate-600 rounded p-2 text-white border-[#EBAA6D]/50" disabled={isDemo} />
+            <input type="text" value={ketones} onChange={e => setKetones(e.target.value)} placeholder="Cétones (mmol/L)" className="bg-slate-900 border border-slate-600 rounded p-2 text-white border-cyan-500/50" disabled={isDemo} />
             <button onClick={handleSave} disabled={isDemo} className="col-span-2 md:col-span-3 w-full bg-violet-600 text-white font-bold p-2 rounded hover:bg-violet-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">Enregistrer</button>
         </div>
       </div>
@@ -1896,7 +1911,7 @@ BMR : ${f(ind.bmr)} kcal`;
          {[...healthLogs].reverse().slice(0, 5).map(log => (
              <div key={log.id} className="flex justify-between items-center bg-slate-800 p-3 rounded-lg border border-slate-700">
                  <div className="text-white text-sm">
-                    {formatDate(log.date)} {log.weight && ` - ${log.weight}kg`} {log.steps && ` - ${log.steps} pas`} {log.waist && ` - ${log.waist} cm`}
+                    {formatDate(log.date)} {log.weight && ` - ${log.weight}kg`} {log.steps && ` - ${log.steps} pas`} {log.waist && ` - ${log.waist} cm`} {log.glucose && ` - ${log.glucose} mg/dl`} {log.ketones && ` - ${log.ketones} mmol/L`}
                  </div>
                  {!isDemo && <button onClick={() => deleteEntry(log.id)} className="text-slate-500 hover:text-red-500 p-2"><Trash2 size={16} /></button>}
              </div>
@@ -2310,14 +2325,10 @@ function SettingsView({ user, db, isWithingsEnabled, handleWithingsAuth, isStrav
             <div className="bg-[#EBAA6D] text-slate-900 font-bold w-8 h-8 rounded-full flex items-center justify-center text-xs">KM</div>
             Keto-Mojo
           </h3>
-          <p className="text-sm text-slate-300 mb-3">Synchronisez automatiquement vos mesures de glucose et cétones sanguines.</p>
-          <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 mb-3">
-            <p className="text-xs text-amber-300">En attente de la disponibilité de l'API Keto-Mojo. La connexion sera activée dès que l'API sera ouverte aux développeurs.</p>
+          <p className="text-sm text-slate-300 mb-3">Saisissez vos mesures de glucose et cétones sanguines via le formulaire de saisie.</p>
+          <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-3 mb-3">
+            <p className="text-xs text-emerald-300">Les champs Glucose (mg/dl) et Cétones (mmol/L) sont disponibles dans le formulaire « Nouvelle mesure ». Le GKI est calculé automatiquement.</p>
           </div>
-          <a href="https://keto-mojo.com" target="_blank" rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 bg-[#EBAA6D] hover:bg-[#d4944f] text-slate-900 text-sm font-medium px-4 py-2 rounded-lg transition-colors">
-            <ExternalLink size={16} /> keto-mojo.com
-          </a>
        </section>
     </div>
   );
@@ -3339,7 +3350,7 @@ function App() {
             goals
         });
         await setDoc(doc(db, "users", user.uid), safeData, { merge: true });
-        setSyncStatus('saved'); 
+        setSyncStatus('saved');
         setTimeout(() => setSyncStatus('idle'), 2000);
       } catch (e) { 
         console.error("Save Error:", e); 
@@ -3454,16 +3465,17 @@ function App() {
           const jan1 = Math.floor(new Date(new Date().getFullYear(), 0, 1).getTime() / 1000);
           const monthsSinceJan = new Date().getMonth() + 1;
 
+          const withingsPostHeaders = { 'Content-Type': 'application/x-www-form-urlencoded', 'Authorization': `Bearer ${tokenData.access_token}` };
           const [measResponse1, measResponse2, actDataArray] = await Promise.all([
-              fetchWithFallback(`${WITHINGS_CONFIG.measureUrl}?action=getmeas&meastype=1,6,11,76,77,91,170,226,155&category=1&startdate=${jan1}&enddate=${now}`, { method: 'GET', headers: { 'Authorization': `Bearer ${tokenData.access_token}` } }),
-              fetchWithFallback(`${WITHINGS_CONFIG.measureUrl}?action=getmeas&meastype=9,10&category=1&startdate=${jan1}&enddate=${now}`, { method: 'GET', headers: { 'Authorization': `Bearer ${tokenData.access_token}` } }),
+              fetchWithFallback(WITHINGS_CONFIG.measureUrl, { method: 'POST', headers: withingsPostHeaders, body: new URLSearchParams({ action: 'getmeas', meastypes: '1,6,11,76,77,91,170,226,155', category: '1', startdate: jan1, enddate: now }).toString() }),
+              fetchWithFallback(WITHINGS_CONFIG.measureUrl, { method: 'POST', headers: withingsPostHeaders, body: new URLSearchParams({ action: 'getmeas', meastypes: '9,10', category: '1', startdate: jan1, enddate: now }).toString() }),
               Promise.all(
                   Array.from({length: monthsSinceJan}, (_, i) => {
                       const endTs = now - (i * 30 * 24 * 3600);
                       const startTs = endTs - (30 * 24 * 3600);
                       const startDateStr = new Date(startTs * 1000).toISOString().split('T')[0];
                       const endDateStr = new Date(endTs * 1000).toISOString().split('T')[0];
-                      return fetchWithFallback(`${WITHINGS_CONFIG.activityUrl}?action=getactivity&startdateymd=${startDateStr}&enddateymd=${endDateStr}&data_fields=steps,distance`, { method: 'GET', headers: { 'Authorization': `Bearer ${tokenData.access_token}` } });
+                      return fetchWithFallback(WITHINGS_CONFIG.activityUrl, { method: 'POST', headers: withingsPostHeaders, body: new URLSearchParams({ action: 'getactivity', startdateymd: startDateStr, enddateymd: endDateStr, data_fields: 'steps,distance' }).toString() });
                   })
               )
           ]);
@@ -3484,7 +3496,9 @@ function App() {
 
           const processGroups = (response) => {
               if (response && response.status === 0 && response.body && response.body.measuregrps) {
-                  response.body.measuregrps.forEach(group => {
+                  // Trier par timestamp croissant pour que la mesure la plus récente de chaque jour gagne
+                  const sortedGroups = [...response.body.measuregrps].sort((a, b) => a.date - b.date);
+                  sortedGroups.forEach(group => {
                       const date = new Date(group.date * 1000).toISOString();
                       const dateKey = getLocalDateKey(date);
                       let weight = null, bodyFat = null, muscleMass = null, hydration = null;
@@ -3509,7 +3523,7 @@ function App() {
                           updates++;
                       } else {
                           const existing = newHealthLogs[logIndex];
-                          newHealthLogs[logIndex] = { ...existing, weight: weight || existing.weight, bodyFat: bodyFat || existing.bodyFat, muscleMass: (muscleMass && weight) ? parseFloat(((muscleMass / weight) * 100).toFixed(1)) : existing.muscleMass, hydration: (hydration && weight) ? parseFloat(((hydration / weight) * 100).toFixed(1)) : existing.hydration, systolic: systolic || existing.systolic, diastolic: diastolic || existing.diastolic, pwv: pwv || existing.pwv, visceralFat: visceralFat || existing.visceralFat, bmr: bmr || existing.bmr, vascularAge: vascularAge || existing.vascularAge, restingHR: restingHR || existing.restingHR };
+                          newHealthLogs[logIndex] = { ...existing, weight: existing.weight || weight, bodyFat: existing.bodyFat || bodyFat, muscleMass: existing.muscleMass || ((muscleMass && weight) ? parseFloat(((muscleMass / weight) * 100).toFixed(1)) : null), hydration: existing.hydration || ((hydration && weight) ? parseFloat(((hydration / weight) * 100).toFixed(1)) : null), systolic: existing.systolic || systolic, diastolic: existing.diastolic || diastolic, pwv: existing.pwv || pwv, visceralFat: existing.visceralFat || visceralFat, bmr: existing.bmr || bmr, vascularAge: existing.vascularAge || vascularAge, restingHR: existing.restingHR || restingHR };
                           updates++;
                       }
                   });
