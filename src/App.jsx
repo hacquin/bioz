@@ -1934,6 +1934,7 @@ function SettingsView({ user, db, isWithingsEnabled, handleWithingsAuth, isStrav
   const [csvImporting, setCsvImporting] = useState(false);
   const [csvResult, setCsvResult] = useState(null);
   const [csvConflicts, setCsvConflicts] = useState(null);
+  const [nutritionVersion, setNutritionVersion] = useState(0);
   const csvFileRef = useRef(null);
 
   const csvReset = () => { setCsvParsedRows(null); setCsvError(null); setCsvResult(null); setCsvConflicts(null); };
@@ -2048,6 +2049,7 @@ function SettingsView({ user, db, isWithingsEnabled, handleWithingsAuth, isStrav
       if (imported > 0) {
         const dates = csvParsedRows.filter(r => !conflicts.includes(r.date)).map(r => r.date).sort();
         setCsvResult({ count: imported, skipped: conflicts.length, from: csvFormatDate(dates[0]), to: csvFormatDate(dates[dates.length - 1]) });
+        setNutritionVersion(v => v + 1);
       } else if (conflicts.length === 0) setCsvError('Aucun jour importé.');
     } catch (e) { setCsvError(`Erreur : ${e.message}`); }
     finally { setCsvImporting(false); }
@@ -3585,7 +3587,7 @@ function App() {
       case 'workout': return <HevyView hevyWorkouts={hevyWorkouts} loadingHevy={loadingHevy} fetchHevyWorkouts={demoFetchHevy} hevyError={hevyError} hevySyncStatus={hevySyncStatus} onDeleteWorkout={demoDeleteHevy} isDemo={isDemo} />;
       case 'health': return <HealthTracker user={user} db={db} healthLogs={healthLogs} setHealthLogs={demoSetHealthLogs} isSyncingWithings={isSyncingWithings} onWithingsSync={demoWithingsSync} goals={goals} isDemo={isDemo} onAddWater={(amount) => { handleAddWater(amount); }} onOpenWaterModal={() => setShowWaterModal(true)} />;
       case 'endurance': return <EnduranceView stravaLogs={stravaLogs} onSync={demoStravaSync} isSyncing={isSyncingStrava} isDemo={isDemo} />;
-      case 'nutrition': return <NutritionImport user={user} db={db} isDemo={isDemo} demoNutritionDocs={isDemo ? DEMO_DATA.nutritionDocs : null} goals={goals} healthLogs={healthLogs} />;
+      case 'nutrition': return <NutritionImport user={user} db={db} isDemo={isDemo} demoNutritionDocs={isDemo ? DEMO_DATA.nutritionDocs : null} goals={goals} healthLogs={healthLogs} nutritionVersion={nutritionVersion} />;
       case 'settings': return <SettingsView user={user} db={db} isWithingsEnabled={isDemo || isWithingsEnabled} handleWithingsAuth={isDemo ? demoNoOp : handleStartWithingsAuth} isStravaEnabled={isDemo || isStravaEnabled} handleStravaAuth={isDemo ? demoNoOp : handleStartStravaAuth} isHuaweiEnabled={isDemo || isHuaweiEnabled} handleHuaweiAuth={isDemo ? demoNoOp : handleStartHuaweiAuth} huaweiNeedsReconnect={huaweiNeedsReconnect} withingsNeedsReconnect={false} hevyApiKey={hevyApiKey} onSaveHevyApiKey={isDemo ? demoNoOp : saveHevyApiKey} goals={goals} setGoals={demoSetGoals} dataSourcePrefs={dataSourcePrefs} setDataSourcePrefs={setDataSourcePrefs} connectedSources={connectedSources} isDemo={isDemo} />;
       default: return <div className="flex items-center justify-center h-64 text-slate-500">Chargement...</div>;
     }

@@ -146,7 +146,7 @@ function CardSection({ title, cardIds, cardContent, wideCards = [], dragState, i
 }
 
 
-export default function NutritionImport({ user, db, isDemo, demoNutritionDocs, goals, healthLogs }) {
+export default function NutritionImport({ user, db, isDemo, demoNutritionDocs, goals, healthLogs, nutritionVersion }) {
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
   // Objectifs macro calculés depuis les paramètres utilisateur
@@ -243,7 +243,7 @@ export default function NutritionImport({ user, db, isDemo, demoNutritionDocs, g
       if (todayDoc) setTodayData(todayDoc);
     };
     fetchNutrition();
-  }, [user, db, isDemo, demoNutritionDocs]);
+  }, [user, db, isDemo, demoNutritionDocs, nutritionVersion]);
 
   // --- COMPUTED VALUES ---
   const carbs = todayData?.carbs || 0;
