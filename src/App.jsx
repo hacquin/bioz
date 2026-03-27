@@ -2031,11 +2031,9 @@ function SettingsView({ user, db, isWithingsEnabled, handleWithingsAuth, isStrav
     if (!csvParsedRows || !user || !db || isDemo) return;
     setCsvImporting(true); setCsvError(null);
     try {
-      let imported = 0; const conflicts = [];
+      let imported = 0;
       for (const row of csvParsedRows) {
         const docRef = doc(db, 'users', user.uid, 'nutrition', row.date);
-        const existing = await getDoc(docRef);
-        if (existing.exists() && !overwrite) { conflicts.push(row.date); continue; }
         // Merge : conserver les champs existants (ex: macros du Daily Summary + repas du Servings)
         const data = { date: row.date, source: row.source || 'cronometer' };
         for (const k of ['calories','carbs','fat','protein','fiber','sugars','sodium','petitDej','dejeuner','diner','encas']) {
@@ -2044,12 +2042,11 @@ function SettingsView({ user, db, isWithingsEnabled, handleWithingsAuth, isStrav
         await setDoc(docRef, data, { merge: true });
         imported++;
       }
-      if (conflicts.length > 0 && !overwrite) setCsvConflicts(conflicts);
       if (imported > 0) {
-        const dates = csvParsedRows.filter(r => !conflicts.includes(r.date)).map(r => r.date).sort();
-        setCsvResult({ count: imported, skipped: conflicts.length, from: csvFormatDate(dates[0]), to: csvFormatDate(dates[dates.length - 1]) });
+        const dates = csvParsedRows.map(r => r.date).sort();
+        setCsvResult({ count: imported, skipped: 0, from: csvFormatDate(dates[0]), to: csvFormatDate(dates[dates.length - 1]) });
         setNutritionVersion(v => v + 1);
-      } else if (conflicts.length === 0) setCsvError('Aucun jour importé.');
+      } else setCsvError('Aucun jour importé.');
     } catch (e) { setCsvError(`Erreur : ${e.message}`); }
     finally { setCsvImporting(false); }
   };
