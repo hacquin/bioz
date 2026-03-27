@@ -21,20 +21,29 @@ function LazyCard({ children, height = 300, className = "", style = {} }) {
   );
 }
 
-// --- KETO-MOJO DATA (en attente API) ---
-const ketoData = [
-  { date: '15/11', glucose: 95, ketones: 0.8, gki: 95 / 18.016 / 0.8 },
-  { date: '01/12', glucose: 102, ketones: 0.5, gki: 102 / 18.016 / 0.5 },
-  { date: '15/12', glucose: 98, ketones: 0.7, gki: 98 / 18.016 / 0.7 },
-  { date: '10/01', glucose: 105, ketones: 0.4, gki: 105 / 18.016 / 0.4 },
-  { date: '01/02', glucose: 100, ketones: 0.6, gki: 100 / 18.016 / 0.6 },
-  { date: '15/02', glucose: 97, ketones: 0.9, gki: 97 / 18.016 / 0.9 },
-  { date: '01/03', glucose: 103, ketones: 0.5, gki: 103 / 18.016 / 0.5 },
-  { date: '21/03', glucose: 102, ketones: 0.5, gki: 102 / 18.016 / 0.5 },
-];
-const latestGlucose = 102;
-const latestKetones = 0.5;
-const latestGKI = parseFloat((latestGlucose / 18.016 / latestKetones).toFixed(1));
+// --- KETO DATA helpers (dynamique depuis healthLogs) ---
+function buildKetoData(logs) {
+  return [...(logs || [])]
+    .filter(l => l.glucose || l.ketones)
+    .sort((a, b) => new Date(a.date) - new Date(b.date))
+    .map(l => {
+      const d = new Date(l.date);
+      return {
+        date: `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`,
+        glucose: l.glucose || null,
+        ketones: l.ketones || null,
+        gki: (l.glucose && l.ketones) ? l.glucose / 18.016 / l.ketones : null,
+      };
+    });
+}
+function getLastKnown(logs, key) {
+  if (!logs || logs.length === 0) return null;
+  const sorted = [...logs].sort((a, b) => new Date(a.date) - new Date(b.date));
+  for (let i = sorted.length - 1; i >= 0; i--) {
+    if (sorted[i][key] != null && sorted[i][key] !== '') return sorted[i][key];
+  }
+  return null;
+}
 
 // Objectifs macro keto (Mifflin-St Jeor: 87kg, 174cm, 55 ans, homme, activité modérée, déficit perte de poids)
 // Répartition: 8% glucides / 25% protéines / 67% lipides
@@ -136,7 +145,7 @@ function CardSection({ title, cardIds, cardContent, wideCards = [], dragState, i
 }
 
 
-export default function NutritionImport({ user, db, isDemo, demoNutritionDocs, goals }) {
+export default function NutritionImport({ user, db, isDemo, demoNutritionDocs, goals, healthLogs }) {
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
   // Objectifs macro calculés depuis les paramètres utilisateur
@@ -247,12 +256,17 @@ export default function NutritionImport({ user, db, isDemo, demoNutritionDocs, g
   const protPct = protein > 0 ? Math.round(protein / targets.protein * 100) : 0;
   const protStatus = protPct >= 80 ? { text: `${protPct}% de l'objectif`, cls: 'text-emerald-400' } : protPct >= 50 ? { text: `${protPct}% de l'objectif`, cls: 'text-cyan-400' } : { text: `${protPct}% de l'objectif`, cls: 'text-slate-400' };
 
+  const ketoData = buildKetoData(healthLogs);
+  const latestGlucose = getLastKnown(healthLogs, 'glucose') || 0;
+  const latestKetones = getLastKnown(healthLogs, 'ketones') || 0;
+  const latestGKI = (latestGlucose && latestKetones) ? parseFloat((latestGlucose / 18.016 / latestKetones).toFixed(1)) : 0;
+
   const ketoneStatus = latestKetones >= 3.0 ? { text: 'Cétose profonde', cls: 'text-emerald-400' } : latestKetones >= 1.5 ? { text: 'Cétose optimale', cls: 'text-cyan-400' } : latestKetones >= 0.5 ? { text: 'Cétose légère', cls: 'text-[#EBAA6D]' } : { text: 'Pas en cétose', cls: 'text-slate-400' };
   const glucoseStatus = latestGlucose < 70 ? { text: 'Hypoglycémie', cls: 'text-blue-400' } : latestGlucose < 100 ? { text: 'Glycémie normale', cls: 'text-emerald-400' } : latestGlucose < 126 ? { text: 'Pré-diabète', cls: 'text-yellow-400' } : { text: 'Diabète', cls: 'text-red-400' };
   const gkiStatus = latestGKI <= 1 ? { text: 'Cétose thérapeutique', cls: 'text-emerald-400' } : latestGKI <= 3 ? { text: 'Cétose élevée', cls: 'text-cyan-400' } : latestGKI <= 6 ? { text: 'Cétose modérée', cls: 'text-blue-400' } : latestGKI <= 9 ? { text: 'Cétose légère', cls: 'text-yellow-400' } : { text: 'Pas en cétose', cls: 'text-red-400' };
 
-  const gValues = ketoData.map(d => d.glucose);
-  const kValues = ketoData.map(d => d.ketones);
+  const gValues = ketoData.length > 0 ? ketoData.map(d => d.glucose).filter(Boolean) : [90, 110];
+  const kValues = ketoData.length > 0 ? ketoData.map(d => d.ketones).filter(Boolean) : [0, 1];
   const gMin = Math.floor(Math.min(...gValues) / 3) * 3 - 3;
   const gMax = Math.ceil(Math.max(...gValues) / 3) * 3 + 3;
   const kMax = Math.ceil(Math.max(...kValues) * 2) / 2 + 0.5;
@@ -448,7 +462,7 @@ export default function NutritionImport({ user, db, isDemo, demoNutritionDocs, g
       <>
         <div className="flex items-baseline gap-2 mb-0"><h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">CÉTONES</h3><span className="text-[10px] text-slate-500">— mmol/L</span></div>
         <div className="flex-1 flex items-center justify-center" style={{ minHeight: 260 }}>
-          <ReactECharts option={buildGaugeOption(latestKetones, 0, 9, 9, ['#EBAA6D', '#F5D4A6'], v => v.toFixed(1))} style={{ width: '100%', height: '100%', minHeight: 260 }} opts={{ renderer: 'svg' }} />
+          <ReactECharts option={buildGaugeOption(latestKetones, 0, 4, 8, ['#EBAA6D', '#F5D4A6'], v => v.toFixed(1))} style={{ width: '100%', height: '100%', minHeight: 260 }} opts={{ renderer: 'svg' }} />
         </div>
         <p className={`text-xs font-semibold text-center ${ketoneStatus.cls}`}>{ketoneStatus.text}</p>
       </>
@@ -466,7 +480,7 @@ export default function NutritionImport({ user, db, isDemo, demoNutritionDocs, g
       <>
         <div className="flex items-baseline gap-2 mb-0"><h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">GKI</h3><span className="text-[10px] text-slate-500">— Indice Glucose-Cétone</span></div>
         <div className="flex-1 flex items-center justify-center" style={{ minHeight: 260 }}>
-          <ReactECharts option={buildGaugeOption(latestGKI, 0, 12, 12, ['#271BEB', '#7B75F5'], v => v.toFixed(1))} style={{ width: '100%', height: '100%', minHeight: 260 }} opts={{ renderer: 'svg' }} />
+          <ReactECharts option={buildGaugeOption(latestGKI, 0, 12, 12, latestGKI <= 4 ? ['#10b981', '#34d399'] : latestGKI <= 9 ? ['#f59e0b', '#fbbf24'] : ['#ef4444', '#f87171'], v => v.toFixed(1))} style={{ width: '100%', height: '100%', minHeight: 260 }} opts={{ renderer: 'svg' }} />
         </div>
         <p className={`text-xs font-semibold text-center ${gkiStatus.cls}`}>{gkiStatus.text}</p>
       </>
@@ -476,7 +490,7 @@ export default function NutritionImport({ user, db, isDemo, demoNutritionDocs, g
         <div className="flex justify-between items-start mb-1 flex-wrap gap-2">
           <div>
             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">GLUCOSE & CÉTONES — HISTORIQUE</h3>
-            <p className="text-[10px] text-slate-500 mt-1">Source : Keto-Mojo <span className="text-amber-400/70">(en attente API)</span></p>
+            <p className="text-[10px] text-slate-500 mt-1">Source : Saisie manuelle</p>
           </div>
           <div className="flex gap-4">
             <div className="flex items-center gap-2 text-xs font-bold text-[#a1a1aa]"><div className="w-3 h-0.5 bg-[#a1a1aa] rounded"></div><div className="w-2.5 h-2.5 rounded-full bg-[#a1a1aa]"></div> Glucose mg/dl</div>

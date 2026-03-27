@@ -1765,8 +1765,8 @@ BMR : ${f(ind.bmr)} kcal`;
                 detail: { valueAnimation: true, fontSize: 46, fontWeight: 400, color: '#f8fafc', offsetCenter: [0, '70%'], formatter: v => v.toFixed(1) },
                 pointer: { itemStyle: { color: 'auto' } },
                 min: 0,
-                max: 9,
-                splitNumber: 9,
+                max: 4,
+                splitNumber: 8,
                 itemStyle: { color: '#EBAA6D' },
                 data: [{ value: val }]
               }]
@@ -1824,12 +1824,13 @@ BMR : ${f(ind.bmr)} kcal`;
           h_gkiEchart: (() => {
             const val = latestGKI || 0;
             const gkiStatus = val <= 1 ? { text: 'Cétose thérapeutique', cls: 'text-emerald-400' } : val <= 3 ? { text: 'Cétose élevée', cls: 'text-cyan-400' } : val <= 6 ? { text: 'Cétose modérée', cls: 'text-blue-400' } : val <= 9 ? { text: 'Cétose légère', cls: 'text-yellow-400' } : { text: 'Pas en cétose', cls: 'text-red-400' };
+            const gkiColors = val <= 4 ? ['#10b981', '#34d399'] : val <= 9 ? ['#f59e0b', '#fbbf24'] : ['#ef4444', '#f87171'];
             const option = {
               backgroundColor: 'transparent',
               series: [{
                 type: 'gauge',
                 radius: '90%',
-                progress: { show: true, width: 18, roundCap: true, itemStyle: { color: { type: 'linear', x: 0, y: 0, x2: 1, y2: 0, colorStops: [{ offset: 0, color: '#271BEB' }, { offset: 1, color: '#7B75F5' }] } } },
+                progress: { show: true, width: 18, roundCap: true, itemStyle: { color: { type: 'linear', x: 0, y: 0, x2: 1, y2: 0, colorStops: [{ offset: 0, color: gkiColors[0] }, { offset: 1, color: gkiColors[1] }] } } },
                 axisLine: { lineStyle: { width: 18, color: [[1, '#334155']] }, roundCap: true },
                 axisTick: { show: false },
                 splitLine: { length: 15, lineStyle: { width: 2, color: '#999' } },
@@ -1841,7 +1842,7 @@ BMR : ${f(ind.bmr)} kcal`;
                 min: 0,
                 max: 12,
                 splitNumber: 12,
-                itemStyle: { color: '#271BEB' },
+                itemStyle: { color: gkiColors[0] },
                 data: [{ value: val }]
               }]
             };
@@ -3584,7 +3585,7 @@ function App() {
       case 'workout': return <HevyView hevyWorkouts={hevyWorkouts} loadingHevy={loadingHevy} fetchHevyWorkouts={demoFetchHevy} hevyError={hevyError} hevySyncStatus={hevySyncStatus} onDeleteWorkout={demoDeleteHevy} isDemo={isDemo} />;
       case 'health': return <HealthTracker user={user} db={db} healthLogs={healthLogs} setHealthLogs={demoSetHealthLogs} isSyncingWithings={isSyncingWithings} onWithingsSync={demoWithingsSync} goals={goals} isDemo={isDemo} onAddWater={(amount) => { handleAddWater(amount); }} onOpenWaterModal={() => setShowWaterModal(true)} />;
       case 'endurance': return <EnduranceView stravaLogs={stravaLogs} onSync={demoStravaSync} isSyncing={isSyncingStrava} isDemo={isDemo} />;
-      case 'nutrition': return <NutritionImport user={user} db={db} isDemo={isDemo} demoNutritionDocs={isDemo ? DEMO_DATA.nutritionDocs : null} goals={goals} />;
+      case 'nutrition': return <NutritionImport user={user} db={db} isDemo={isDemo} demoNutritionDocs={isDemo ? DEMO_DATA.nutritionDocs : null} goals={goals} healthLogs={healthLogs} />;
       case 'settings': return <SettingsView user={user} db={db} isWithingsEnabled={isDemo || isWithingsEnabled} handleWithingsAuth={isDemo ? demoNoOp : handleStartWithingsAuth} isStravaEnabled={isDemo || isStravaEnabled} handleStravaAuth={isDemo ? demoNoOp : handleStartStravaAuth} isHuaweiEnabled={isDemo || isHuaweiEnabled} handleHuaweiAuth={isDemo ? demoNoOp : handleStartHuaweiAuth} huaweiNeedsReconnect={huaweiNeedsReconnect} withingsNeedsReconnect={false} hevyApiKey={hevyApiKey} onSaveHevyApiKey={isDemo ? demoNoOp : saveHevyApiKey} goals={goals} setGoals={demoSetGoals} dataSourcePrefs={dataSourcePrefs} setDataSourcePrefs={setDataSourcePrefs} connectedSources={connectedSources} isDemo={isDemo} />;
       default: return <div className="flex items-center justify-center h-64 text-slate-500">Chargement...</div>;
     }
