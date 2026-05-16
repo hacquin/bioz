@@ -19,6 +19,7 @@ import corpsHomme from './corps-homme-blanc.png';
 import corpsFemme from './corps-femme-blanc.png';
 import { DEMO_DATA } from './demoData';
 import NutritionImport from './NutritionImport';
+import { CorosSection } from './CorosCards';
 
 import video1 from './1.mp4';
 import video2 from './2.mp4';
@@ -671,7 +672,9 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings,
   const [distance, setDistance] = useState('');
   const [waist, setWaist] = useState('');
   const [glucose, setGlucose] = useState('');
-  const [ketones, setKetones] = useState(''); 
+  const [ketones, setKetones] = useState('');
+  const [respiratoryRate, setRespiratoryRate] = useState('');
+  const [spo2, setSpo2] = useState('');
 
   const [startDate, setStartDate] = useState('2026-01-01');
   const [endDate, setEndDate] = useState(() => new Date().toISOString().split('T')[0]);
@@ -921,8 +924,10 @@ BMR : ${f(ind.bmr)} kcal`;
     const cleanDistance = distance ? parseFloat(distance.replace(',', '.')) : null;
     const cleanGlucose = glucose ? parseFloat(glucose.replace(',', '.')) : null;
     const cleanKetones = ketones ? parseFloat(ketones.replace(',', '.')) : null;
+    const cleanRespiratoryRate = respiratoryRate ? parseFloat(respiratoryRate.replace(',', '.')) : null;
+    const cleanSpo2 = spo2 ? parseFloat(spo2.replace(',', '.')) : null;
 
-    if (!cleanWeight && !cleanSteps && !cleanWaist && !cleanHydration && !cleanDistance && !cleanGlucose && !cleanKetones) return;
+    if (!cleanWeight && !cleanSteps && !cleanWaist && !cleanHydration && !cleanDistance && !cleanGlucose && !cleanKetones && !cleanRespiratoryRate && !cleanSpo2) return;
 
     // FIX P2: On lit TOUJOURS les données les plus récentes depuis Firestore avant de fusionner
     // Cela évite d'écraser des saisies faites sur un autre device entre temps
@@ -940,17 +945,17 @@ BMR : ${f(ind.bmr)} kcal`;
     let updatedLogs;
     if (existingIndex >= 0) {
         const existing = latestLogs[existingIndex];
-        const updatedEntry = { ...existing, weight: cleanWeight || existing.weight, bodyFat: cleanBodyFat || existing.bodyFat, muscleMass: cleanMuscleMass || existing.muscleMass, hydration: cleanHydration || existing.hydration, steps: cleanSteps || existing.steps, distance: cleanDistance || existing.distance, waist: cleanWaist || existing.waist, glucose: cleanGlucose || existing.glucose, ketones: cleanKetones || existing.ketones };
+        const updatedEntry = { ...existing, weight: cleanWeight || existing.weight, bodyFat: cleanBodyFat || existing.bodyFat, muscleMass: cleanMuscleMass || existing.muscleMass, hydration: cleanHydration || existing.hydration, steps: cleanSteps || existing.steps, distance: cleanDistance || existing.distance, waist: cleanWaist || existing.waist, glucose: cleanGlucose || existing.glucose, ketones: cleanKetones || existing.ketones, respiratoryRate: cleanRespiratoryRate || existing.respiratoryRate, spo2: cleanSpo2 || existing.spo2 };
         updatedLogs = [...latestLogs];
         updatedLogs[existingIndex] = updatedEntry;
     } else {
-        const newEntry = { id: generateId(), date: new Date(date).toISOString(), weight: cleanWeight, bodyFat: cleanBodyFat, muscleMass: cleanMuscleMass, hydration: cleanHydration, steps: cleanSteps, distance: cleanDistance, waist: cleanWaist, glucose: cleanGlucose, ketones: cleanKetones };
+        const newEntry = { id: generateId(), date: new Date(date).toISOString(), weight: cleanWeight, bodyFat: cleanBodyFat, muscleMass: cleanMuscleMass, hydration: cleanHydration, steps: cleanSteps, distance: cleanDistance, waist: cleanWaist, glucose: cleanGlucose, ketones: cleanKetones, respiratoryRate: cleanRespiratoryRate, spo2: cleanSpo2 };
         updatedLogs = [...latestLogs, newEntry];
     }
     
     updatedLogs.sort((a, b) => new Date(a.date) - new Date(b.date));
     setHealthLogs(updatedLogs);
-    setWeight(''); setBodyFat(''); setMuscleMass(''); setHydration(''); setSteps(''); setWaist(''); setDistance(''); setGlucose(''); setKetones('');
+    setWeight(''); setBodyFat(''); setMuscleMass(''); setHydration(''); setSteps(''); setWaist(''); setDistance(''); setGlucose(''); setKetones(''); setRespiratoryRate(''); setSpo2('');
   };
 
   const deleteEntry = async (id) => { 
@@ -1880,6 +1885,9 @@ BMR : ${f(ind.bmr)} kcal`;
           </div>
         );
       })}
+
+      {/* Section Coros : Sommeil + VFC nocturne — rendues comme des health cards dans la grille */}
+      <CorosSection user={user} db={db} timeFrame={timeFrame} healthLogs={healthLogs} />
       </div>
 
       <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-lg">
@@ -1904,6 +1912,8 @@ BMR : ${f(ind.bmr)} kcal`;
             <input type="text" value={hydration} onChange={e => setHydration(e.target.value)} placeholder="Eau %" className="bg-slate-900 border border-slate-600 rounded p-2 text-white" disabled={isDemo} />
             <input type="text" value={glucose} onChange={e => setGlucose(e.target.value)} placeholder="Glucose (mg/dl)" className="bg-slate-900 border border-slate-600 rounded p-2 text-white border-[#EBAA6D]/50" disabled={isDemo} />
             <input type="text" value={ketones} onChange={e => setKetones(e.target.value)} placeholder="Cétones (mmol/L)" className="bg-slate-900 border border-slate-600 rounded p-2 text-white border-cyan-500/50" disabled={isDemo} />
+            <input type="text" value={respiratoryRate} onChange={e => setRespiratoryRate(e.target.value)} placeholder="Fréq. resp. (brpm)" className="bg-slate-900 border border-slate-600 rounded p-2 text-white border-sky-500/50" disabled={isDemo} />
+            <input type="text" value={spo2} onChange={e => setSpo2(e.target.value)} placeholder="SpO2 (%)" className="bg-slate-900 border border-slate-600 rounded p-2 text-white border-emerald-500/50" disabled={isDemo} />
             <button onClick={handleSave} disabled={isDemo} className="col-span-2 md:col-span-3 w-full bg-violet-600 text-white font-bold p-2 rounded hover:bg-violet-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">Enregistrer</button>
         </div>
       </div>

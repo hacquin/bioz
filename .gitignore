@@ -2,3 +2,12 @@ node_modules/
 dist/
 .env
 .DS_Store
+
+# Coros sync daemon — secrets et configs locales
+coros-sync/service-account.json
+coros-sync/.env
+coros-sync/tokens.json
+
+# Filet de sécurité : toute clé de service Firebase, où qu'elle soit
+**/*-firebase-adminsdk-*.json
+**/serviceAccountKey*.json
