@@ -309,7 +309,7 @@ const qualifyRhr = (bpm) => {
 //   - 1 carte Sommeil (1 colonne du grid parent)
 //   - 1 carte VFC nocturne (1 colonne du grid parent)
 // Les états loading / error / empty sont aussi col-span-full pour rester lisibles.
-export function CorosSection({ user, db, timeFrame, healthLogs }) {
+export function CorosSection({ user, db, timeFrame, healthLogs, hiddenCards = [] }) {
   const { daily, baseline, loading, error } = useCorosData(user, db);
   const [anchorDate, setAnchorDate] = useState(new Date());
 
@@ -345,27 +345,35 @@ export function CorosSection({ user, db, timeFrame, healthLogs }) {
 
   return (
     <>
-      <BilanSanteCard daily={daily} healthLogs={healthLogs} />
-      <SommeilCard
-        daily={daily}
-        baseline={baseline}
-        timeFrame={timeFrame}
-        anchorDate={anchorDate}
-        setAnchorDate={setAnchorDate}
-      />
-      <VfcCard
-        daily={daily}
-        baseline={baseline}
-        timeFrame={timeFrame}
-        anchorDate={anchorDate}
-        setAnchorDate={setAnchorDate}
-      />
-      <FcReposCard
-        daily={daily}
-        timeFrame={timeFrame}
-        anchorDate={anchorDate}
-        setAnchorDate={setAnchorDate}
-      />
+      {!hiddenCards.includes('h_corosBilan') && (
+        <BilanSanteCard daily={daily} healthLogs={healthLogs} user={user} />
+      )}
+      {!hiddenCards.includes('h_corosSommeil') && (
+        <SommeilCard
+          daily={daily}
+          baseline={baseline}
+          timeFrame={timeFrame}
+          anchorDate={anchorDate}
+          setAnchorDate={setAnchorDate}
+        />
+      )}
+      {!hiddenCards.includes('h_corosVfc') && (
+        <VfcCard
+          daily={daily}
+          baseline={baseline}
+          timeFrame={timeFrame}
+          anchorDate={anchorDate}
+          setAnchorDate={setAnchorDate}
+        />
+      )}
+      {!hiddenCards.includes('h_corosFcRepos') && (
+        <FcReposCard
+          daily={daily}
+          timeFrame={timeFrame}
+          anchorDate={anchorDate}
+          setAnchorDate={setAnchorDate}
+        />
+      )}
     </>
   );
 }
@@ -486,7 +494,10 @@ function FcReposCard({ daily, timeFrame, anchorDate, setAnchorDate }) {
 //  Carte BILAN DE SANTÉ — mini-stats en col-span-full, en haut
 // =============================================================================
 
-function BilanSanteCard({ daily, healthLogs }) {
+// URL absolue vers l'endpoint trigger sur le VPS (fonctionne aussi depuis le dev server).
+const COROS_TRIGGER_URL = 'https://bioz.app/coros-trigger.php';
+
+function BilanSanteCard({ daily, healthLogs, user }) {
   // FC repos / VFC / Stress viennent de Coros (daily).
   // Fréquence respiratoire + SpO2 sont des SAISIES MANUELLES dans healthLogs.
   const corosCandidates = Object.keys(daily || {})
@@ -513,14 +524,56 @@ function BilanSanteCard({ daily, healthLogs }) {
     ? fmtDateFr(new Date(refDate + 'T00:00:00'), { weekday: 'short', day: 'numeric', month: 'short' })
     : '—';
 
+  // Sync manuel via PHP gateway sur le VPS
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState(null); // { ok, text }
+  const handleSync = async () => {
+    if (!user || syncing) return;
+    setSyncing(true);
+    setSyncMsg(null);
+    try {
+      const res = await fetch(COROS_TRIGGER_URL, {
+        method: 'POST',
+        headers: { 'X-Bioz-Uid': user.uid },
+      });
+      const data = await res.json();
+      setSyncMsg({
+        ok: !!data.ok,
+        text: data.ok
+          ? `✓ ${data.summary || 'Sync OK'} · ${data.duration_sec}s`
+          : (data.error || 'Erreur sync'),
+      });
+    } catch (e) {
+      setSyncMsg({ ok: false, text: e.message || 'Erreur réseau' });
+    } finally {
+      setSyncing(false);
+      setTimeout(() => setSyncMsg(null), 8000);
+    }
+  };
+
   return (
     <div className="col-span-full bg-slate-800 rounded-xl p-4 border border-slate-700">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
         <div className="flex items-center gap-2">
           <span className="text-xl">🩺</span>
           <h3 className="font-bold text-slate-100 text-base">Bilan de santé - Coros</h3>
         </div>
-        <span className="text-xs text-slate-400 capitalize">{dateLabel}</span>
+        <div className="flex items-center gap-3 flex-wrap justify-end">
+          {syncMsg && (
+            <span className={`text-xs ${syncMsg.ok ? 'text-green-400' : 'text-red-400'} max-w-[280px] truncate`} title={syncMsg.text}>
+              {syncMsg.text}
+            </span>
+          )}
+          <button
+            onClick={handleSync}
+            disabled={syncing || !user}
+            className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-bold px-3 py-2 rounded-lg transition-colors border border-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <RefreshCw size={14} className={syncing ? 'animate-spin text-violet-400' : ''} />
+            {syncing ? 'Sync...' : 'Sync Coros'}
+          </button>
+          <span className="text-xs text-slate-400 capitalize">{dateLabel}</span>
+        </div>
       </div>
 
       <div className="grid grid-cols-3 md:grid-cols-5 gap-4">

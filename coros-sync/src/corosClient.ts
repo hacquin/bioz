@@ -104,12 +104,20 @@ export class CorosClient {
   }
 
   async getSleepData(days: number = 14): Promise<CorosToolResult> {
+    // Bug Coros : sans endDate explicite, querySleepData exclut systématiquement
+    // le jour courant (probablement par "prudence" pour les siestes à venir).
+    // En forçant endDate=demain, on inclut bien la nuit qui vient de se terminer.
+    const fmt = (d: Date) =>
+      `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+    const today = new Date();
+    const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+    const start = new Date(today); start.setDate(start.getDate() - (days - 1));
     return {
       raw: await this.callText('querySleepData', {
         days,
         timezone: TIMEZONE,
-        startDate: '',
-        endDate: '',
+        startDate: fmt(start),
+        endDate: fmt(tomorrow),
       }),
     };
   }

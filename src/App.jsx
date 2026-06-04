@@ -693,8 +693,8 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings,
   };
   const isHealthCardVisible = (cardId) => !healthHiddenCards.includes(cardId);
 
-  const HEALTH_DEFAULT_ORDER = ['h_bodySilhouette', 'h_weightFat', 'h_composition', 'h_muscleFatBar', 'h_weight', 'h_waist', 'h_bp', 'h_restingHR', 'h_pwv', 'h_bodyFat', 'h_muscleMass', 'h_hydration', 'h_visceralFat'];
-  const HEALTH_CARD_LABELS = { h_bodySilhouette: 'Silhouette Corporelle', h_weightFat: 'Poids & Graisse', h_composition: 'Composition Corporelle', h_muscleFatBar: 'Répartition Muscle / Graisse', h_weight: 'Poids', h_waist: 'Tour de taille', h_bp: 'Tension Artérielle', h_restingHR: 'FC Repos', h_pwv: "Vitesse d'Onde de Pouls", h_bodyFat: 'Graisse Corporelle', h_muscleMass: 'Masse Musculaire', h_hydration: 'Hydratation', h_visceralFat: 'Graisse Viscérale' };
+  const HEALTH_DEFAULT_ORDER = ['h_bodySilhouette', 'h_weightFat', 'h_composition', 'h_muscleFatBar', 'h_weight', 'h_waist', 'h_bp', 'h_restingHR', 'h_pwv', 'h_bodyFat', 'h_muscleMass', 'h_hydration', 'h_visceralFat', 'h_corosBilan', 'h_corosSommeil', 'h_corosVfc', 'h_corosFcRepos'];
+  const HEALTH_CARD_LABELS = { h_bodySilhouette: 'Silhouette Corporelle', h_weightFat: 'Poids & Graisse', h_composition: 'Composition Corporelle', h_muscleFatBar: 'Répartition Muscle / Graisse', h_weight: 'Poids', h_waist: 'Tour de taille', h_bp: 'Tension Artérielle', h_restingHR: 'FC Repos', h_pwv: "Vitesse d'Onde de Pouls", h_bodyFat: 'Graisse Corporelle', h_muscleMass: 'Masse Musculaire', h_hydration: 'Hydratation', h_visceralFat: 'Graisse Viscérale', h_corosBilan: 'Bilan Santé — Coros', h_corosSommeil: 'Sommeil — Coros', h_corosVfc: 'VFC nocturne — Coros', h_corosFcRepos: 'FC Repos — Coros' };
   const [bodySilhouetteGender, setBodySilhouetteGender] = useState(() => localStorage.getItem('bioz_bodySilhouetteGender') || 'homme');
 
   const [healthCardOrder, setHealthCardOrder] = useState(() => {
@@ -1887,7 +1887,7 @@ BMR : ${f(ind.bmr)} kcal`;
       })}
 
       {/* Section Coros : Sommeil + VFC nocturne — rendues comme des health cards dans la grille */}
-      <CorosSection user={user} db={db} timeFrame={timeFrame} healthLogs={healthLogs} />
+      <CorosSection user={user} db={db} timeFrame={timeFrame} healthLogs={healthLogs} hiddenCards={healthHiddenCards} />
       </div>
 
       <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-lg">
