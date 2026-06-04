@@ -1,0 +1,26 @@
+{
+  "name": "bioz-fitbit-sync",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Daemon de synchronisation Google Health API (Fitbit Air) -> Firestore pour bioz.app",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "bootstrap": "tsx src/bootstrap.ts",
+    "inspect": "tsx src/inspect.ts",
+    "sync": "tsx src/sync.ts",
+    "build": "tsc",
+    "start": "node dist/sync.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "firebase-admin": "^13.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

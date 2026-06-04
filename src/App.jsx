@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Dumbbell, Activity, Calendar, BarChart2, Save, Settings, X, AlertCircle, Filter, Scale, TrendingUp, LogOut, User, Droplet, RefreshCw, Cloud, CloudLightning, Ruler, Target, Footprints, Percent, Heart, HeartPulse, Map as MapIcon, ArrowRight,
-  Bike, Mountain, Award, Waves, Flame, ChevronDown, ChevronUp, Clock, Plus, Trash2
+  Bike, Mountain, Award, Waves, Flame, ChevronDown, ChevronUp, Clock, Plus, Trash2, UtensilsCrossed, Upload, FileText, ExternalLink, CheckCircle2, Download
 } from 'lucide-react';
 import { 
-  BarChart, Bar, LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ComposedChart, PieChart, Pie, Cell
+  BarChart, Bar, LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ComposedChart, PieChart, Pie, Cell, LabelList
 } from 'recharts';
+
+import ReactECharts from 'echarts-for-react';
 
 // --- FIREBASE IMPORTS ---
 import { initializeApp } from "firebase/app";
@@ -13,7 +15,11 @@ import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, setPe
 import { getFirestore, doc, setDoc, onSnapshot, getDoc, initializeFirestore } from "firebase/firestore";
 
 import biozLogo from './BIOZ.png';
+import corpsHomme from './corps-homme-blanc.png';
+import corpsFemme from './corps-femme-blanc.png';
 import { DEMO_DATA } from './demoData';
+import NutritionImport from './NutritionImport';
+import { CorosSection } from './CorosCards';
 
 import video1 from './1.mp4';
 import video2 from './2.mp4';
@@ -27,8 +33,8 @@ const ONBOARDING_VIDEOS_MOBILE = [video1, video2, video3, video4];
 const ONBOARDING_VIDEOS_LAPTOP = [video1L, video2L, video3L, video4L];
 
 // --- VERSIONING ---
-const APP_VERSION = "v2.35.0 (Stable Switch)";
-console.log(`[Bodycontrol] Démarrage de l'application ${APP_VERSION}`);
+const APP_VERSION = "v2.36.0 (iOS Sync Fix)";
+console.log(`[BIOZ] Démarrage de l'application ${APP_VERSION}`);
 
 // --- WITHINGS CONFIGURATION ---
 const WITHINGS_CONFIG = {
@@ -56,6 +62,24 @@ const STRAVA_CONFIG = {
 const HEVY_CONFIG = {
   apiBase: "https://api.hevyapp.com/v1",
 };
+
+// --- DATA SOURCE PREFERENCES ---
+const DATA_TYPE_SOURCES = [
+  { key: 'weight', label: 'Poids', sources: ['withings'] },
+  { key: 'bodyFat', label: 'Body fat %', sources: ['withings'] },
+  { key: 'muscleMass', label: 'Masse musculaire', sources: ['withings'] },
+  { key: 'hydration', label: 'Hydratation', sources: ['withings'] },
+  { key: 'restingHR', label: 'FC repos', sources: ['withings', 'strava'] },
+  { key: 'systolic', label: 'Tension systolique', sources: ['withings'] },
+  { key: 'diastolic', label: 'Tension diastolique', sources: ['withings'] },
+  { key: 'pwv', label: 'PWV', sources: ['withings'] },
+  { key: 'visceralFat', label: 'Graisse viscérale', sources: ['withings'] },
+  { key: 'bmr', label: 'BMR', sources: ['withings'] },
+  { key: 'vascularAge', label: 'Âge vasculaire', sources: ['withings'] },
+  { key: 'steps', label: 'Pas', sources: ['withings', 'strava'] },
+  { key: 'distance', label: 'Distance', sources: ['withings', 'strava'] },
+  { key: 'endurance', label: 'Activités endurance', sources: ['strava'] },
+];
 
 const LOCAL_PROXY = "/proxy.php?url=";
 const PUBLIC_PROXY = "https://corsproxy.io/?";
@@ -109,6 +133,24 @@ function NavButton({ icon: Icon, label, active, onClick }) { return (<button onC
 function Modal({ isOpen, onClose, title, children, confirmText, onConfirm, isDestructive }) { if (!isOpen) return null; return (<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in"><div className="bg-slate-800 border border-slate-700 rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-slide-up"><div className="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-800"><h3 className="font-bold text-lg text-white flex items-center gap-2">{isDestructive && <AlertCircle className="w-5 h-5 text-red-500" />}{title}</h3><button onClick={onClose} className="text-slate-400 hover:text-white p-1"><X size={24} /></button></div><div className="p-6 text-slate-300">{children}</div><div className="p-4 bg-slate-900/50 flex gap-3 justify-end">{onConfirm && (<><button onClick={onClose} className="px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-700 font-medium">Annuler</button><button onClick={() => { onConfirm(); onClose(); }} className={`px-4 py-3 rounded-lg text-white font-medium shadow-lg ${isDestructive ? 'bg-red-600 hover:bg-red-700' : 'bg-violet-600 hover:bg-violet-700'}`}>{confirmText || 'Confirmer'}</button></>)}{!onConfirm && <button onClick={onClose} className="px-4 py-3 bg-slate-700 rounded-lg text-white font-medium hover:bg-slate-600">Fermer</button>}</div></div></div>); }
 function WaterModal({ isOpen, onClose, onAdd }) { if (!isOpen) return null; return (<Modal isOpen={isOpen} onClose={onClose} title="Ajouter de l'eau" confirmText={null} onConfirm={null}><div className="grid grid-cols-2 gap-4"><button onClick={() => onAdd(300)} className="bg-blue-600/20 hover:bg-blue-600/40 border-2 border-blue-500 p-6 rounded-2xl flex flex-col items-center gap-3 transition-all active:scale-95"><Droplet size={40} className="text-blue-400" /> <span className="text-xl font-bold text-blue-200">30 cl</span></button><button onClick={() => onAdd(500)} className="bg-blue-600/20 hover:bg-blue-600/40 border-2 border-blue-500 p-6 rounded-2xl flex flex-col items-center gap-3 transition-all active:scale-95"><div className="relative"><Droplet size={48} className="text-blue-400" /> <span className="absolute -top-1 -right-2 font-bold text-xl text-blue-300">+</span></div><span className="text-xl font-bold text-blue-200">50 cl</span></button></div><p className="text-center text-slate-400 text-sm mt-4">Sélectionnez la quantité bue</p></Modal>); }
 
+// --- LAZY CARD: ne rend le contenu que quand la carte est visible (IntersectionObserver) ---
+function LazyCard({ children, height = 300, className = "", style = {}, ...props }) {
+  const ref = useRef(null);
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(([e]) => { if (e.isIntersecting) { setVisible(true); obs.disconnect(); } }, { rootMargin: '200px' });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+  return (
+    <div ref={ref} className={className} style={style} {...props}>
+      {visible ? children : <div style={{ minHeight: height }} className="flex items-center justify-center text-slate-600 text-xs animate-pulse">Chargement...</div>}
+    </div>
+  );
+}
+
 // ============================================================================
 // 2. COMPOSANTS VUES
 // ============================================================================
@@ -121,6 +163,65 @@ function Dashboard({ healthLogs, stravaLogs }) {
   const [startDate, setStartDate] = useState(defaultStart);
   const [endDate, setEndDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [timeFrame, setTimeFrame] = useState('day');
+  const [showCardFilter, setShowCardFilter] = useState(false);
+  const [hiddenCards, setHiddenCards] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('bioz_hiddenCards') || '[]'); } catch { return []; }
+  });
+  const toggleCardVisibility = (cardId) => {
+    setHiddenCards(prev => {
+      const next = prev.includes(cardId) ? prev.filter(c => c !== cardId) : [...prev, cardId];
+      localStorage.setItem('bioz_hiddenCards', JSON.stringify(next));
+      return next;
+    });
+  };
+  const isCardVisible = (cardId) => !hiddenCards.includes(cardId);
+
+  const DEFAULT_ORDER = ['frequency', 'volume', 'repartition', 'steps', 'cycling_dist', 'running_dist', 'endurance_hr', 'cycling_dur', 'running_dur', 'cycling_speed', 'running_pace', 'rowing_dist', 'rowing_dur', 'rowing_hr'];
+  const CARD_LABELS = { frequency: "Fréquence d'entraînement", volume: "Volume d'entraînement", repartition: 'Répartition', steps: 'Pas par jour', cycling_dist: 'Cyclisme — Distance', running_dist: 'Running — Distance', endurance_hr: 'FC moy. endurance', cycling_dur: 'Cyclisme — Durée', running_dur: 'Running — Durée', cycling_speed: 'Cyclisme — Vit. moy.', running_pace: 'Running — Allure moy.', rowing_dist: 'Aviron — Distance', rowing_dur: 'Aviron — Durée', rowing_hr: 'Aviron — FC moy.' };
+
+  const [cardOrder, setCardOrder] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('bioz_cardOrder') || 'null');
+      if (saved && Array.isArray(saved)) {
+        const missing = DEFAULT_ORDER.filter(id => !saved.includes(id));
+        return [...saved.filter(id => DEFAULT_ORDER.includes(id)), ...missing];
+      }
+    } catch {}
+    return DEFAULT_ORDER;
+  });
+  const [dragId, setDragId] = useState(null);
+  const [dropTargetId, setDropTargetId] = useState(null);
+
+  const handleDragStart = (e, id) => {
+    setDragId(id);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', id);
+  };
+  const handleDragOver = (e, id) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (id !== dragId) setDropTargetId(id);
+  };
+  const handleDrop = (e, targetId) => {
+    e.preventDefault();
+    const sourceId = e.dataTransfer.getData('text/plain');
+    if (sourceId && targetId && sourceId !== targetId) {
+      setCardOrder(prev => {
+        const next = [...prev];
+        const fromIdx = next.indexOf(sourceId);
+        const toIdx = next.indexOf(targetId);
+        if (fromIdx !== -1 && toIdx !== -1) {
+          next.splice(fromIdx, 1);
+          next.splice(toIdx, 0, sourceId);
+        }
+        localStorage.setItem('bioz_cardOrder', JSON.stringify(next));
+        return next;
+      });
+    }
+    setDragId(null);
+    setDropTargetId(null);
+  };
+  const handleDragEnd = () => { setDragId(null); setDropTargetId(null); };
 
   // FIX PERF: utilisation de useMemo pour éviter le crash CPU sur mobile
   const safeStravaLogs = useMemo(() => Array.isArray(stravaLogs) ? stravaLogs : [], [stravaLogs]);
@@ -193,11 +294,74 @@ function Dashboard({ healthLogs, stravaLogs }) {
     return Object.keys(raw).map(key => ({ name: key, value: raw[key] }));
   }, [filteredStravaLogs]);
   
-  const stepsData = useMemo(() => aggregateData(healthLogs.filter(l => new Date(l.date) >= new Date(startDate)), (acc, log) => { 
-      if (log.steps > 0) acc.total = (acc.total || 0) + (log.steps || 0); 
+  const stepsData = useMemo(() => aggregateData(healthLogs.filter(l => new Date(l.date) >= new Date(startDate)), (acc, log) => {
+      if (log.steps > 0) acc.total = (acc.total || 0) + (log.steps || 0);
   }, { total: 0 }), [healthLogs, startDate, endDate, timeFrame]);
 
+  // --- Données endurance par type ---
+  const cyclingTypes = ['Ride', 'VirtualRide', 'EBikeRide'];
+  const runningTypes = ['Run'];
+  const rowingTypes = ['Rowing', 'VirtualRow'];
+
+  const cyclingMapped = useMemo(() => filteredStravaLogs.filter(a => cyclingTypes.includes(a.type)).map(l => ({ ...l, date: l.start_date })), [filteredStravaLogs]);
+  const runningMapped = useMemo(() => filteredStravaLogs.filter(a => runningTypes.includes(a.type)).map(l => ({ ...l, date: l.start_date })), [filteredStravaLogs]);
+  const rowingMapped = useMemo(() => filteredStravaLogs.filter(a => rowingTypes.includes(a.type)).map(l => ({ ...l, date: l.start_date })), [filteredStravaLogs]);
+  const enduranceMapped = useMemo(() => filteredStravaLogs.filter(a => [...cyclingTypes, ...runningTypes, ...rowingTypes].includes(a.type)).map(l => ({ ...l, date: l.start_date })), [filteredStravaLogs]);
+
+  const cyclingDistData = useMemo(() => aggregateData(cyclingMapped, (acc, log) => {
+    acc.distance = (acc.distance || 0) + ((log.distance || 0) / 1000);
+  }, { distance: 0 }).map(d => ({ ...d, distance: parseFloat(d.distance.toFixed(1)) || null })), [cyclingMapped, timeFrame, startDate, endDate]);
+
+  const runningDistData = useMemo(() => aggregateData(runningMapped, (acc, log) => {
+    acc.distance = (acc.distance || 0) + ((log.distance || 0) / 1000);
+  }, { distance: 0 }).map(d => ({ ...d, distance: parseFloat(d.distance.toFixed(1)) || null })), [runningMapped, timeFrame, startDate, endDate]);
+
+  const cyclingDurData = useMemo(() => aggregateData(cyclingMapped, (acc, log) => {
+    acc.duration = (acc.duration || 0) + ((log.moving_time || 0) / 60);
+  }, { duration: 0 }).map(d => ({ ...d, duration: Math.round(d.duration) || null })), [cyclingMapped, timeFrame, startDate, endDate]);
+
+  const runningDurData = useMemo(() => aggregateData(runningMapped, (acc, log) => {
+    acc.duration = (acc.duration || 0) + ((log.moving_time || 0) / 60);
+  }, { duration: 0 }).map(d => ({ ...d, duration: Math.round(d.duration) || null })), [runningMapped, timeFrame, startDate, endDate]);
+
+  const cyclingSpeedData = useMemo(() => aggregateData(cyclingMapped, (acc, log) => {
+    if (log.average_speed) { acc._speeds = acc._speeds || []; acc._speeds.push(log.average_speed); }
+  }, {}).map(d => ({ ...d, speed: d._speeds && d._speeds.length > 0 ? parseFloat((d._speeds.reduce((a, b) => a + b, 0) / d._speeds.length * 3.6).toFixed(1)) : null })), [cyclingMapped, timeFrame, startDate, endDate]);
+
+  const runningPaceData = useMemo(() => aggregateData(runningMapped, (acc, log) => {
+    if (log.average_speed) { acc._speeds = acc._speeds || []; acc._speeds.push(log.average_speed); }
+  }, {}).map(d => ({ ...d, pace: d._speeds && d._speeds.length > 0 ? parseFloat((1000 / (d._speeds.reduce((a, b) => a + b, 0) / d._speeds.length) / 60).toFixed(2)) : null })), [runningMapped, timeFrame, startDate, endDate]);
+
+  const rowingDistData = useMemo(() => aggregateData(rowingMapped, (acc, log) => {
+    acc.distance = (acc.distance || 0) + ((log.distance || 0) / 1000);
+  }, { distance: 0 }).map(d => ({ ...d, distance: parseFloat(d.distance.toFixed(1)) || null })), [rowingMapped, timeFrame, startDate, endDate]);
+
+  const rowingDurData = useMemo(() => aggregateData(rowingMapped, (acc, log) => {
+    acc.duration = (acc.duration || 0) + ((log.moving_time || 0) / 60);
+  }, { duration: 0 }).map(d => ({ ...d, duration: Math.round(d.duration) || null })), [rowingMapped, timeFrame, startDate, endDate]);
+
+  const rowingHRData = useMemo(() => aggregateData(rowingMapped, (acc, log) => {
+    if (log.average_heartrate) { acc._hrs = acc._hrs || []; acc._hrs.push(log.average_heartrate); }
+  }, {}).map(d => ({ ...d, hr: d._hrs && d._hrs.length > 0 ? Math.round(d._hrs.reduce((a, b) => a + b, 0) / d._hrs.length) : null })), [rowingMapped, timeFrame, startDate, endDate]);
+
+  const enduranceHRData = useMemo(() => aggregateData(enduranceMapped, (acc, log) => {
+    if (log.average_heartrate) { acc._hrs = acc._hrs || []; acc._hrs.push(log.average_heartrate); }
+  }, {}).map(d => ({ ...d, hr: d._hrs && d._hrs.length > 0 ? Math.round(d._hrs.reduce((a, b) => a + b, 0) / d._hrs.length) : null })), [enduranceMapped, timeFrame, startDate, endDate]);
+
   const chartTheme = { background: '#1e293b', grid: '#334155', text: '#94a3b8' };
+
+  // Ajoute un champ __trend (régression linéaire) à un tableau de points, pour la ligne de tendance pointillée.
+  const addSportTrend = (arr, key) => {
+    const pts = (arr || []).map((d, i) => ({ i, v: d[key] })).filter(p => p.v != null);
+    if (pts.length < 2) return (arr || []).map(d => ({ ...d, __trend: null }));
+    const n = pts.length;
+    const sx = pts.reduce((a, p) => a + p.i, 0), sy = pts.reduce((a, p) => a + p.v, 0);
+    const sxx = pts.reduce((a, p) => a + p.i * p.i, 0), sxy = pts.reduce((a, p) => a + p.i * p.v, 0);
+    const den = n * sxx - sx * sx;
+    if (den === 0) return (arr || []).map(d => ({ ...d, __trend: null }));
+    const m = (n * sxy - sx * sy) / den, b = (sy - m * sx) / n;
+    return (arr || []).map((d, i) => ({ ...d, __trend: parseFloat((m * i + b).toFixed(2)) }));
+  };
 
   return (
     <div className="animate-fade-in grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
@@ -210,86 +374,58 @@ function Dashboard({ healthLogs, stravaLogs }) {
           <div className="flex items-center gap-1 bg-slate-900/50 p-2 rounded border border-slate-600"><Filter size={14} className="text-slate-400 shrink-0" /><input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="bg-transparent text-slate-200 focus:outline-none w-full text-xs" /></div>
           <div className="flex items-center gap-1 bg-slate-900/50 p-2 rounded border border-slate-600"><span className="text-slate-500 text-xs px-1">à</span><input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="bg-transparent text-slate-200 focus:outline-none w-full text-xs" /></div>
         </div>
-      </div>
-
-      <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-lg">
-        <h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2">
-            <Calendar size={16} className="text-cyan-400"/> Fréquence d'entraînement
-        </h3>
-        <div className="h-56">
-            <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={stravaChartData}>
-                    <defs>
-                        <linearGradient id="cyanGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#06b6d4" stopOpacity={1}/><stop offset="100%" stopColor="#06b6d4" stopOpacity={0}/></linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.grid} />
-                    <XAxis dataKey="date" tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} padding={{ left: 10, right: 30 }} />
-                    <YAxis tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} allowDecimals={false} />
-                    <Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} />
-                    <Bar dataKey="count" name="Séances Strava" fill="url(#cyanGradient)" radius={[4, 4, 0, 0]} />
-                </BarChart>
-            </ResponsiveContainer>
-        </div>
-      </div>
-
-      <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-lg">
-        <h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2">
-            <Activity size={16} className="text-[#fc4c02]"/> Volume d'entraînement (mn)
-        </h3>
-        <div className="h-56">
-            <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={stravaChartData}>
-                    <defs>
-                        <linearGradient id="stravaGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#fc4c02" stopOpacity={1}/><stop offset="100%" stopColor="#fc4c02" stopOpacity={0}/></linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.grid} />
-                    <XAxis dataKey="date" tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} padding={{ left: 10, right: 30 }} />
-                    <YAxis tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} />
-                    <Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(value) => [`${value} min`, "Durée"]} />
-                    <Bar dataKey="durationMin" name="Durée (min)" fill="url(#stravaGradient)" radius={[4, 4, 0, 0]} />
-                </BarChart>
-            </ResponsiveContainer>
-        </div>
-      </div>
-
-      <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-lg">
-        <h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2">
-            <PieChart size={16} className="text-violet-400"/> Répartition
-        </h3>
-        <div className="h-56 flex items-center justify-center">
-            {pieData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                        <Tooltip contentStyle={DARK_TOOLTIP_STYLE} itemStyle={{color: '#fff'}} />
-                        <Pie data={pieData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={5} dataKey="value" stroke="none">
-                            {pieData.map((entry, index) => (
-                                <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} style={{ filter: 'drop-shadow(0px 4px 6px rgba(0, 0, 0, 0.4))' }} />
-                            ))}
-                        </Pie>
-                        <Legend wrapperStyle={{ fontSize: 10 }} />
-                    </PieChart>
-                </ResponsiveContainer>
-            ) : (
-                <div className="text-slate-500 text-sm">Aucune donnée Strava sur cette période.</div>
-            )}
-        </div>
-      </div>
-
-      <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-lg md:col-span-2 xl:col-span-1">
-          <h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Footprints size={16} className="text-emerald-400"/> Pas par jour</h3>
-          <div className="h-56">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={stepsData}>
-                <defs><linearGradient id="emeraldGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#10b981" stopOpacity={1}/><stop offset="100%" stopColor="#10b981" stopOpacity={0}/></linearGradient></defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.grid} />
-                <XAxis dataKey="date" tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} padding={{ left: 10, right: 30 }} />
-                <YAxis tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} />
-                <Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} />
-                <Bar dataKey="total" fill="url(#emeraldGradient)" radius={[4, 4, 0, 0]} name="Pas" />
-              </BarChart>
-            </ResponsiveContainer>
+        <button onClick={() => setShowCardFilter(p => !p)} className={`flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors ${showCardFilter ? 'bg-violet-600/20 border-violet-500/50 text-violet-300' : 'bg-slate-900/50 border-slate-600 text-slate-400 hover:text-slate-200'}`}>
+          <Settings size={14} /> Afficher / masquer des cartes {hiddenCards.length > 0 && <span className="bg-violet-500 text-white rounded-full px-1.5 text-[10px]">{hiddenCards.length}</span>}
+        </button>
+        {showCardFilter && (
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {DEFAULT_ORDER.map(id => (
+              <button key={id} onClick={() => toggleCardVisibility(id)}
+                className={`text-left px-3 py-2 rounded-lg text-xs font-medium border transition-colors ${isCardVisible(id) ? 'bg-slate-700/50 border-slate-600 text-slate-200' : 'bg-slate-900/80 border-slate-700 text-slate-500 line-through'}`}>
+                {isCardVisible(id) ? '✓' : '✕'} {CARD_LABELS[id]}
+              </button>
+            ))}
           </div>
+        )}
       </div>
+
+      {cardOrder.filter(id => isCardVisible(id)).map(id => {
+        const cardContent = {
+          frequency: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Calendar size={16} className="text-cyan-400"/> Fréquence d'entraînement</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={addSportTrend(stravaChartData, 'count')}><defs><linearGradient id="cyanGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#06b6d4" stopOpacity={1}/><stop offset="100%" stopColor="#06b6d4" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.grid} /><XAxis dataKey="date" tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} padding={{ left: 10, right: 30 }} /><YAxis tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} allowDecimals={false} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} /><Bar dataKey="count" name="Séances" fill="url(#cyanGradient)" radius={[4, 4, 0, 0]} /><Line type="monotone" dataKey="__trend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" connectNulls /></ComposedChart></ResponsiveContainer></div></>,
+          volume: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Activity size={16} className="text-[#fc4c02]"/> Volume d'entraînement (mn)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={addSportTrend(stravaChartData, 'durationMin')}><defs><linearGradient id="stravaGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#fc4c02" stopOpacity={1}/><stop offset="100%" stopColor="#fc4c02" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.grid} /><XAxis dataKey="date" tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} padding={{ left: 10, right: 30 }} /><YAxis tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(value) => [`${value} min`, "Durée"]} /><Bar dataKey="durationMin" name="Durée (min)" fill="url(#stravaGradient)" radius={[4, 4, 0, 0]} /><Line type="monotone" dataKey="__trend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" connectNulls /></ComposedChart></ResponsiveContainer></div></>,
+          repartition: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><PieChart size={16} className="text-violet-400"/> Répartition</h3><div className="h-56 flex items-center justify-center">{pieData.length > 0 ? (<ResponsiveContainer width="100%" height="100%"><PieChart><Tooltip contentStyle={DARK_TOOLTIP_STYLE} itemStyle={{color: '#fff'}} /><Pie data={pieData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={5} dataKey="value" stroke="none">{pieData.map((entry, index) => (<Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} style={{ filter: 'drop-shadow(0px 4px 6px rgba(0, 0, 0, 0.4))' }} />))}</Pie><Legend wrapperStyle={{ fontSize: 10 }} /></PieChart></ResponsiveContainer>) : (<div className="text-slate-500 text-sm">Aucune donnée sur cette période.</div>)}</div></>,
+          steps: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Footprints size={16} className="text-emerald-400"/> Pas par jour</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={addSportTrend(stepsData, 'total')}><defs><linearGradient id="emeraldGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#10b981" stopOpacity={1}/><stop offset="100%" stopColor="#10b981" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.grid} /><XAxis dataKey="date" tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} padding={{ left: 10, right: 30 }} /><YAxis tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} /><Bar dataKey="total" fill="url(#emeraldGradient)" radius={[4, 4, 0, 0]} name="Pas" /><Line type="monotone" dataKey="__trend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" connectNulls /></ComposedChart></ResponsiveContainer></div></>,
+          cycling_dist: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Bike size={16} className="text-blue-400"/> Cyclisme — Distance (km)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={addSportTrend(cyclingDistData, 'distance')}><defs><linearGradient id="bikeDistGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#3b82f6" stopOpacity={1}/><stop offset="100%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.grid} /><XAxis dataKey="date" tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} padding={{ left: 10, right: 30 }} /><YAxis tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(v) => [`${v} km`, 'Distance']} /><Bar dataKey="distance" fill="url(#bikeDistGrad)" radius={[4, 4, 0, 0]} name="Distance (km)" /><Line type="monotone" dataKey="__trend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" connectNulls /></ComposedChart></ResponsiveContainer></div></>,
+          running_dist: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Footprints size={16} className="text-orange-400"/> Running — Distance (km)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={addSportTrend(runningDistData, 'distance')}><defs><linearGradient id="runDistGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#f97316" stopOpacity={1}/><stop offset="100%" stopColor="#f97316" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.grid} /><XAxis dataKey="date" tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} padding={{ left: 10, right: 30 }} /><YAxis tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(v) => [`${v} km`, 'Distance']} /><Bar dataKey="distance" fill="url(#runDistGrad)" radius={[4, 4, 0, 0]} name="Distance (km)" /><Line type="monotone" dataKey="__trend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" connectNulls /></ComposedChart></ResponsiveContainer></div></>,
+          endurance_hr: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Heart size={16} className="text-red-400"/> FC moy. endurance (bpm)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={addSportTrend(enduranceHRData, 'hr')}><defs><linearGradient id="hrEndGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#ef4444" stopOpacity={1}/><stop offset="100%" stopColor="#ef4444" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.grid} /><XAxis dataKey="date" tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} padding={{ left: 10, right: 30 }} /><YAxis tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} domain={['auto', 'auto']} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(v) => [`${v} bpm`, 'FC moy.']} /><Bar dataKey="hr" fill="url(#hrEndGrad)" radius={[4, 4, 0, 0]} name="FC moy. (bpm)" /><Line type="monotone" dataKey="__trend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" connectNulls /></ComposedChart></ResponsiveContainer></div></>,
+          cycling_dur: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Clock size={16} className="text-blue-400"/> Cyclisme — Durée (min)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={addSportTrend(cyclingDurData, 'duration')}><defs><linearGradient id="bikeDurGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#60a5fa" stopOpacity={1}/><stop offset="100%" stopColor="#60a5fa" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.grid} /><XAxis dataKey="date" tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} padding={{ left: 10, right: 30 }} /><YAxis tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(v) => [`${v} min`, 'Durée']} /><Bar dataKey="duration" fill="url(#bikeDurGrad)" radius={[4, 4, 0, 0]} name="Durée (min)" /><Line type="monotone" dataKey="__trend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" connectNulls /></ComposedChart></ResponsiveContainer></div></>,
+          running_dur: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Clock size={16} className="text-orange-400"/> Running — Durée (min)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={addSportTrend(runningDurData, 'duration')}><defs><linearGradient id="runDurGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#fb923c" stopOpacity={1}/><stop offset="100%" stopColor="#fb923c" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.grid} /><XAxis dataKey="date" tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} padding={{ left: 10, right: 30 }} /><YAxis tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(v) => [`${v} min`, 'Durée']} /><Bar dataKey="duration" fill="url(#runDurGrad)" radius={[4, 4, 0, 0]} name="Durée (min)" /><Line type="monotone" dataKey="__trend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" connectNulls /></ComposedChart></ResponsiveContainer></div></>,
+          cycling_speed: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Bike size={16} className="text-blue-400"/> Cyclisme — Vit. moy. (km/h)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={addSportTrend(cyclingSpeedData, 'speed')}><defs><linearGradient id="bikeSpdGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#3b82f6" stopOpacity={1}/><stop offset="100%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.grid} /><XAxis dataKey="date" tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} padding={{ left: 10, right: 30 }} /><YAxis tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} domain={['auto', 'auto']} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(v) => [`${v} km/h`, 'Vit. moy.']} /><Bar dataKey="speed" fill="url(#bikeSpdGrad)" radius={[4, 4, 0, 0]} name="Vit. moy. (km/h)" /><Line type="monotone" dataKey="__trend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" connectNulls /></ComposedChart></ResponsiveContainer></div></>,
+          running_pace: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Footprints size={16} className="text-orange-400"/> Running — Allure moy. (min/km)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={addSportTrend(runningPaceData, 'pace')}><defs><linearGradient id="runPaceGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#f97316" stopOpacity={0.6}/><stop offset="100%" stopColor="#f97316" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.grid} /><XAxis dataKey="date" tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} padding={{ left: 10, right: 30 }} /><YAxis tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} domain={['auto', 'auto']} reversed /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(v) => [`${v} min/km`, 'Allure']} /><Area type="monotone" dataKey="pace" stroke="#f97316" fill="url(#runPaceGrad)" strokeWidth={2} name="Allure (min/km)" dot={false} connectNulls /><Line type="monotone" dataKey="__trend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" connectNulls /></ComposedChart></ResponsiveContainer></div></>,
+          rowing_dist: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Waves size={16} className="text-cyan-400"/> Aviron — Distance (km)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={addSportTrend(rowingDistData, 'distance')}><defs><linearGradient id="rowDistGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#06b6d4" stopOpacity={1}/><stop offset="100%" stopColor="#06b6d4" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.grid} /><XAxis dataKey="date" tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} padding={{ left: 10, right: 30 }} /><YAxis tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(v) => [`${v} km`, 'Distance']} /><Bar dataKey="distance" fill="url(#rowDistGrad)" radius={[4, 4, 0, 0]} name="Distance (km)" /><Line type="monotone" dataKey="__trend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" connectNulls /></ComposedChart></ResponsiveContainer></div></>,
+          rowing_dur: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Clock size={16} className="text-cyan-400"/> Aviron — Durée (min)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={addSportTrend(rowingDurData, 'duration')}><defs><linearGradient id="rowDurGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#22d3ee" stopOpacity={1}/><stop offset="100%" stopColor="#22d3ee" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.grid} /><XAxis dataKey="date" tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} padding={{ left: 10, right: 30 }} /><YAxis tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(v) => [`${v} min`, 'Durée']} /><Bar dataKey="duration" fill="url(#rowDurGrad)" radius={[4, 4, 0, 0]} name="Durée (min)" /><Line type="monotone" dataKey="__trend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" connectNulls /></ComposedChart></ResponsiveContainer></div></>,
+          rowing_hr: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Heart size={16} className="text-cyan-400"/> Aviron — FC moy. (bpm)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={addSportTrend(rowingHRData, 'hr')}><defs><linearGradient id="rowHRGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#06b6d4" stopOpacity={1}/><stop offset="100%" stopColor="#06b6d4" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.grid} /><XAxis dataKey="date" tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} padding={{ left: 10, right: 30 }} /><YAxis tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} domain={['auto', 'auto']} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(v) => [`${v} bpm`, 'FC moy.']} /><Bar dataKey="hr" fill="url(#rowHRGrad)" radius={[4, 4, 0, 0]} name="FC moy. (bpm)" /><Line type="monotone" dataKey="__trend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" connectNulls /></ComposedChart></ResponsiveContainer></div></>,
+        }[id];
+        if (!cardContent) return null;
+        const isDragging = dragId === id;
+        const isDropTarget = dropTargetId === id && dragId !== id;
+        return (
+          <div key={id}
+            className={`bg-slate-800 p-4 rounded-xl border-2 shadow-lg transition-all duration-150 ${isDragging ? 'border-violet-500 opacity-40 scale-95' : isDropTarget ? 'border-violet-400 ring-2 ring-violet-400/30 scale-[1.02]' : 'border-slate-700'}`}
+            draggable={!isMobile}
+            onDragStart={(e) => handleDragStart(e, id)}
+            onDragOver={(e) => handleDragOver(e, id)}
+            onDrop={(e) => handleDrop(e, id)}
+            onDragEnd={handleDragEnd}
+            onDragLeave={() => { if (dropTargetId === id) setDropTargetId(null); }}
+            style={!isMobile ? { cursor: isDragging ? 'grabbing' : 'grab' } : {}}
+          >
+            <LazyCard height={224} style={isDragging ? { pointerEvents: 'none' } : {}}>
+              {cardContent}
+            </LazyCard>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -528,20 +664,109 @@ function HevyView({ hevyWorkouts, loadingHevy, hevyError, hevySyncStatus, fetchH
   );
 }
 
-function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings, onWithingsSync, goals, isDemo }) {
+function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings, onWithingsSync, goals, isDemo, onAddWater, onOpenWaterModal }) {
+  // Sync manuel des wearables via les gateways PHP sur le VPS.
+  const [fitbitSyncing, setFitbitSyncing] = useState(false);
+  const [corosSyncing, setCorosSyncing] = useState(false);
+  const [topSyncMsg, setTopSyncMsg] = useState(null); // { ok, text }
+  const triggerSync = async (url, label, setBusy) => {
+    if (!user) return;
+    setBusy(true);
+    setTopSyncMsg(null);
+    try {
+      const res = await fetch(url, { method: 'POST', headers: { 'X-Bioz-Uid': user.uid } });
+      const data = await res.json();
+      setTopSyncMsg({ ok: !!data.ok, text: data.ok ? `✓ ${label} · ${data.summary || 'OK'} · ${data.duration_sec}s` : (data.error || 'Erreur sync') });
+    } catch (e) {
+      setTopSyncMsg({ ok: false, text: e.message || 'Erreur réseau' });
+    } finally {
+      setBusy(false);
+      setTimeout(() => setTopSyncMsg(null), 8000);
+    }
+  };
+  const handleFitbitSync = () => triggerSync('https://bioz.app/fitbit-trigger.php', 'Google Health', setFitbitSyncing);
+  const handleCorosSync = () => triggerSync('https://bioz.app/coros-trigger.php', 'Coros', setCorosSyncing);
+
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [weight, setWeight] = useState('');
   const [bodyFat, setBodyFat] = useState('');
   const [muscleMass, setMuscleMass] = useState('');
   const [hydration, setHydration] = useState('');
   const [steps, setSteps] = useState('');
-  const [distance, setDistance] = useState(''); 
-  const [waist, setWaist] = useState(''); 
+  const [distance, setDistance] = useState('');
+  const [waist, setWaist] = useState('');
+  const [glucose, setGlucose] = useState('');
+  const [ketones, setKetones] = useState('');
+  const [respiratoryRate, setRespiratoryRate] = useState('');
+  const [spo2, setSpo2] = useState('');
 
   const [startDate, setStartDate] = useState('2026-01-01');
   const [endDate, setEndDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [timeFrame, setTimeFrame] = useState('day');
-  
+
+  const [showHealthCardFilter, setShowHealthCardFilter] = useState(false);
+  const [healthHiddenCards, setHealthHiddenCards] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('bioz_healthHiddenCards') || '[]'); } catch { return []; }
+  });
+  const toggleHealthCardVisibility = (cardId) => {
+    setHealthHiddenCards(prev => {
+      const next = prev.includes(cardId) ? prev.filter(c => c !== cardId) : [...prev, cardId];
+      localStorage.setItem('bioz_healthHiddenCards', JSON.stringify(next));
+      return next;
+    });
+  };
+  const isHealthCardVisible = (cardId) => !healthHiddenCards.includes(cardId);
+
+  const HEALTH_DEFAULT_ORDER = ['h_bodySilhouette', 'h_weightFat', 'h_composition', 'h_muscleFatBar', 'h_weight', 'h_waist', 'h_bp', 'h_restingHR', 'h_pwv', 'h_bodyFat', 'h_muscleMass', 'h_hydration', 'h_visceralFat', 'h_corosBilan', 'h_corosSommeil', 'h_corosVfc', 'h_corosFcRepos', 'h_energyBalance', 'h_fitbitPas', 'h_fitbitEnergie', 'h_fitbitSpo2', 'h_fitbitGlycemie'];
+  const HEALTH_CARD_LABELS = { h_bodySilhouette: 'Silhouette Corporelle', h_weightFat: 'Poids & Graisse', h_composition: 'Composition Corporelle', h_muscleFatBar: 'Répartition Muscle / Graisse', h_weight: 'Poids', h_waist: 'Tour de taille', h_bp: 'Tension Artérielle', h_restingHR: 'FC Repos', h_pwv: "Vitesse d'Onde de Pouls", h_bodyFat: 'Graisse Corporelle', h_muscleMass: 'Masse Musculaire', h_hydration: 'Hydratation', h_visceralFat: 'Graisse Viscérale', h_corosBilan: 'Bilan Santé', h_corosSommeil: 'Sommeil', h_corosVfc: 'VFC nocturne', h_corosFcRepos: 'FC Repos', h_energyBalance: 'Balance énergétique', h_fitbitPas: 'Pas — Fitbit', h_fitbitEnergie: 'Énergie — Fitbit', h_fitbitSpo2: 'SpO2 — Fitbit', h_fitbitGlycemie: 'Glycémie — Fitbit' };
+  const [bodySilhouetteGender, setBodySilhouetteGender] = useState(() => localStorage.getItem('bioz_bodySilhouetteGender') || 'homme');
+
+  const [healthCardOrder, setHealthCardOrder] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('bioz_healthCardOrder') || 'null');
+      if (saved && Array.isArray(saved)) {
+        const missing = HEALTH_DEFAULT_ORDER.filter(id => !saved.includes(id));
+        return [...saved.filter(id => HEALTH_DEFAULT_ORDER.includes(id)), ...missing];
+      }
+    } catch {}
+    return HEALTH_DEFAULT_ORDER;
+  });
+  const [healthDragId, setHealthDragId] = useState(null);
+  const [healthDropTargetId, setHealthDropTargetId] = useState(null);
+
+  const handleHealthDragStart = (e, id) => {
+    setHealthDragId(id);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', id);
+  };
+  const handleHealthDragOver = (e, id) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (id !== healthDragId) setHealthDropTargetId(id);
+  };
+  const handleHealthDrop = (e, targetId) => {
+    e.preventDefault();
+    const sourceId = e.dataTransfer.getData('text/plain');
+    if (sourceId && targetId && sourceId !== targetId) {
+      setHealthCardOrder(prev => {
+        const next = [...prev];
+        const fromIdx = next.indexOf(sourceId);
+        const toIdx = next.indexOf(targetId);
+        if (fromIdx !== -1 && toIdx !== -1) {
+          next.splice(fromIdx, 1);
+          next.splice(toIdx, 0, sourceId);
+        }
+        localStorage.setItem('bioz_healthCardOrder', JSON.stringify(next));
+        return next;
+      });
+    }
+    setHealthDragId(null);
+    setHealthDropTargetId(null);
+  };
+  const handleHealthDragEnd = () => { setHealthDragId(null); setHealthDropTargetId(null); };
+
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
   const START_WEIGHT = goals.startWeight; const TARGET_WEIGHT = goals.targetWeight;
   const START_FAT = goals.startFat; const TARGET_FAT = goals.targetFat;
   const START_WAIST = goals.startWaist; const TARGET_WAIST = goals.targetWaist;
@@ -572,6 +797,26 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings,
   const latestVascularAge = getLastKnownValue('vascularAge');
   const latestRestingHR = getLastKnownValue('restingHR');
 
+  // --- DONNÉES KETO (glucose & cétones depuis saisie manuelle) ---
+  const latestGlucose = getLastKnownValue('glucose');
+  const latestKetones = getLastKnownValue('ketones');
+  const latestGKI = (latestGlucose && latestKetones) ? parseFloat((latestGlucose / 18.016 / latestKetones).toFixed(1)) : null;
+
+  const ketoData = useMemo(() => {
+    return [...healthLogs]
+      .filter(l => l.glucose || l.ketones)
+      .sort((a, b) => new Date(a.date) - new Date(b.date))
+      .map(l => {
+        const d = new Date(l.date);
+        return {
+          date: `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`,
+          glucose: l.glucose || null,
+          ketones: l.ketones || null,
+          gki: (l.glucose && l.ketones) ? l.glucose / 18.016 / l.ketones : null,
+        };
+      });
+  }, [healthLogs]);
+
   // --- BILAN IA ---
   const [aiBilan, setAiBilan] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
@@ -600,21 +845,81 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings,
   const generateAiBilan = async () => {
     setAiLoading(true);
     setAiError(null);
-    const recentLogs = [...healthLogs].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 10);
-    // Calcul des moyennes sur les 5 derniers jours pour aider Claude à analyser les tendances
+
+    // --- Pré-calcul des indicateurs côté JS ---
+    const sorted = [...healthLogs].sort((a, b) => new Date(b.date) - new Date(a.date));
+    const now = new Date();
+    const logsInRange = (days) => sorted.filter(l => (now - new Date(l.date)) / 86400000 <= days);
+    const last7 = logsInRange(7);
+    const prev7 = sorted.filter(l => { const d = (now - new Date(l.date)) / 86400000; return d > 7 && d <= 14; });
+    const last30 = logsInRange(30);
+    const prev30 = sorted.filter(l => { const d = (now - new Date(l.date)) / 86400000; return d > 30 && d <= 60; });
+
     const avg = (logs, key) => {
       const vals = logs.filter(l => l[key] != null).map(l => l[key]);
-      return vals.length ? (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1) : null;
+      return vals.length ? parseFloat((vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1)) : null;
     };
-    const last5 = recentLogs.slice(0, 5);
-    const prev5 = recentLogs.slice(5, 10);
-    const trends = {
-      weight:  { recent: avg(last5, 'weight'),  prev: avg(prev5, 'weight') },
-      bodyFat: { recent: avg(last5, 'bodyFat'), prev: avg(prev5, 'bodyFat') },
-      waist:   { recent: avg(last5, 'waist'),   prev: avg(prev5, 'waist') },
+    const delta = (recent, prev) => (recent != null && prev != null) ? parseFloat((recent - prev).toFixed(1)) : null;
+    const pct = (current, start, target) => (start !== target) ? Math.min(100, Math.max(0, Math.round(((start - current) / (start - target)) * 100))) : null;
+
+    const ind = {
+      weight:    { now: latestWeight, avg7: avg(last7, 'weight'), avg7prev: avg(prev7, 'weight'), avg30: avg(last30, 'weight'), avg30prev: avg(prev30, 'weight') },
+      bodyFat:   { now: latestFat, avg7: avg(last7, 'bodyFat'), avg7prev: avg(prev7, 'bodyFat'), avg30: avg(last30, 'bodyFat'), avg30prev: avg(prev30, 'bodyFat') },
+      muscle:    { now: latestMuscle, avg7: avg(last7, 'muscleMass'), avg7prev: avg(prev7, 'muscleMass'), avg30: avg(last30, 'muscleMass'), avg30prev: avg(prev30, 'muscleMass') },
+      hydration: { now: latestHydration, avg7: avg(last7, 'hydration'), avg7prev: avg(prev7, 'hydration') },
+      waist:     { now: latestWaist, avg7: avg(last7, 'waist'), avg7prev: avg(prev7, 'waist'), avg30: avg(last30, 'waist'), avg30prev: avg(prev30, 'waist') },
+      visceral:  { now: latestVisceral, avg7: avg(last7, 'visceralFat'), avg7prev: avg(prev7, 'visceralFat') },
+      cardio:    { sys: latestSystolic, dia: latestDiastolic, hr: latestRestingHR, pwv: latestPWV, vascAge: latestVascularAge, sysAvg7: avg(last7, 'systolic'), diaAvg7: avg(last7, 'diastolic'), hrAvg7: avg(last7, 'restingHR') },
+      bmr:       latestBMR,
     };
-    const systemPrompt = `Tu es un coach santé expert en nutrition cétogène. Tu t'adresses à un homme de 55 ans, 1,74 m, en régime cétogène. Objectifs : 95 kg (depuis 106), 15% de graisse (depuis 26%), 95 cm de tour de taille (depuis 107). TON : Pince-sans-rire, direct, avec une touche d'humour sec — une vraie vanne max par bilan, pas un sourire de façade. Tu sais reconnaître les progrès et les saluer sincèrement (même avec une pointe d'ironie), et tu dis franchement quand ça stagne sans t'appesantir. ANALYSE : Ne jamais commenter une variation d'un seul jour — la balance ment, les conditions changent. Tu analyses UNIQUEMENT les tendances sur les 5 derniers jours disponibles : si le poids moyen des 5 jours baisse par rapport aux 5 jours d'avant, c'est une vraie tendance. Une variation isolée ne signifie rien. HYDRATATION : Quand le poids baisse mais que le taux de graisse augmente, ne conclus PAS automatiquement à une perte musculaire. Vérifie d'abord le taux d'hydratation : une déshydratation fausse la mesure de graisse à la hausse (impédancemétrie). Mentionne cette hypothèse si l'hydratation est basse. PRIORITÉS : L'objectif prioritaire est la perte de tour de taille (graisse viscérale), puis le poids. La perte de muscle n'est PAS un problème tant que le taux de graisse reste sous 20%. Ne tire pas la sonnette d'alarme pour une baisse de masse musculaire si la graisse est sous contrôle. IMPORTANT : Le bilan est généré le matin. Ignore les données du jour en cours. FORMATAGE : Zéro markdown, zéro tiret, zéro étoile. Prose uniquement. Maximum 4-5 phrases pour le bilan, 3 conseils courts. Sépare les deux parties avec [CONSEILS] seul sur une ligne.`;
-    const userMessage = `Voici mes données de santé au ${new Date().toLocaleDateString('fr-FR')} :\n\nMESURES ACTUELLES :\n- Poids : ${latestWeight || 'non mesuré'} kg\n- Tour de taille : ${latestWaist || 'non mesuré'} cm\n- Graisse corporelle : ${latestFat || 'non mesuré'} %\n- Masse musculaire : ${latestMuscle || 'non mesuré'} %\n- Hydratation : ${latestHydration || 'non mesuré'} %\n- Tension : ${latestSystolic || '--'}/${latestDiastolic || '--'} mmHg\n- FC repos : ${latestRestingHR || 'non mesuré'} bpm\n- Vitesse onde de pouls : ${latestPWV || 'non mesuré'} m/s\n- Graisse viscérale : ${latestVisceral || 'non mesuré'}\n- Métabolisme de base : ${latestBMR || 'non mesuré'} kcal\n- Âge vasculaire : ${latestVascularAge || 'non mesuré'} ans\nTENDANCES SUR 5 JOURS (moyennes calculées — base ton analyse là-dessus, pas sur les variations quotidiennes) :\nPoids moyen J-5 à J-1 : ${trends.weight.recent || '—'} kg | Poids moyen J-10 à J-6 : ${trends.weight.prev || '—'} kg\nGraisse moyenne récente : ${trends.bodyFat.recent || '—'}% | Graisse période précédente : ${trends.bodyFat.prev || '—'}%\nTour de taille moyen récent : ${trends.waist.recent || '—'} cm | Période précédente : ${trends.waist.prev || '—'} cm\n\nMESURES BRUTES DES 10 DERNIERS JOURS (pour contexte uniquement) :\n${recentLogs.slice(0,10).map(l => `• ${new Date(l.date).toLocaleDateString('fr-FR')} — Poids: ${l.weight||'—'}kg, Graisse: ${l.bodyFat||'—'}%, Taille: ${l.waist||'—'}cm, Muscle: ${l.muscleMass||'—'}%`).join('\n')}\n\nFais mon bilan du jour en te basant sur les tendances, pas sur les variations d'un seul jour.`;
+
+    const f = (v) => v != null ? v : '—';
+    const fDelta = (v) => v != null ? (v > 0 ? `+${v}` : `${v}`) : '—';
+
+    const systemPrompt = `Tu es un coach santé expert en composition corporelle et nutrition cétogène. Ton interlocuteur est un homme de 55 ans, 1m74, en régime cétogène.
+
+TON : Direct, pince-sans-rire, une seule vanne max par bilan. Tu salues les vrais progrès et tu dis franchement quand ça stagne.
+
+RÈGLES D'ANALYSE :
+- Analyse UNIQUEMENT les deltas pré-calculés fournis. Ne refais pas les calculs.
+- Un delta 7j montre une tendance court terme. Un delta 30j montre une tendance de fond. Priorise le 30j.
+- Impédancemétrie : si hydratation < 55%, les mesures de graisse et muscle sont FAUSSÉES (graisse surestimée, muscle sous-estimé). Mentionne-le.
+- Priorités dans l'ordre : 1) tour de taille (graisse viscérale), 2) poids, 3) composition (graisse/muscle).
+- La perte de muscle n'est PAS alarmante si la graisse baisse aussi (remodelage normal en perte de poids).
+- PWV > 9 m/s ou FC repos > 80 bpm méritent un commentaire. Sinon, ne parle pas du cardio.
+- Ignore les données du jour en cours (bilan généré le matin).
+
+FORMAT STRICT (zéro markdown, zéro tiret, zéro étoile, prose uniquement) :
+[BILAN]
+3-4 phrases factuelles : ce qui progresse, ce qui stagne, ce qui régresse. Cite les chiffres de delta.
+[ALERTES]
+0 à 2 alertes courtes si nécessaire (déshydratation, stagnation >2 semaines, valeur cardio anormale). Si rien d'alarmant, écris "Rien à signaler."
+[ACTIONS]
+2-3 recommandations concrètes et actionnables pour les prochains jours.`;
+
+    const userMessage = `Bilan du ${new Date().toLocaleDateString('fr-FR')}
+
+OBJECTIFS : Poids ${goals.startWeight}→${goals.targetWeight} kg (${f(pct(ind.weight.now, goals.startWeight, goals.targetWeight))}% atteint) | Graisse ${goals.startFat}→${goals.targetFat}% (${f(pct(ind.bodyFat.now, goals.startFat, goals.targetFat))}% atteint) | Tour de taille ${goals.startWaist}→${goals.targetWaist} cm (${f(pct(ind.waist.now, goals.startWaist, goals.targetWaist))}% atteint)
+
+COMPOSITION CORPORELLE (valeur actuelle | delta 7j | delta 30j) :
+Poids : ${f(ind.weight.now)} kg | ${fDelta(delta(ind.weight.avg7, ind.weight.avg7prev))} | ${fDelta(delta(ind.weight.avg30, ind.weight.avg30prev))}
+Graisse : ${f(ind.bodyFat.now)}% | ${fDelta(delta(ind.bodyFat.avg7, ind.bodyFat.avg7prev))} | ${fDelta(delta(ind.bodyFat.avg30, ind.bodyFat.avg30prev))}
+Muscle : ${f(ind.muscle.now)}% | ${fDelta(delta(ind.muscle.avg7, ind.muscle.avg7prev))} | ${fDelta(delta(ind.muscle.avg30, ind.muscle.avg30prev))}
+Hydratation : ${f(ind.hydration.now)}% | ${fDelta(delta(ind.hydration.avg7, ind.hydration.avg7prev))}
+
+MORPHOLOGIE :
+Tour de taille : ${f(ind.waist.now)} cm | ${fDelta(delta(ind.waist.avg7, ind.waist.avg7prev))} | ${fDelta(delta(ind.waist.avg30, ind.waist.avg30prev))}
+Graisse viscérale : ${f(ind.visceral.now)} | ${fDelta(delta(ind.visceral.avg7, ind.visceral.avg7prev))}
+
+CARDIO-VASCULAIRE :
+Tension : ${f(ind.cardio.sys)}/${f(ind.cardio.dia)} mmHg (moy 7j : ${f(ind.cardio.sysAvg7)}/${f(ind.cardio.diaAvg7)})
+FC repos : ${f(ind.cardio.hr)} bpm (moy 7j : ${f(ind.cardio.hrAvg7)})
+Vitesse onde de pouls : ${f(ind.cardio.pwv)} m/s
+Âge vasculaire : ${f(ind.cardio.vascAge)} ans
+
+MÉTABOLISME :
+BMR : ${f(ind.bmr)} kcal`;
+
     try {
       const response = await fetch('/claude_proxy.php', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ system: systemPrompt, messages: [{ role: 'user', content: userMessage }] }) });
       if (!response.ok) throw new Error(`Erreur HTTP ${response.status}`);
@@ -641,8 +946,12 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings,
     const cleanWaist = waist ? parseFloat(waist.replace(',', '.')) : null;
     const cleanSteps = steps ? parseInt(steps) : null;
     const cleanDistance = distance ? parseFloat(distance.replace(',', '.')) : null;
+    const cleanGlucose = glucose ? parseFloat(glucose.replace(',', '.')) : null;
+    const cleanKetones = ketones ? parseFloat(ketones.replace(',', '.')) : null;
+    const cleanRespiratoryRate = respiratoryRate ? parseFloat(respiratoryRate.replace(',', '.')) : null;
+    const cleanSpo2 = spo2 ? parseFloat(spo2.replace(',', '.')) : null;
 
-    if (!cleanWeight && !cleanSteps && !cleanWaist && !cleanHydration && !cleanDistance) return;
+    if (!cleanWeight && !cleanSteps && !cleanWaist && !cleanHydration && !cleanDistance && !cleanGlucose && !cleanKetones && !cleanRespiratoryRate && !cleanSpo2) return;
 
     // FIX P2: On lit TOUJOURS les données les plus récentes depuis Firestore avant de fusionner
     // Cela évite d'écraser des saisies faites sur un autre device entre temps
@@ -660,17 +969,17 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings,
     let updatedLogs;
     if (existingIndex >= 0) {
         const existing = latestLogs[existingIndex];
-        const updatedEntry = { ...existing, weight: cleanWeight || existing.weight, bodyFat: cleanBodyFat || existing.bodyFat, muscleMass: cleanMuscleMass || existing.muscleMass, hydration: cleanHydration || existing.hydration, steps: cleanSteps || existing.steps, distance: cleanDistance || existing.distance, waist: cleanWaist || existing.waist };
+        const updatedEntry = { ...existing, weight: cleanWeight || existing.weight, bodyFat: cleanBodyFat || existing.bodyFat, muscleMass: cleanMuscleMass || existing.muscleMass, hydration: cleanHydration || existing.hydration, steps: cleanSteps || existing.steps, distance: cleanDistance || existing.distance, waist: cleanWaist || existing.waist, glucose: cleanGlucose || existing.glucose, ketones: cleanKetones || existing.ketones, respiratoryRate: cleanRespiratoryRate || existing.respiratoryRate, spo2: cleanSpo2 || existing.spo2 };
         updatedLogs = [...latestLogs];
         updatedLogs[existingIndex] = updatedEntry;
     } else {
-        const newEntry = { id: generateId(), date: new Date(date).toISOString(), weight: cleanWeight, bodyFat: cleanBodyFat, muscleMass: cleanMuscleMass, hydration: cleanHydration, steps: cleanSteps, distance: cleanDistance, waist: cleanWaist };
+        const newEntry = { id: generateId(), date: new Date(date).toISOString(), weight: cleanWeight, bodyFat: cleanBodyFat, muscleMass: cleanMuscleMass, hydration: cleanHydration, steps: cleanSteps, distance: cleanDistance, waist: cleanWaist, glucose: cleanGlucose, ketones: cleanKetones, respiratoryRate: cleanRespiratoryRate, spo2: cleanSpo2 };
         updatedLogs = [...latestLogs, newEntry];
     }
     
     updatedLogs.sort((a, b) => new Date(a.date) - new Date(b.date));
     setHealthLogs(updatedLogs);
-    setWeight(''); setBodyFat(''); setMuscleMass(''); setHydration(''); setSteps(''); setWaist(''); setDistance('');
+    setWeight(''); setBodyFat(''); setMuscleMass(''); setHydration(''); setSteps(''); setWaist(''); setDistance(''); setGlucose(''); setKetones(''); setRespiratoryRate(''); setSpo2('');
   };
 
   const deleteEntry = async (id) => { 
@@ -697,7 +1006,7 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings,
       logs.forEach(log => {
           const key = getGroupKey(log.date, timeFrame);
           const sortKey = getSortKey(log.date, timeFrame);
-          if (!groups[key]) groups[key] = { date: key, sortKey, weightSum: 0, fatSum: 0, musSum: 0, hydraSum: 0, stepSum:0, waistSum: 0, distSum: 0, sysSum: 0, diaSum: 0, countW: 0, countS: 0, countWaist: 0, countSys: 0, countDia: 0, pwvSum: 0, countPwv: 0, visceralSum: 0, countVisc: 0, bmrSum: 0, countBmr: 0, hrSum: 0, countHr: 0 };
+          if (!groups[key]) groups[key] = { date: key, sortKey, weightSum: 0, fatSum: 0, musSum: 0, hydraSum: 0, stepSum:0, waistSum: 0, distSum: 0, sysSum: 0, diaSum: 0, countW: 0, countS: 0, countWaist: 0, countSys: 0, countDia: 0, pwvSum: 0, countPwv: 0, visceralSum: 0, countVisc: 0, bmrSum: 0, countBmr: 0, hrSum: 0, countHr: 0, glucoseSum: 0, countGlucose: 0, ketonesSum: 0, countKetones: 0 };
           if (log.weight) { groups[key].weightSum += log.weight; groups[key].countW += 1; }
           if (log.bodyFat) groups[key].fatSum += log.bodyFat;
           if (log.muscleMass) groups[key].musSum += log.muscleMass;
@@ -711,6 +1020,8 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings,
           if (log.visceralFat) { groups[key].visceralSum += log.visceralFat; groups[key].countVisc += 1; }
           if (log.bmr) { groups[key].bmrSum += log.bmr; groups[key].countBmr += 1; }
           if (log.restingHR) { groups[key].hrSum += log.restingHR; groups[key].countHr += 1; }
+          if (log.glucose) { groups[key].glucoseSum += log.glucose; groups[key].countGlucose += 1; }
+          if (log.ketones) { groups[key].ketonesSum += log.ketones; groups[key].countKetones += 1; }
       });
       return Object.values(groups).sort((a, b) => a.sortKey - b.sortKey).map(g => ({
             date: g.date,
@@ -726,7 +1037,9 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings,
             pwv: g.countPwv > 0 ? parseFloat((g.pwvSum / g.countPwv).toFixed(1)) : null,
             visceralFat: g.countVisc > 0 ? parseFloat((g.visceralSum / g.countVisc).toFixed(1)) : null,
             bmr: g.countBmr > 0 ? Math.round(g.bmrSum / g.countBmr) : null,
-            restingHR: g.countHr > 0 ? Math.round(g.hrSum / g.countHr) : null
+            restingHR: g.countHr > 0 ? Math.round(g.hrSum / g.countHr) : null,
+            glucose: g.countGlucose > 0 ? Math.round(g.glucoseSum / g.countGlucose) : null,
+            ketones: g.countKetones > 0 ? parseFloat((g.ketonesSum / g.countKetones).toFixed(2)) : null
       }));
   };
 
@@ -758,6 +1071,10 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings,
     data = calculateTrendLine(data, 'waist', 'waistTrend');
     data = calculateTrendLine(data, 'bodyFat', 'bodyFatTrend');
     data = calculateTrendLine(data, 'visceralFat', 'visceralFatTrend');
+    data = calculateTrendLine(data, 'muscleMass', 'muscleMassTrend');
+    data = calculateTrendLine(data, 'hydration', 'hydrationTrend');
+    data = calculateTrendLine(data, 'restingHR_bp', 'restingHR_bpTrend');
+    data = calculateTrendLine(data, 'pwv', 'pwvTrend');
     return data;
   }, [safeChartData]);
 
@@ -769,6 +1086,27 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings,
   const muscleTrend = getDynamicTrend('muscleMass');
   const fatTrend = getDynamicTrend('bodyFat');
 
+  // Données agrégées semaine/mois pour les graphes comparatifs (Poids&Graisse + Composition)
+  const weeklyChartData = useMemo(() => {
+    const wfTf = timeFrame === 'day' ? 'week' : timeFrame;
+    const groups = {};
+    filteredLogs.forEach(log => {
+      if (!log.date) return;
+      const key = getGroupKey(log.date, wfTf);
+      const sortKey = getSortKey(log.date, wfTf);
+      if (!groups[key]) groups[key] = { date: key, sortKey, wSum: 0, fSum: 0, mSum: 0, cW: 0, cF: 0, cM: 0 };
+      if (log.weight) { groups[key].wSum += log.weight; groups[key].cW += 1; }
+      if (log.bodyFat) { groups[key].fSum += log.bodyFat; groups[key].cF += 1; }
+      if (log.muscleMass) { groups[key].mSum += log.muscleMass; groups[key].cM += 1; }
+    });
+    return Object.values(groups).sort((a, b) => a.sortKey - b.sortKey).map(g => ({
+      date: g.date,
+      weight: g.cW > 0 ? parseFloat((g.wSum / g.cW).toFixed(1)) : null,
+      bodyFat: g.cF > 0 ? parseFloat((g.fSum / g.cF).toFixed(1)) : null,
+      muscleMass: g.cM > 0 ? parseFloat((g.mSum / g.cM).toFixed(1)) : null,
+    })).filter(d => d.weight !== null || d.bodyFat !== null || d.muscleMass !== null);
+  }, [filteredLogs, timeFrame]);
+
   const currentWeight = latestWeight || START_WEIGHT; const lostWeight = Math.max(0, START_WEIGHT - currentWeight); const weightProgress = Math.min(100, Math.max(0, (lostWeight / (START_WEIGHT - TARGET_WEIGHT)) * 100));
   const currentFat = latestFat || START_FAT; const lostFat = Math.max(0, START_FAT - currentFat); const fatProgress = Math.min(100, Math.max(0, (lostFat / (START_FAT - TARGET_FAT)) * 100));
   const currentWaist = latestWaist || START_WAIST; const lostWaist = Math.max(0, START_WAIST - currentWaist); const waistProgress = Math.min(100, Math.max(0, (lostWaist / (START_WAIST - TARGET_WAIST)) * 100));
@@ -776,30 +1114,6 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings,
 
   return (
     <div className="animate-fade-in space-y-6">
-      <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-lg">
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="font-bold text-slate-200 flex items-center gap-2"><Plus size={18} className="text-violet-400"/> Nouvelle mesure</h3>
-          {isDemo ? (
-            <span className="text-xs text-slate-500 italic">Lecture seule en démo</span>
-          ) : isSyncingWithings ? (
-            <span className="flex items-center gap-2 text-xs text-slate-400"><RefreshCw size={14} className="animate-spin text-violet-400"/> Sync Withings...</span>
-          ) : (
-            <button onClick={() => onWithingsSync()} className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-bold px-3 py-2 rounded-lg transition-colors border border-slate-600">
-              <RefreshCw size={14} className="text-violet-400"/> Sync Withings
-            </button>
-          )}
-        </div>
-        <div className={`grid grid-cols-2 md:grid-cols-3 gap-4 ${isDemo ? 'opacity-50 pointer-events-none' : ''}`}>
-            <input type="date" value={date} onChange={e => setDate(e.target.value)} className="bg-slate-900 border border-slate-600 rounded p-2 text-white" disabled={isDemo} />
-            <input type="text" value={weight} onChange={e => setWeight(e.target.value)} placeholder="Poids (kg)" className="bg-slate-900 border border-slate-600 rounded p-2 text-white" disabled={isDemo} />
-            <input type="text" value={waist} onChange={e => setWaist(e.target.value)} placeholder="Tour de taille (cm)" className="bg-slate-900 border border-slate-600 rounded p-2 text-white border-orange-500/50" disabled={isDemo} />
-            <input type="text" value={bodyFat} onChange={e => setBodyFat(e.target.value)} placeholder="Fat %" className="bg-slate-900 border border-slate-600 rounded p-2 text-white" disabled={isDemo} />
-            <input type="text" value={muscleMass} onChange={e => setMuscleMass(e.target.value)} placeholder="Mus %" className="bg-slate-900 border border-slate-600 rounded p-2 text-white" disabled={isDemo} />
-            <input type="text" value={hydration} onChange={e => setHydration(e.target.value)} placeholder="Eau %" className="bg-slate-900 border border-slate-600 rounded p-2 text-white" disabled={isDemo} />
-            <button onClick={handleSave} disabled={isDemo} className="col-span-2 md:col-span-3 w-full bg-violet-600 text-white font-bold p-2 rounded hover:bg-violet-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">Enregistrer</button>
-        </div>
-      </div>
-
       {/* --- CARTES BILAN IA --- */}
       <div className="space-y-4">
 
@@ -849,27 +1163,23 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings,
           </div>
         )}
 
-        {/* Contenu en deux cartes */}
+        {/* Contenu en 3 cartes */}
         {aiBilan && !aiLoading && (() => {
-          // Nettoie le texte : supprime *, #, ** et les numéros de section
-          const clean = (text) => text
-            .replace(/\*\*/g, '')
-            .replace(/^\*\s*/,'')
-            .replace(/^#+\s*/,'')
-            .replace(/^[-•]\s*/, '')
-            .trim();
-
-          // Split sur le séparateur [CONSEILS]
-          const parts = aiBilan.split(/\[CONSEILS\]/i);
-          const bilanText = parts[0] || '';
-          const conseilText = parts[1] || '';
-          const bilanLines = bilanText.split('\n').map(l => clean(l)).filter(Boolean);
-          const conseilLines = conseilText.split('\n').map(l => clean(l)).filter(Boolean);
+          const clean = (text) => text.replace(/\*\*/g, '').replace(/^\*\s*/,'').replace(/^#+\s*/,'').replace(/^[-•]\s*/, '').trim();
+          // Parse les 3 sections [BILAN], [ALERTES], [ACTIONS] — fallback sur l'ancien format [CONSEILS]
+          const extractSection = (tag) => {
+            const regex = new RegExp(`\\[${tag}\\]([\\s\\S]*?)(?=\\[(?:BILAN|ALERTES|ACTIONS|CONSEILS)\\]|$)`, 'i');
+            const match = aiBilan.match(regex);
+            return match ? match[1].split('\n').map(l => clean(l)).filter(Boolean) : [];
+          };
+          const bilanLines = extractSection('BILAN');
+          const alertLines = extractSection('ALERTES');
+          const actionLines = extractSection('ACTIONS').length > 0 ? extractSection('ACTIONS') : extractSection('CONSEILS');
 
           return (
-            <>
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
               {/* Carte 1 — Bilan */}
-              <div className="bg-slate-800 border border-violet-500/30 rounded-xl overflow-hidden">
+              <div className="bg-slate-800 border border-violet-500/30 rounded-xl overflow-hidden xl:row-span-2">
                 <div className="bg-violet-500/10 px-5 py-3 border-b border-violet-500/20 flex items-center gap-2">
                   <HeartPulse size={15} className="text-violet-400 shrink-0" />
                   <span className="text-sm font-bold text-violet-300">Bilan du jour</span>
@@ -881,15 +1191,30 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings,
                 </div>
               </div>
 
-              {/* Carte 2 — Conseils */}
-              {conseilLines.length > 0 && (
+              {/* Carte 2 — Alertes */}
+              {alertLines.length > 0 && (
+                <div className="bg-slate-800 border border-orange-500/30 rounded-xl overflow-hidden">
+                  <div className="bg-orange-500/10 px-5 py-3 border-b border-orange-500/20 flex items-center gap-2">
+                    <AlertCircle size={15} className="text-orange-400 shrink-0" />
+                    <span className="text-sm font-bold text-orange-300">Points d'attention</span>
+                  </div>
+                  <div className="px-5 py-4 space-y-3">
+                    {alertLines.map((line, i) => (
+                      <p key={i} className="text-slate-300 text-sm leading-relaxed">{line}</p>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Carte 3 — Actions */}
+              {actionLines.length > 0 && (
                 <div className="bg-slate-800 border border-emerald-500/30 rounded-xl overflow-hidden">
                   <div className="bg-emerald-500/10 px-5 py-3 border-b border-emerald-500/20 flex items-center gap-2">
                     <TrendingUp size={15} className="text-emerald-400 shrink-0" />
-                    <span className="text-sm font-bold text-emerald-300">Conseils personnalisés</span>
+                    <span className="text-sm font-bold text-emerald-300">Actions recommandées</span>
                   </div>
                   <div className="px-5 py-4 space-y-4">
-                    {conseilLines.map((line, i) => (
+                    {actionLines.map((line, i) => (
                       <div key={i} className="flex items-start gap-3">
                         <span className="text-emerald-500 font-bold text-sm mt-0.5 shrink-0">→</span>
                         <p className="text-slate-300 text-sm leading-relaxed">{line}</p>
@@ -898,7 +1223,7 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings,
                   </div>
                 </div>
               )}
-            </>
+            </div>
           );
         })()}
 
@@ -906,10 +1231,44 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings,
 
       <div className="bg-slate-800 p-4 rounded-xl shadow-lg border border-slate-700 flex flex-col gap-4">
         <div className="flex justify-between items-center"><h2 className="text-xl font-bold text-slate-100 flex items-center gap-2"><Scale className="text-pink-500" /> Santé</h2><div className="flex bg-slate-900/50 p-1 rounded-lg">{['day', 'week', 'month'].map(tf => (<button key={tf} onClick={() => setTimeFrame(tf)} className={`px-3 py-1 rounded text-sm ${timeFrame === tf ? 'bg-violet-600 text-white' : 'text-slate-400'}`}>{tf === 'day' ? 'Jour' : tf === 'week' ? 'Sem.' : 'Mois'}</button>))}</div></div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-slate-500">Synchroniser :</span>
+          <button onClick={() => !isDemo && onWithingsSync()} disabled={isSyncingWithings || isDemo}
+            className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-bold px-3 py-2 rounded-lg transition-colors border border-slate-600 disabled:opacity-50 disabled:cursor-not-allowed">
+            <RefreshCw size={14} className={isSyncingWithings ? 'animate-spin text-violet-400' : 'text-violet-400'} />
+            {isSyncingWithings ? 'Withings…' : 'Withings'}
+          </button>
+          <button onClick={() => !isDemo && handleFitbitSync()} disabled={fitbitSyncing || isDemo}
+            className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-bold px-3 py-2 rounded-lg transition-colors border border-slate-600 disabled:opacity-50 disabled:cursor-not-allowed">
+            <RefreshCw size={14} className={fitbitSyncing ? 'animate-spin text-emerald-400' : 'text-emerald-400'} />
+            {fitbitSyncing ? 'Google Health…' : 'Google Health'}
+          </button>
+          <button onClick={() => !isDemo && handleCorosSync()} disabled={corosSyncing || isDemo}
+            className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-bold px-3 py-2 rounded-lg transition-colors border border-slate-600 disabled:opacity-50 disabled:cursor-not-allowed">
+            <RefreshCw size={14} className={corosSyncing ? 'animate-spin text-orange-400' : 'text-orange-400'} />
+            {corosSyncing ? 'Coros…' : 'Coros'}
+          </button>
+          {topSyncMsg && (
+            <span className={`text-xs ${topSyncMsg.ok ? 'text-green-400' : 'text-red-400'} max-w-[320px] truncate`} title={topSyncMsg.text}>{topSyncMsg.text}</span>
+          )}
+        </div>
         <div className="grid grid-cols-2 gap-2 text-sm">
           <div className="flex items-center gap-1 bg-slate-900/50 p-2 rounded border border-slate-600"><Filter size={14} className="text-slate-400 shrink-0" /><input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="bg-transparent text-slate-200 focus:outline-none w-full text-xs" /></div>
           <div className="flex items-center gap-1 bg-slate-900/50 p-2 rounded border border-slate-600"><span className="text-slate-500 text-xs px-1">à</span><input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="bg-transparent text-slate-200 focus:outline-none w-full text-xs" /></div>
         </div>
+        <button onClick={() => setShowHealthCardFilter(p => !p)} className={`flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors ${showHealthCardFilter ? 'bg-violet-600/20 border-violet-500/50 text-violet-300' : 'bg-slate-900/50 border-slate-600 text-slate-400 hover:text-slate-200'}`}>
+          <Settings size={14} /> Afficher / masquer des cartes {healthHiddenCards.length > 0 && <span className="bg-violet-500 text-white rounded-full px-1.5 text-[10px]">{healthHiddenCards.length}</span>}
+        </button>
+        {showHealthCardFilter && (
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {HEALTH_DEFAULT_ORDER.map(id => (
+              <button key={id} onClick={() => toggleHealthCardVisibility(id)}
+                className={`text-left px-3 py-2 rounded-lg text-xs font-medium border transition-colors ${isHealthCardVisible(id) ? 'bg-slate-700/50 border-slate-600 text-slate-200' : 'bg-slate-900/80 border-slate-700 text-slate-500 line-through'}`}>
+                {isHealthCardVisible(id) ? '✓' : '✕'} {HEALTH_CARD_LABELS[id]}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 2xl:grid-cols-12 gap-3">
@@ -926,6 +1285,32 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings,
         <div className="bg-slate-800 p-3 rounded-xl border border-slate-700 flex flex-col items-center justify-center text-center hover:bg-slate-700 transition-colors"><span className="text-slate-400 text-xs uppercase font-bold tracking-wide">Âge vasc.</span><div className="text-xl font-bold text-rose-400 mt-1">{latestVascularAge || '--'} <span className="text-xs text-slate-500">ans</span></div></div>
         <div className="bg-slate-800 p-3 rounded-xl border border-slate-700 flex flex-col items-center justify-center text-center hover:bg-slate-700 transition-colors"><span className="text-slate-400 text-xs uppercase font-bold tracking-wide">Pas / Dist.</span><div className="text-xl font-bold text-cyan-400 mt-1">{latestSteps || '--'} <span className="text-xs text-slate-500">/ {latestDist || '-'} km</span></div></div>
       </div>
+
+      {/* --- BARRE EAU --- */}
+      {(() => {
+        const todayKey = getLocalDateKey(new Date());
+        const todayLog = healthLogs.find(l => l.date && getLocalDateKey(l.date) === todayKey);
+        const waterMl = todayLog?.waterIntake || 0;
+        const waterGoal = 2500;
+        const waterPct = Math.min(100, Math.round((waterMl / waterGoal) * 100));
+        return (
+          <div className="bg-slate-800 rounded-xl border border-slate-700 p-4 flex items-center gap-4">
+            <button onClick={() => !isDemo && onOpenWaterModal()} className={`shrink-0 bg-blue-600/20 text-blue-400 p-2.5 rounded-full border border-blue-500/50 active:scale-95 transition-all ${isDemo ? 'opacity-50 cursor-not-allowed' : ''}`}>
+              <Droplet size={22} fill="currentColor" className="opacity-80"/>
+            </button>
+            <div className="flex-1 min-w-0">
+              <div className="flex justify-between items-baseline mb-1.5">
+                <span className="text-xs font-bold text-slate-300">Eau du jour</span>
+                <span className="text-xs text-slate-400"><span className="text-blue-400 font-bold">{waterMl >= 1000 ? (waterMl / 1000).toFixed(1) + ' L' : waterMl + ' ml'}</span> / {waterGoal / 1000}L</span>
+              </div>
+              <div className="w-full bg-slate-700 rounded-full h-2.5 overflow-hidden">
+                <div className="bg-gradient-to-r from-blue-500 to-cyan-400 h-full rounded-full transition-all duration-500 ease-out" style={{ width: `${waterPct}%` }}/>
+              </div>
+              <div className="text-[10px] text-slate-500 mt-1">{waterPct}% de l'objectif</div>
+            </div>
+          </div>
+        );
+      })()}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {[
@@ -1059,11 +1444,10 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings,
           },
         ];
 
-        // FIX PERF: useMemo sur les régressions
-        const regressions = useMemo(() => metrics.map(m => ({
+        const regressions = metrics.map(m => ({
           ...m,
           reg: weightedRegression(healthLogs, m.key),
-        })), [healthLogs]);
+        }));
 
         const hasEnoughData = regressions.some(r => r.reg !== null);
         if (!hasEnoughData) return null;
@@ -1168,275 +1552,426 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings,
       })()}
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-          <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 min-h-[300px]">
-             <h3 className="text-sm font-bold text-slate-300 mb-4">Poids</h3>
-             <div className="h-56">
-                <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={chartDataWithTrends}>
-                        <defs><linearGradient id="violetGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#8b5cf6" stopOpacity={0.3}/><stop offset="100%" stopColor="#8b5cf6" stopOpacity={0}/></linearGradient></defs>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" />
-                        <XAxis dataKey="date" stroke="#94a3b8" tick={{fontSize:10}} padding={{ left: 10, right: 30 }} />
-                        <YAxis domain={safeDomain} allowDataOverflow={true} stroke="#94a3b8" tick={{fontSize:10}} />
-                        <Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} />
-                        <Area type="monotone" dataKey="weight" stroke="#8b5cf6" fill="url(#violetGradient)" strokeWidth={2} name="Poids (kg)" dot={false} connectNulls/>
-                        <Line type="monotone" dataKey="weightTrend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" />
+      {healthCardOrder.filter(id => isHealthCardVisible(id)).map(id => {
+        const healthCardContent = {
+          h_bodySilhouette: (() => {
+            const bodyImg = bodySilhouetteGender === 'homme' ? corpsHomme : corpsFemme;
+            const isHomme = bodySilhouetteGender === 'homme';
+            const refs = isHomme
+              ? { muscle: 40, fat: 20, hydration: 60, visceral: 9, muscleLabel: '36-44%', fatLabel: '15-25%', hydrationLabel: '55-65%', visceralLabel: '1-9' }
+              : { muscle: 33, fat: 28, hydration: 55, visceral: 9, muscleLabel: '28-38%', fatLabel: '20-35%', hydrationLabel: '50-60%', visceralLabel: '1-9' };
+            const metrics = [
+              { key: 'muscle', label: 'Muscle', value: latestMuscle, color: '#10b981', ref: refs.muscle, refLabel: refs.muscleLabel, max: 100, unit: '%' },
+              { key: 'fat', label: 'Graisse', value: latestFat, color: '#eab308', ref: refs.fat, refLabel: refs.fatLabel, max: 100, unit: '%' },
+              { key: 'hydration', label: 'Hydratation', value: latestHydration, color: '#3b82f6', ref: refs.hydration, refLabel: refs.hydrationLabel, max: 100, unit: '%' },
+              { key: 'visceral', label: 'Visc.', value: latestVisceral, color: '#f97316', ref: refs.visceral, refLabel: refs.visceralLabel, max: 30, unit: '' },
+            ];
+            const maskStyle = (img) => ({
+              WebkitMaskImage: `url(${img})`,
+              WebkitMaskSize: 'contain',
+              WebkitMaskRepeat: 'no-repeat',
+              WebkitMaskPosition: 'center',
+              maskImage: `url(${img})`,
+              maskSize: 'contain',
+              maskRepeat: 'no-repeat',
+              maskPosition: 'center',
+            });
+            return (
+              <>
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2"><User size={14} className="text-violet-400"/> SILHOUETTE CORPORELLE</h3>
+                  <button
+                    onClick={() => {
+                      const next = bodySilhouetteGender === 'homme' ? 'femme' : 'homme';
+                      setBodySilhouetteGender(next);
+                      localStorage.setItem('bioz_bodySilhouetteGender', next);
+                    }}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold transition-all bg-slate-700 hover:bg-slate-600 text-slate-300 border border-slate-600"
+                  >
+                    {isHomme ? '♂ Homme' : '♀ Femme'}
+                    <span className="text-[10px] text-slate-500">changer</span>
+                  </button>
+                </div>
+                <p className="text-[10px] text-slate-500 mb-4">Dernières valeurs mesurées vs moyennes OMS/ACSM ({isHomme ? 'homme' : 'femme'} adulte)</p>
+                <div className="flex justify-around items-start gap-2 sm:gap-6">
+                  {metrics.map(m => {
+                    const fillPct = m.value ? Math.min(100, Math.max(0, (m.value / m.max) * 100)) : 0;
+                    const refPct = Math.min(100, Math.max(0, (m.ref / m.max) * 100));
+                    const isLowerBetter = m.key === 'fat' || m.key === 'visceral';
+                    const isGood = isLowerBetter ? m.value <= m.ref : m.value >= m.ref;
+                    return (
+                      <div key={m.key} className="flex flex-col items-center flex-1" style={{ maxWidth: 130 }}>
+                        <div className="text-[11px] font-bold mb-3" style={{ color: m.color }}>{m.label}</div>
+                        {/* Silhouette container */}
+                        <div className="relative" style={{ width: '100%', maxWidth: 100, aspectRatio: '0.45' }}>
+                          {/* Fond gris — silhouette non remplie, masquée par la forme du corps */}
+                          <div className="absolute inset-0" style={{ ...maskStyle(bodyImg), background: '#334155' }} />
+                          {/* Remplissage coloré de bas en haut, masqué par la forme du corps */}
+                          <div className="absolute inset-0" style={{ clipPath: `inset(${100 - fillPct}% 0 0 0)` }}>
+                            <div className="w-full h-full" style={{ ...maskStyle(bodyImg), background: `linear-gradient(to top, ${m.color}, ${m.color}88)` }} />
+                          </div>
+                          {/* Contour blanc de la silhouette */}
+                          <img src={bodyImg} alt="" className="absolute inset-0 w-full h-full object-contain" style={{ opacity: 0.15 }} />
+                          {/* Repère moyenne OMS — trait horizontal */}
+                          <div className="absolute left-0 right-0" style={{ bottom: `${refPct}%`, transform: 'translateY(50%)' }}>
+                            <div className="flex items-center">
+                              <div className="flex-1 h-[2px] rounded-full" style={{ background: `${m.color}`, boxShadow: `0 0 6px ${m.color}88` }} />
+                            </div>
+                            <div className="absolute left-full ml-1 text-[9px] font-bold whitespace-nowrap" style={{ color: m.color, top: '50%', transform: 'translateY(-50%)' }}>
+                              {m.ref}{m.unit}
+                            </div>
+                          </div>
+                        </div>
+                        {/* Valeurs */}
+                        <div className="mt-3 text-center">
+                          <div className="text-lg font-black" style={{ color: m.color }}>{m.value ? `${m.value}${m.unit}` : '—'}</div>
+                          <div className="text-[10px] text-slate-500 mt-0.5">moy. {m.refLabel}</div>
+                          {m.value && (
+                            <div className={`text-[10px] font-bold mt-1 px-2 py-0.5 rounded-full ${
+                              isGood ? 'bg-emerald-500/20 text-emerald-400' : 'bg-yellow-500/20 text-yellow-400'
+                            }`}>
+                              {isGood ? '✓ Bon' : (isLowerBetter ? '⚠ Au-dessus' : '⚠ En-dessous')}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            );
+          })(),
+          h_weightFat: (() => {
+            const wfData = weeklyChartData.filter(d => d.weight !== null || d.bodyFat !== null);
+            const weights = wfData.map(d => d.weight).filter(Boolean);
+            const fats = wfData.map(d => d.bodyFat).filter(Boolean);
+            const wMin = weights.length ? Math.floor(Math.min(...weights) - 2) : 80;
+            const wMax = weights.length ? Math.ceil(Math.max(...weights) + 2) : 110;
+            const fMin = fats.length ? Math.floor(Math.min(...fats) - 2) : 15;
+            const fMax = fats.length ? Math.ceil(Math.max(...fats) + 2) : 35;
+            return (
+              <>
+                <div className="flex justify-between items-start mb-4">
+                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">POIDS & GRAISSE CORPORELLE</h3>
+                  <div className="flex gap-4">
+                    <div className="flex items-center gap-2 text-xs font-bold text-[#38bdf8]"><div className="w-2.5 h-2.5 rounded-sm bg-[#38bdf8]"></div> Poids (kg)</div>
+                    <div className="flex items-center gap-2 text-xs font-bold text-[#4ade80]"><div className="w-2.5 h-2.5 rounded-sm bg-[#4ade80]"></div> Graisse (%)</div>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-500 mb-3">{timeFrame === 'day' ? 'Agrégé par semaine' : `Vue ${timeFrame === 'week' ? 'hebdomadaire' : 'mensuelle'}`}</p>
+                <div className="h-72">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={weeklyChartData} margin={{ top: 5, right: 10, bottom: 5, left: 10 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={true} horizontal={true} stroke="#334155" opacity={0.5} />
+                      <XAxis dataKey="date" stroke="#94a3b8" tick={{fontSize: 10}} axisLine={false} tickLine={false} dy={10} padding={{ left: 10, right: 10 }} />
+                      <YAxis yAxisId="left" domain={[wMin, wMax]} stroke="#38bdf8" tick={{fontSize: 10}} axisLine={false} tickLine={false} tickFormatter={(v) => `${v}`} />
+                      <YAxis yAxisId="right" orientation="right" domain={[fMin, fMax]} stroke="#4ade80" tick={{fontSize: 10}} axisLine={false} tickLine={false} tickFormatter={(v) => `${v}`} />
+                      <Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{stroke: '#fff', strokeWidth: 1, strokeDasharray: '3 3'}} formatter={(value, name) => name === 'Poids (kg)' ? [`${value} kg`, name] : [`${value} %`, name]} />
+                      <Line yAxisId="left" type="monotone" dataKey="weight" stroke="#38bdf8" strokeWidth={2.5} dot={{ r: 3, fill: '#38bdf8', strokeWidth: 0 }} activeDot={{ r: 5, strokeWidth: 0 }} connectNulls name="Poids (kg)" />
+                      <Line yAxisId="right" type="monotone" dataKey="bodyFat" stroke="#4ade80" strokeWidth={2.5} dot={{ r: 3, fill: '#4ade80', strokeWidth: 0 }} activeDot={{ r: 5, strokeWidth: 0 }} connectNulls name="Graisse (%)" />
                     </ComposedChart>
-                </ResponsiveContainer>
-             </div>
-             {latestWeight && (
-               <div className="mt-3 flex items-center justify-between text-xs">
-                 <span className="text-slate-400">Dernière valeur : <span className="font-bold text-violet-400">{latestWeight} kg</span></span>
-                 <span className={`font-semibold px-2 py-0.5 rounded-full ${latestWeight < 60 ? 'bg-blue-500/20 text-blue-400' : latestWeight < 75 ? 'bg-emerald-500/20 text-emerald-400' : latestWeight < 90 ? 'bg-yellow-500/20 text-yellow-400' : 'bg-red-500/20 text-red-400'}`}>
-                   {latestWeight < 60 ? '⬇ Insuffisant' : latestWeight < 75 ? '✓ Optimal' : latestWeight < 90 ? '⚠ Surpoids' : '⛔ Obésité'}
-                 </span>
-               </div>
-             )}
-          </div>
-          <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 min-h-[300px]">
-             <h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Ruler size={16} className="text-orange-400"/> Tour de taille (cm)</h3>
-             <div className="h-56">
-                <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={chartDataWithTrends}>
-                        <defs><linearGradient id="orangeGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#fb923c" stopOpacity={0.3}/><stop offset="100%" stopColor="#fb923c" stopOpacity={0}/></linearGradient></defs>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" />
-                        <XAxis dataKey="date" stroke="#94a3b8" tick={{fontSize:10}} padding={{ left: 10, right: 30 }} />
-                        <YAxis domain={safeDomain} allowDataOverflow={true} stroke="#94a3b8" tick={{fontSize:10}} />
-                        <Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} />
-                        <Area type="monotone" dataKey="waist" stroke="#fb923c" fill="url(#orangeGradient)" strokeWidth={2} name="Taille (cm)" dot={false} connectNulls/>
-                        <Line type="monotone" dataKey="waistTrend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" />
+                  </ResponsiveContainer>
+                </div>
+                <div className="mt-4 flex gap-4">
+                  {latestWeight && <div className="flex-1 bg-black/40 rounded-xl p-3 border border-slate-700/50"><div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Poids actuel</div><div className="text-xl font-bold text-[#38bdf8]">{latestWeight} <span className="text-xs text-slate-500">kg</span></div></div>}
+                  {latestFat && <div className="flex-1 bg-black/40 rounded-xl p-3 border border-slate-700/50"><div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Graisse actuelle</div><div className="text-xl font-bold text-[#4ade80]">{latestFat} <span className="text-xs text-slate-500">%</span></div></div>}
+                </div>
+              </>
+            );
+          })(),
+          h_weight: <><h3 className="text-sm font-bold text-slate-300 mb-4">Poids</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={chartDataWithTrends}><defs><linearGradient id="violetGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#8b5cf6" stopOpacity={0.3}/><stop offset="100%" stopColor="#8b5cf6" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" /><XAxis dataKey="date" stroke="#94a3b8" tick={{fontSize:10}} padding={{ left: 10, right: 30 }} /><YAxis domain={safeDomain} allowDataOverflow={true} stroke="#94a3b8" tick={{fontSize:10}} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} />{timeFrame === 'month' ? <Bar dataKey="weight" fill="#8b5cf6" radius={[4, 4, 0, 0]} name="Poids (kg)" /> : <Area type="monotone" dataKey="weight" stroke="#8b5cf6" fill="url(#violetGradient)" strokeWidth={2} name="Poids (kg)" dot={false} connectNulls/>}<Line type="monotone" dataKey="weightTrend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" /></ComposedChart></ResponsiveContainer></div>{latestWeight && (<div className="mt-3 flex items-center justify-between text-xs"><span className="text-slate-400">Dernière valeur : <span className="font-bold text-violet-400">{latestWeight} kg</span></span><span className={`font-semibold px-2 py-0.5 rounded-full ${latestWeight < 60 ? 'bg-blue-500/20 text-blue-400' : latestWeight < 75 ? 'bg-emerald-500/20 text-emerald-400' : latestWeight < 90 ? 'bg-yellow-500/20 text-yellow-400' : 'bg-red-500/20 text-red-400'}`}>{latestWeight < 60 ? '⬇ Insuffisant' : latestWeight < 75 ? '✓ Optimal' : latestWeight < 90 ? '⚠ Surpoids' : '⛔ Obésité'}</span></div>)}</>,
+          h_waist: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Ruler size={16} className="text-orange-400"/> Tour de taille (cm)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={chartDataWithTrends}><defs><linearGradient id="orangeGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#fb923c" stopOpacity={0.3}/><stop offset="100%" stopColor="#fb923c" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" /><XAxis dataKey="date" stroke="#94a3b8" tick={{fontSize:10}} padding={{ left: 10, right: 30 }} /><YAxis domain={safeDomain} allowDataOverflow={true} stroke="#94a3b8" tick={{fontSize:10}} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} />{timeFrame === 'month' ? <Bar dataKey="waist" fill="#fb923c" radius={[4, 4, 0, 0]} name="Taille (cm)" /> : <Area type="monotone" dataKey="waist" stroke="#fb923c" fill="url(#orangeGradient)" strokeWidth={2} name="Taille (cm)" dot={false} connectNulls/>}<Line type="monotone" dataKey="waistTrend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" /></ComposedChart></ResponsiveContainer></div>{latestWaist && (<div className="mt-3 flex items-center justify-between text-xs"><span className="text-slate-400">Dernière valeur : <span className="font-bold text-orange-400">{latestWaist} cm</span></span><span className={`font-semibold px-2 py-0.5 rounded-full ${latestWaist < 80 ? 'bg-emerald-500/20 text-emerald-400' : latestWaist < 88 ? 'bg-yellow-500/20 text-yellow-400' : 'bg-red-500/20 text-red-400'}`}>{latestWaist < 80 ? '✓ Optimal' : latestWaist < 88 ? '⚠ Risque modéré' : '⛔ Risque élevé'}</span></div>)}</>,
+          h_bp: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Heart size={16} className="text-red-500"/> Tension Artérielle (mmHg)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={safeChartData}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" /><XAxis dataKey="date" stroke="#94a3b8" tick={{fontSize:10}} padding={{ left: 10, right: 30 }} /><YAxis stroke="#94a3b8" tick={{fontSize:10}} domain={[40, 180]} allowDataOverflow={true} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} /><Legend wrapperStyle={{fontSize: 10, paddingTop: 10}} /><Bar dataKey="bpRange" fill="#94a3b8" barSize={2} radius={[2, 2, 2, 2]} name="Plage" /><Line type="monotone" dataKey="systolic" stroke="#ef4444" strokeWidth={0} dot={{ r: 4, fill: '#ef4444', strokeWidth: 0 }} activeDot={{ r: 5 }} name="Systolique" isAnimationActive={false}/><Line type="monotone" dataKey="diastolic" stroke="#8b5cf6" strokeWidth={0} dot={{ r: 4, fill: '#8b5cf6', strokeWidth: 0 }} activeDot={{ r: 5 }} name="Diastolique" isAnimationActive={false}/></ComposedChart></ResponsiveContainer></div>{latestSystolic && latestDiastolic && (<div className="mt-3 flex items-center justify-between text-xs"><span className="text-slate-400">Dernière valeur : <span className="font-bold text-red-400">{latestSystolic}</span><span className="text-slate-500">/</span><span className="font-bold text-violet-400">{latestDiastolic}</span> mmHg</span><span className={`font-semibold px-2 py-0.5 rounded-full ${latestSystolic < 120 && latestDiastolic < 80 ? 'bg-emerald-500/20 text-emerald-400' : latestSystolic < 130 && latestDiastolic < 85 ? 'bg-yellow-500/20 text-yellow-400' : latestSystolic < 140 && latestDiastolic < 90 ? 'bg-orange-500/20 text-orange-400' : 'bg-red-500/20 text-red-400'}`}>{latestSystolic < 120 && latestDiastolic < 80 ? '✓ Optimale' : latestSystolic < 130 && latestDiastolic < 85 ? '✓ Normale' : latestSystolic < 140 && latestDiastolic < 90 ? '⚠ Normale haute' : '⛔ Hypertension'}</span></div>)}</>,
+          h_restingHR: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><HeartPulse size={16} className="text-pink-400"/> FC Repos — tensiomètre (bpm)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={chartDataWithTrends}><defs><linearGradient id="pinkGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#f472b6" stopOpacity={0.3}/><stop offset="100%" stopColor="#f472b6" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" /><XAxis dataKey="date" stroke="#94a3b8" tick={{fontSize:10}} padding={{ left: 10, right: 30 }} /><YAxis stroke="#94a3b8" tick={{fontSize:10}} domain={['auto', 'auto']} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(v) => [`${v} bpm`, 'FC repos (tensiomètre)']} />{timeFrame === 'month' ? <Bar dataKey="restingHR_bp" fill="#f472b6" radius={[4, 4, 0, 0]} name="FC repos — tensiomètre (bpm)" /> : <Area type="monotone" dataKey="restingHR_bp" stroke="#f472b6" fill="url(#pinkGradient)" strokeWidth={2} name="FC repos — tensiomètre (bpm)" dot={false} connectNulls/>}<Line type="monotone" dataKey="restingHR_bpTrend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" /></ComposedChart></ResponsiveContainer></div>{latestRestingHR && (<div className="mt-3 flex items-center justify-between text-xs"><span className="text-slate-400">Dernière valeur : <span className="font-bold text-pink-400">{latestRestingHR} bpm</span></span><span className={`font-semibold px-2 py-0.5 rounded-full ${latestRestingHR < 60 ? 'bg-emerald-500/20 text-emerald-400' : latestRestingHR < 70 ? 'bg-cyan-500/20 text-cyan-400' : latestRestingHR < 85 ? 'bg-yellow-500/20 text-yellow-400' : latestRestingHR < 100 ? 'bg-orange-500/20 text-orange-400' : 'bg-red-500/20 text-red-400'}`}>{latestRestingHR < 60 ? '✓ Athlétique' : latestRestingHR < 70 ? '✓ Excellent' : latestRestingHR < 85 ? '✓ Normal' : latestRestingHR < 100 ? '⚠ Élevé' : '⛔ Tachycardie'}</span></div>)}</>,
+          h_pwv: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Activity size={16} className="text-cyan-400"/> Vitesse d'Onde de Pouls (m/s)</h3><p className="text-[10px] text-slate-500 mb-3">Seuils adaptés à votre âge (55 ans) — source : Reference Values for Arterial Stiffness, Eur. Heart J. 2010. Plus la valeur est basse, plus vos artères sont souples.</p><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={chartDataWithTrends}><defs><linearGradient id="pwvGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#22d3ee" stopOpacity={0.4}/><stop offset="100%" stopColor="#22d3ee" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" /><XAxis dataKey="date" stroke="#94a3b8" tick={{fontSize:10}} padding={{ left: 10, right: 30 }} /><YAxis stroke="#94a3b8" tick={{fontSize:10}} domain={[5, 13]} unit=" m/s" /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(v, name) => name === 'Seuil normal (55 ans)' ? [`${v} m/s`, name] : [`${v} m/s`, 'Onde de pouls']} />{/* Seuil à 9 m/s — limite haute du normal pour 50-59 ans */}<Line type="monotone" dataKey={() => 9} stroke="#f97316" strokeDasharray="4 4" strokeWidth={1.5} dot={false} name="Seuil normal (55 ans)" isAnimationActive={false} />{timeFrame === 'month' ? <Bar dataKey="pwv" fill="#22d3ee" radius={[4, 4, 0, 0]} name="Onde de pouls (m/s)" /> : <Area type="monotone" dataKey="pwv" stroke="#22d3ee" fill="url(#pwvGradient)" strokeWidth={2} name="Onde de pouls (m/s)" dot={{ r: 3, fill: '#22d3ee', strokeWidth: 0 }} connectNulls activeDot={{ r: 5 }}/>}<Line type="monotone" dataKey="pwvTrend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" /></ComposedChart></ResponsiveContainer></div>{latestPWV && (<div className="mt-3 flex items-center justify-between text-xs"><span className="text-slate-400">Dernière valeur : <span className="font-bold text-cyan-400">{latestPWV} m/s</span></span><span className={`font-semibold px-2 py-0.5 rounded-full ${latestPWV < 7.5 ? 'bg-emerald-500/20 text-emerald-400' : latestPWV < 9 ? 'bg-cyan-500/20 text-cyan-400' : latestPWV < 10.5 ? 'bg-yellow-500/20 text-yellow-400' : 'bg-red-500/20 text-red-400'}`}>{latestPWV < 7.5 ? '✓ Optimal' : latestPWV < 9 ? '✓ Normal' : latestPWV < 10.5 ? '⚠ Élevé' : '⛔ Très élevé'}</span></div>)}</>,
+          h_bodyFat: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Percent size={16} className="text-yellow-500"/> Graisse Corporelle (%)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={chartDataWithTrends}><defs><linearGradient id="yellowGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#eab308" stopOpacity={1}/><stop offset="100%" stopColor="#eab308" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" /><XAxis dataKey="date" stroke="#94a3b8" tick={{fontSize:10}} padding={{ left: 10, right: 30 }} /><YAxis domain={safeDomain} allowDataOverflow={true} stroke="#94a3b8" tick={{fontSize:10}} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} />{timeFrame === 'month' ? <Bar dataKey="bodyFat" fill="#eab308" radius={[4, 4, 0, 0]} name="Graisse (%)" /> : <Area type="monotone" dataKey="bodyFat" stroke="#eab308" fill="url(#yellowGradient)" strokeWidth={2} name="Graisse (%)" dot={false} connectNulls/>}<Line type="monotone" dataKey="bodyFatTrend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" /></ComposedChart></ResponsiveContainer></div>{latestFat && (<div className="mt-3 flex items-center justify-between text-xs"><span className="text-slate-400">Dernière valeur : <span className="font-bold text-yellow-400">{latestFat} %</span></span><span className={`font-semibold px-2 py-0.5 rounded-full ${latestFat < 18 ? 'bg-blue-500/20 text-blue-400' : latestFat < 25 ? 'bg-emerald-500/20 text-emerald-400' : latestFat < 30 ? 'bg-yellow-500/20 text-yellow-400' : 'bg-red-500/20 text-red-400'}`}>{latestFat < 18 ? '⬇ Trop faible' : latestFat < 25 ? '✓ Normal' : latestFat < 30 ? '⚠ Élevé' : '⛔ Obésité'}</span></div>)}</>,
+          h_muscleMass: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Dumbbell size={16} className="text-emerald-500"/> Masse Musculaire (%)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={chartDataWithTrends}><defs><linearGradient id="emeraldGradient2" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#10b981" stopOpacity={0.3}/><stop offset="100%" stopColor="#10b981" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" /><XAxis dataKey="date" stroke="#94a3b8" tick={{fontSize:10}} padding={{ left: 10, right: 30 }} /><YAxis domain={safeDomain} allowDataOverflow={true} stroke="#94a3b8" tick={{fontSize:10}} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} />{timeFrame === 'month' ? <Bar dataKey="muscleMass" fill="#10b981" radius={[4, 4, 0, 0]} name="Muscle (%)" /> : <Area type="monotone" dataKey="muscleMass" stroke="#10b981" fill="url(#emeraldGradient2)" strokeWidth={2} name="Muscle (%)" connectNulls/>}<Line type="monotone" dataKey="muscleMassTrend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" /></ComposedChart></ResponsiveContainer></div>{latestMuscle && (<div className="mt-3 flex items-center justify-between text-xs"><span className="text-slate-400">Dernière valeur : <span className="font-bold text-emerald-400">{latestMuscle} %</span></span><span className={`font-semibold px-2 py-0.5 rounded-full ${latestMuscle > 40 ? 'bg-emerald-500/20 text-emerald-400' : latestMuscle > 33 ? 'bg-cyan-500/20 text-cyan-400' : latestMuscle > 28 ? 'bg-yellow-500/20 text-yellow-400' : 'bg-red-500/20 text-red-400'}`}>{latestMuscle > 40 ? '✓ Athlétique' : latestMuscle > 33 ? '✓ Bon' : latestMuscle > 28 ? '⚠ Faible' : '⛔ Sarcopénie'}</span></div>)}</>,
+          h_hydration: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Droplet size={16} className="text-blue-400"/> Hydratation (%)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={chartDataWithTrends}><defs><linearGradient id="blueGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#60a5fa" stopOpacity={1}/><stop offset="100%" stopColor="#60a5fa" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" /><XAxis dataKey="date" stroke="#94a3b8" tick={{fontSize:10}} padding={{ left: 10, right: 30 }} /><YAxis stroke="#94a3b8" tick={{fontSize:10}} domain={[50, 65]} allowDataOverflow={true} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} />{timeFrame === 'month' ? <Bar dataKey="hydration" fill="#60a5fa" radius={[4, 4, 0, 0]} name="Eau %" /> : <Area type="monotone" dataKey="hydration" stroke="#60a5fa" fill="url(#blueGradient)" strokeWidth={2} name="Eau %" dot={false} connectNulls/>}<Line type="monotone" dataKey="hydrationTrend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" /></ComposedChart></ResponsiveContainer></div>{latestHydration && (<div className="mt-3 flex items-center justify-between text-xs"><span className="text-slate-400">Dernière valeur : <span className="font-bold text-blue-400">{latestHydration} %</span></span><span className={`font-semibold px-2 py-0.5 rounded-full ${latestHydration >= 55 ? 'bg-emerald-500/20 text-emerald-400' : latestHydration >= 50 ? 'bg-yellow-500/20 text-yellow-400' : 'bg-red-500/20 text-red-400'}`}>{latestHydration >= 55 ? '✓ Bonne hydratation' : latestHydration >= 50 ? '⚠ Limite' : '⛔ Déshydratation'}</span></div>)}</>,
+          h_visceralFat: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Flame size={16} className="text-amber-500"/> Graisse Viscérale (%)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={chartDataWithTrends}><defs><linearGradient id="amberGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#f59e0b" stopOpacity={0.8}/><stop offset="100%" stopColor="#f59e0b" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" /><XAxis dataKey="date" stroke="#94a3b8" tick={{fontSize:10}} padding={{ left: 10, right: 30 }} /><YAxis domain={safeDomain} allowDataOverflow={true} stroke="#94a3b8" tick={{fontSize:10}} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(v) => [`${v}`, 'Graisse viscérale %']} />{timeFrame === 'month' ? <Bar dataKey="visceralFat" fill="#f59e0b" radius={[4, 4, 0, 0]} name="Graisse viscérale (%)" /> : <Area type="monotone" dataKey="visceralFat" stroke="#f59e0b" fill="url(#amberGradient)" strokeWidth={2} name="Graisse viscérale (%)" dot={false} connectNulls/>}<Line type="monotone" dataKey="visceralFatTrend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" /></ComposedChart></ResponsiveContainer></div>{latestVisceral && (<div className="mt-3 flex items-center justify-between text-xs"><span className="text-slate-400">Dernière valeur : <span className="font-bold text-amber-400">{latestVisceral}</span></span><span className={`font-semibold px-2 py-0.5 rounded-full ${latestVisceral <= 9 ? 'bg-emerald-500/20 text-emerald-400' : latestVisceral <= 14 ? 'bg-yellow-500/20 text-yellow-400' : 'bg-red-500/20 text-red-400'}`}>{latestVisceral <= 9 ? '✓ Normal' : latestVisceral <= 14 ? '⚠ Élevé' : '⛔ Très élevé'}</span></div>)}</>,
+          h_composition: (() => {
+            const compData = weeklyChartData.filter(d => d.muscleMass !== null || d.bodyFat !== null);
+            const muscles = compData.map(d => d.muscleMass).filter(Boolean);
+            const fatsC = compData.map(d => d.bodyFat).filter(Boolean);
+            const mMin = muscles.length ? Math.floor(Math.min(...muscles) - 2) : 30;
+            const mMax = muscles.length ? Math.ceil(Math.max(...muscles) + 2) : 50;
+            const fcMin = fatsC.length ? Math.floor(Math.min(...fatsC) - 2) : 15;
+            const fcMax = fatsC.length ? Math.ceil(Math.max(...fatsC) + 2) : 35;
+            return (
+              <>
+                <div className="flex justify-between items-start mb-4">
+                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">COMPOSITION CORPORELLE</h3>
+                  <div className="flex gap-4">
+                    <div className="flex items-center gap-2 text-xs font-bold text-[#2dd4bf]"><div className="w-2.5 h-2.5 rounded-sm bg-[#2dd4bf]"></div> Muscle (%)</div>
+                    <div className="flex items-center gap-2 text-xs font-bold text-[#e879f9]"><div className="w-2.5 h-2.5 rounded-sm bg-[#e879f9]"></div> Graisse (%)</div>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-500 mb-3">{timeFrame === 'day' ? 'Agrégé par semaine' : `Vue ${timeFrame === 'week' ? 'hebdomadaire' : 'mensuelle'}`}</p>
+                <div className="h-72">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={weeklyChartData} margin={{ top: 5, right: 10, bottom: 5, left: 10 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={true} horizontal={true} stroke="#334155" opacity={0.5} />
+                      <XAxis dataKey="date" stroke="#94a3b8" tick={{fontSize: 10}} axisLine={false} tickLine={false} dy={10} padding={{ left: 10, right: 10 }} />
+                      <YAxis yAxisId="left" domain={[mMin, mMax]} stroke="#2dd4bf" tick={{fontSize: 10}} axisLine={false} tickLine={false} tickFormatter={(v) => `${v}`} />
+                      <YAxis yAxisId="right" orientation="right" domain={[fcMin, fcMax]} stroke="#e879f9" tick={{fontSize: 10}} axisLine={false} tickLine={false} tickFormatter={(v) => `${v}`} />
+                      <Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{stroke: '#fff', strokeWidth: 1, strokeDasharray: '3 3'}} formatter={(value, name) => [`${value} %`, name]} />
+                      <Line yAxisId="left" type="monotone" dataKey="muscleMass" stroke="#2dd4bf" strokeWidth={2.5} dot={{ r: 3, fill: '#2dd4bf', strokeWidth: 0 }} activeDot={{ r: 5, strokeWidth: 0 }} connectNulls name="Muscle (%)" />
+                      <Line yAxisId="right" type="monotone" dataKey="bodyFat" stroke="#e879f9" strokeWidth={2.5} dot={{ r: 3, fill: '#e879f9', strokeWidth: 0 }} activeDot={{ r: 5, strokeWidth: 0 }} connectNulls name="Graisse (%)" />
                     </ComposedChart>
-                </ResponsiveContainer>
-             </div>
-             {latestWaist && (
-               <div className="mt-3 flex items-center justify-between text-xs">
-                 <span className="text-slate-400">Dernière valeur : <span className="font-bold text-orange-400">{latestWaist} cm</span></span>
-                 <span className={`font-semibold px-2 py-0.5 rounded-full ${latestWaist < 80 ? 'bg-emerald-500/20 text-emerald-400' : latestWaist < 88 ? 'bg-yellow-500/20 text-yellow-400' : 'bg-red-500/20 text-red-400'}`}>
-                   {latestWaist < 80 ? '✓ Optimal' : latestWaist < 88 ? '⚠ Risque modéré' : '⛔ Risque élevé'}
-                 </span>
-               </div>
-             )}
-          </div>
-          <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 min-h-[300px]">
-             <h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Heart size={16} className="text-red-500"/> Tension Artérielle (mmHg)</h3>
-             <div className="h-56">
-                <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={safeChartData}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" />
-                        <XAxis dataKey="date" stroke="#94a3b8" tick={{fontSize:10}} padding={{ left: 10, right: 30 }} />
-                        <YAxis stroke="#94a3b8" tick={{fontSize:10}} domain={[40, 180]} allowDataOverflow={true} />
-                        <Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} />
-                        <Legend wrapperStyle={{fontSize: 10, paddingTop: 10}} />
-                        <Bar dataKey="bpRange" fill="#94a3b8" barSize={2} radius={[2, 2, 2, 2]} name="Plage" />
-                        <Line type="monotone" dataKey="systolic" stroke="#ef4444" strokeWidth={0} dot={{ r: 4, fill: '#ef4444', strokeWidth: 0 }} activeDot={{ r: 5 }} name="Systolique" isAnimationActive={false}/>
-                        <Line type="monotone" dataKey="diastolic" stroke="#8b5cf6" strokeWidth={0} dot={{ r: 4, fill: '#8b5cf6', strokeWidth: 0 }} activeDot={{ r: 5 }} name="Diastolique" isAnimationActive={false}/>
+                  </ResponsiveContainer>
+                </div>
+                <div className="mt-4 flex gap-4">
+                  <div className="flex-1 bg-black/40 rounded-xl p-3 border border-slate-700/50"><div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Muscle</div><div className={`text-xl font-bold text-[#2dd4bf]`}>{muscleTrend > 0 ? '+' : ''}{muscleTrend}%</div></div>
+                  <div className="flex-1 bg-black/40 rounded-xl p-3 border border-slate-700/50"><div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Graisse</div><div className={`text-xl font-bold text-[#e879f9]`}>{fatTrend > 0 ? '+' : ''}{fatTrend}%</div></div>
+                </div>
+              </>
+            );
+          })(),
+          h_muscleFatBar: (() => {
+            const barData = weeklyChartData.filter(d => d.muscleMass !== null && d.bodyFat !== null && d.weight !== null).map(d => ({
+              date: d.date, musclePct: d.muscleMass, fatPct: d.bodyFat, weight: d.weight,
+            }));
+            return (
+              <>
+                <div className="flex justify-between items-start mb-4">
+                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">RÉPARTITION MUSCLE / GRAISSE</h3>
+                  <div className="flex gap-4">
+                    <div className="flex items-center gap-2 text-xs font-bold text-[#2dd4bf]"><div className="w-2.5 h-2.5 rounded-sm bg-[#2dd4bf]"></div> Muscle (%)</div>
+                    <div className="flex items-center gap-2 text-xs font-bold text-[#e879f9]"><div className="w-2.5 h-2.5 rounded-sm bg-[#e879f9]"></div> Graisse (%)</div>
+                    <div className="flex items-center gap-2 text-xs font-bold text-slate-400"><div className="w-4 h-0.5 bg-slate-300"></div> Poids (kg)</div>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-500 mb-3">{timeFrame === 'day' ? 'Agrégé par semaine' : `Vue ${timeFrame === 'week' ? 'hebdomadaire' : 'mensuelle'}`} — barres empilées muscle + graisse, courbe = poids</p>
+                <div className="h-72">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={barData} margin={{ top: 5, right: 10, bottom: 5, left: 10 }} barCategoryGap="20%">
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" opacity={0.5} />
+                      <XAxis dataKey="date" stroke="#94a3b8" tick={{fontSize: 10}} axisLine={false} tickLine={false} dy={10} />
+                      <YAxis yAxisId="left" stroke="#94a3b8" tick={{fontSize: 10}} axisLine={false} tickLine={false} tickFormatter={(v) => `${v}%`} domain={[0, 100]} />
+                      <YAxis yAxisId="right" orientation="right" stroke="#cbd5e1" tick={{fontSize: 10}} axisLine={false} tickLine={false} tickFormatter={(v) => `${v}`} domain={[89, 106]} />
+                      <Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.3}} formatter={(value, name) => {
+                        if (name === 'Poids') return [`${value} kg`, name];
+                        return [`${value}%`, name];
+                      }} />
+                      <Bar yAxisId="left" dataKey="fatPct" stackId="a" fill="#e879f9" fillOpacity={0.4} name="Graisse">
+                        <LabelList dataKey="fatPct" position="center" formatter={(v) => `${v}%`} style={{ fontSize: 9, fill: '#ffffff', fontWeight: 700 }} />
+                      </Bar>
+                      <Bar yAxisId="left" dataKey="musclePct" stackId="a" fill="#2dd4bf" fillOpacity={0.35} radius={[4, 4, 0, 0]} name="Muscle" />
+                      <Line yAxisId="right" type="monotone" dataKey="weight" stroke="#cbd5e1" strokeWidth={2.5} dot={{ r: 3, fill: '#cbd5e1', strokeWidth: 0 }} activeDot={{ r: 5, strokeWidth: 0 }} connectNulls name="Poids">
+                        <LabelList dataKey="weight" position="top" formatter={(v) => `${v}`} style={{ fontSize: 9, fill: '#cbd5e1', fontWeight: 600 }} offset={8} />
+                      </Line>
                     </ComposedChart>
-                </ResponsiveContainer>
-             </div>
-             {latestSystolic && latestDiastolic && (
-               <div className="mt-3 flex items-center justify-between text-xs">
-                 <span className="text-slate-400">Dernière valeur : <span className="font-bold text-red-400">{latestSystolic}</span><span className="text-slate-500">/</span><span className="font-bold text-violet-400">{latestDiastolic}</span> mmHg</span>
-                 <span className={`font-semibold px-2 py-0.5 rounded-full ${latestSystolic < 120 && latestDiastolic < 80 ? 'bg-emerald-500/20 text-emerald-400' : latestSystolic < 130 && latestDiastolic < 85 ? 'bg-yellow-500/20 text-yellow-400' : latestSystolic < 140 && latestDiastolic < 90 ? 'bg-orange-500/20 text-orange-400' : 'bg-red-500/20 text-red-400'}`}>
-                   {latestSystolic < 120 && latestDiastolic < 80 ? '✓ Optimale' : latestSystolic < 130 && latestDiastolic < 85 ? '✓ Normale' : latestSystolic < 140 && latestDiastolic < 90 ? '⚠ Normale haute' : '⛔ Hypertension'}
-                 </span>
-               </div>
-             )}
-          </div>
-          <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 min-h-[300px]">
-             <h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><HeartPulse size={16} className="text-pink-400"/> FC Repos — tensiomètre (bpm)</h3>
-             <div className="h-56">
-                <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={safeChartData}>
-                        <defs><linearGradient id="pinkGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#f472b6" stopOpacity={0.3}/><stop offset="100%" stopColor="#f472b6" stopOpacity={0}/></linearGradient></defs>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" />
-                        <XAxis dataKey="date" stroke="#94a3b8" tick={{fontSize:10}} padding={{ left: 10, right: 30 }} />
-                        <YAxis stroke="#94a3b8" tick={{fontSize:10}} domain={['auto', 'auto']} />
-                        <Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(v) => [`${v} bpm`, 'FC repos (tensiomètre)']} />
-                        <Area type="monotone" dataKey="restingHR_bp" stroke="#f472b6" fill="url(#pinkGradient)" strokeWidth={2} name="FC repos — tensiomètre (bpm)" dot={false} connectNulls/>
+                  </ResponsiveContainer>
+                </div>
+              </>
+            );
+          })(),
+          h_glucoseKetoneChart: (() => {
+            // Screenshot 3: Graphe double axe Glucose + Cétones
+            const gValues = ketoData.map(d => d.glucose);
+            const kValues = ketoData.map(d => d.ketones);
+            const gMin = Math.floor(Math.min(...gValues) / 3) * 3 - 3;
+            const gMax = Math.ceil(Math.max(...gValues) / 3) * 3 + 3;
+            const kMin = 0;
+            const kMax = Math.ceil(Math.max(...kValues) * 2) / 2 + 0.5;
+            return (
+              <>
+                <div className="flex justify-between items-start mb-1">
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">GLUCOSE & CÉTONES — HISTORIQUE</h3>
+                    <p className="text-[10px] text-slate-500 mt-1">Source : Saisie manuelle</p>
+                  </div>
+                  <div className="flex gap-4">
+                    <div className="flex items-center gap-2 text-xs font-bold text-[#a1a1aa]"><div className="w-3 h-0.5 bg-[#a1a1aa] rounded"></div><div className="w-2.5 h-2.5 rounded-full bg-[#a1a1aa]"></div> Glucose sanguin mg/dl</div>
+                    <div className="flex items-center gap-2 text-xs font-bold text-[#22d3ee]"><div className="w-3 h-0.5 bg-[#22d3ee] rounded" style={{borderTop: '2px dashed #22d3ee', height: 0}}></div><div className="w-2.5 h-2.5 rounded-full bg-[#22d3ee]"></div> Cétones sanguines mmol/L</div>
+                  </div>
+                </div>
+                <div className="h-72">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={ketoData} margin={{ top: 5, right: 10, bottom: 5, left: 10 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={true} horizontal={true} stroke="#334155" opacity={0.5} />
+                      <XAxis dataKey="date" stroke="#94a3b8" tick={{fontSize: 10}} axisLine={false} tickLine={false} dy={10} padding={{ left: 10, right: 10 }} />
+                      <YAxis yAxisId="left" domain={[gMin, gMax]} stroke="#a1a1aa" tick={{fontSize: 10}} axisLine={false} tickLine={false} label={{ value: 'Glucose', position: 'insideTopLeft', offset: -5, style: { fontSize: 11, fill: '#a1a1aa', fontWeight: 'bold' } }} />
+                      <YAxis yAxisId="right" orientation="right" domain={[kMin, kMax]} stroke="#22d3ee" tick={{fontSize: 10}} axisLine={false} tickLine={false} label={{ value: 'Cétones', position: 'insideTopRight', offset: -5, style: { fontSize: 11, fill: '#22d3ee', fontWeight: 'bold' } }} />
+                      <Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{stroke: '#fff', strokeWidth: 1, strokeDasharray: '3 3'}} formatter={(value, name) => name === 'Glucose sanguin' ? [`${value} mg/dl`, name] : [`${value} mmol/L`, name]} />
+                      <Line yAxisId="left" type="monotone" dataKey="glucose" stroke="#a1a1aa" strokeWidth={2} dot={{ r: 5, fill: '#a1a1aa', strokeWidth: 0 }} activeDot={{ r: 7, strokeWidth: 0 }} connectNulls name="Glucose sanguin" />
+                      <Line yAxisId="right" type="monotone" dataKey="ketones" stroke="#22d3ee" strokeWidth={2} strokeDasharray="6 3" dot={{ r: 5, fill: '#22d3ee', strokeWidth: 0 }} activeDot={{ r: 7, strokeWidth: 0 }} connectNulls name="Cétones sanguines" />
                     </ComposedChart>
-                </ResponsiveContainer>
-             </div>
-             {latestRestingHR && (
-               <div className="mt-3 flex items-center justify-between text-xs">
-                 <span className="text-slate-400">Dernière valeur : <span className="font-bold text-pink-400">{latestRestingHR} bpm</span></span>
-                 <span className={`font-semibold px-2 py-0.5 rounded-full ${latestRestingHR < 60 ? 'bg-emerald-500/20 text-emerald-400' : latestRestingHR < 70 ? 'bg-cyan-500/20 text-cyan-400' : latestRestingHR < 85 ? 'bg-yellow-500/20 text-yellow-400' : latestRestingHR < 100 ? 'bg-orange-500/20 text-orange-400' : 'bg-red-500/20 text-red-400'}`}>
-                   {latestRestingHR < 60 ? '✓ Athlétique' : latestRestingHR < 70 ? '✓ Excellent' : latestRestingHR < 85 ? '✓ Normal' : latestRestingHR < 100 ? '⚠ Élevé' : '⛔ Tachycardie'}
-                 </span>
-               </div>
-             )}
+                  </ResponsiveContainer>
+                </div>
+              </>
+            );
+          })(),
+          h_ketoneEchart: (() => {
+            const val = latestKetones || 0;
+            const ketoneStatus = val >= 3.0 ? { text: 'Cétose profonde', cls: 'text-emerald-400' } : val >= 1.5 ? { text: 'Cétose optimale', cls: 'text-cyan-400' } : val >= 0.5 ? { text: 'Cétose légère', cls: 'text-[#EBAA6D]' } : { text: 'Pas en cétose', cls: 'text-slate-400' };
+            const option = {
+              backgroundColor: 'transparent',
+              series: [{
+                type: 'gauge',
+                radius: '90%',
+                progress: { show: true, width: 18, roundCap: true, itemStyle: { color: { type: 'linear', x: 0, y: 0, x2: 1, y2: 0, colorStops: [{ offset: 0, color: '#EBAA6D' }, { offset: 1, color: '#F5D4A6' }] } } },
+                axisLine: { lineStyle: { width: 18, color: [[1, '#334155']] }, roundCap: true },
+                axisTick: { show: false },
+                splitLine: { length: 15, lineStyle: { width: 2, color: '#999' } },
+                axisLabel: { distance: 25, color: '#999', fontSize: 14 },
+                anchor: { show: true, showAbove: true, size: 25, itemStyle: { borderWidth: 10 } },
+                title: { show: false },
+                detail: { valueAnimation: true, fontSize: 46, fontWeight: 400, color: '#f8fafc', offsetCenter: [0, '70%'], formatter: v => v.toFixed(1) },
+                pointer: { itemStyle: { color: 'auto' } },
+                min: 0,
+                max: 4,
+                splitNumber: 8,
+                itemStyle: { color: '#EBAA6D' },
+                data: [{ value: val }]
+              }]
+            };
+            return (
+              <>
+                <div className="flex items-baseline gap-2 mb-0">
+                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">CÉTONES</h3>
+                  <span className="text-[10px] text-slate-500">— mmol/L</span>
+                </div>
+                <div className="flex-1 flex items-center justify-center" style={{ minHeight: 260 }}>
+                  <ReactECharts option={option} style={{ width: '100%', height: '100%', minHeight: 260 }} opts={{ renderer: 'svg' }} />
+                </div>
+                <p className={`text-xs font-semibold text-center ${ketoneStatus.cls}`}>{ketoneStatus.text}</p>
+              </>
+            );
+          })(),
+          h_glucoseEchart: (() => {
+            const val = latestGlucose || 0;
+            const glucoseStatus = val < 70 ? { text: 'Hypoglycémie', cls: 'text-blue-400' } : val < 100 ? { text: 'Glycémie normale', cls: 'text-emerald-400' } : val < 126 ? { text: 'Pré-diabète (glycémie élevée)', cls: 'text-yellow-400' } : { text: 'Diabète', cls: 'text-red-400' };
+            const option = {
+              backgroundColor: 'transparent',
+              series: [{
+                type: 'gauge',
+                radius: '90%',
+                progress: { show: true, width: 18, roundCap: true, itemStyle: { color: { type: 'linear', x: 0, y: 0, x2: 1, y2: 0, colorStops: [{ offset: 0, color: '#EB1C23' }, { offset: 1, color: '#F5878B' }] } } },
+                axisLine: { lineStyle: { width: 18, color: [[1, '#334155']] }, roundCap: true },
+                axisTick: { show: false },
+                splitLine: { length: 15, lineStyle: { width: 2, color: '#999' } },
+                axisLabel: { distance: 25, color: '#999', fontSize: 14 },
+                anchor: { show: true, showAbove: true, size: 25, itemStyle: { borderWidth: 10 } },
+                title: { show: false },
+                detail: { valueAnimation: true, fontSize: 46, fontWeight: 400, color: '#f8fafc', offsetCenter: [0, '70%'] },
+                pointer: { itemStyle: { color: 'auto' } },
+                min: 40,
+                max: 130,
+                splitNumber: 9,
+                itemStyle: { color: '#EB1C23' },
+                data: [{ value: val }]
+              }]
+            };
+            return (
+              <>
+                <div className="flex items-baseline gap-2 mb-0">
+                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">GLUCOSE</h3>
+                  <span className="text-[10px] text-slate-500">— mg/dl</span>
+                </div>
+                <div className="flex-1 flex items-center justify-center" style={{ minHeight: 260 }}>
+                  <ReactECharts option={option} style={{ width: '100%', height: '100%', minHeight: 260 }} opts={{ renderer: 'svg' }} />
+                </div>
+                <p className={`text-xs font-semibold text-center ${glucoseStatus.cls}`}>{glucoseStatus.text}</p>
+              </>
+            );
+          })(),
+          h_gkiEchart: (() => {
+            const val = latestGKI || 0;
+            const gkiStatus = val <= 1 ? { text: 'Cétose thérapeutique', cls: 'text-emerald-400' } : val <= 3 ? { text: 'Cétose élevée', cls: 'text-cyan-400' } : val <= 6 ? { text: 'Cétose modérée', cls: 'text-blue-400' } : val <= 9 ? { text: 'Cétose légère', cls: 'text-yellow-400' } : { text: 'Pas en cétose', cls: 'text-red-400' };
+            const gkiColors = val <= 4 ? ['#10b981', '#34d399'] : val <= 9 ? ['#f59e0b', '#fbbf24'] : ['#ef4444', '#f87171'];
+            const option = {
+              backgroundColor: 'transparent',
+              series: [{
+                type: 'gauge',
+                radius: '90%',
+                progress: { show: true, width: 18, roundCap: true, itemStyle: { color: { type: 'linear', x: 0, y: 0, x2: 1, y2: 0, colorStops: [{ offset: 0, color: gkiColors[0] }, { offset: 1, color: gkiColors[1] }] } } },
+                axisLine: { lineStyle: { width: 18, color: [[1, '#334155']] }, roundCap: true },
+                axisTick: { show: false },
+                splitLine: { length: 15, lineStyle: { width: 2, color: '#999' } },
+                axisLabel: { distance: 25, color: '#999', fontSize: 14 },
+                anchor: { show: true, showAbove: true, size: 25, itemStyle: { borderWidth: 10 } },
+                title: { show: false },
+                detail: { valueAnimation: true, fontSize: 46, fontWeight: 400, color: '#f8fafc', offsetCenter: [0, '70%'], formatter: v => v.toFixed(1) },
+                pointer: { itemStyle: { color: 'auto' } },
+                min: 0,
+                max: 12,
+                splitNumber: 12,
+                itemStyle: { color: gkiColors[0] },
+                data: [{ value: val }]
+              }]
+            };
+            return (
+              <>
+                <div className="flex items-baseline gap-2 mb-0">
+                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">GKI</h3>
+                  <span className="text-[10px] text-slate-500">— Indice Glucose-Cétone</span>
+                </div>
+                <div className="flex-1 flex items-center justify-center" style={{ minHeight: 260 }}>
+                  <ReactECharts option={option} style={{ width: '100%', height: '100%', minHeight: 260 }} opts={{ renderer: 'svg' }} />
+                </div>
+                <p className={`text-xs font-semibold text-center ${gkiStatus.cls}`}>{gkiStatus.text}</p>
+              </>
+            );
+          })(),
+        }[id];
+        if (!healthCardContent) return null;
+        const isDragging = healthDragId === id;
+        const isDropTarget = healthDropTargetId === id && healthDragId !== id;
+        return (
+          <div key={id}
+            className={`bg-slate-800 p-4 rounded-xl border-2 shadow-lg transition-all duration-150 flex flex-col ${id === 'h_glucoseKetoneChart' ? 'col-span-full xl:col-span-3' : id === 'h_weightFat' || id === 'h_composition' || id === 'h_muscleFatBar' || id === 'h_bodySilhouette' ? 'col-span-full xl:col-span-2' : 'min-h-[300px]'} ${isDragging ? 'border-violet-500 opacity-40 scale-95' : isDropTarget ? 'border-violet-400 ring-2 ring-violet-400/30 scale-[1.02]' : 'border-slate-700'}`}
+            draggable={!isMobile}
+            onDragStart={(e) => handleHealthDragStart(e, id)}
+            onDragOver={(e) => handleHealthDragOver(e, id)}
+            onDrop={(e) => handleHealthDrop(e, id)}
+            onDragEnd={handleHealthDragEnd}
+            onDragLeave={() => { if (healthDropTargetId === id) setHealthDropTargetId(null); }}
+            style={!isMobile ? { cursor: isDragging ? 'grabbing' : 'grab' } : {}}
+          >
+            <LazyCard height={300} className="flex-1 flex flex-col" style={isDragging ? { pointerEvents: 'none' } : {}}>
+              {healthCardContent}
+            </LazyCard>
           </div>
-          <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 min-h-[300px]">
-             <h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Activity size={16} className="text-cyan-400"/> Vitesse d'Onde de Pouls (m/s)</h3>
-             <p className="text-[10px] text-slate-500 mb-3">Seuils adaptés à votre âge (55 ans) — source : Reference Values for Arterial Stiffness, Eur. Heart J. 2010. Plus la valeur est basse, plus vos artères sont souples.</p>
-             <div className="h-56">
-                <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={safeChartData}>
-                        <defs>
-                          <linearGradient id="pwvGradient" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor="#22d3ee" stopOpacity={0.4}/>
-                            <stop offset="100%" stopColor="#22d3ee" stopOpacity={0}/>
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" />
-                        <XAxis dataKey="date" stroke="#94a3b8" tick={{fontSize:10}} padding={{ left: 10, right: 30 }} />
-                        <YAxis stroke="#94a3b8" tick={{fontSize:10}} domain={[5, 13]} unit=" m/s" />
-                        <Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(v, name) => name === 'Seuil normal (55 ans)' ? [`${v} m/s`, name] : [`${v} m/s`, 'Onde de pouls']} />
-                        {/* Seuil à 9 m/s — limite haute du normal pour 50-59 ans */}
-                        <Line type="monotone" dataKey={() => 9} stroke="#f97316" strokeDasharray="4 4" strokeWidth={1.5} dot={false} name="Seuil normal (55 ans)" isAnimationActive={false} />
-                        <Area type="monotone" dataKey="pwv" stroke="#22d3ee" fill="url(#pwvGradient)" strokeWidth={2} name="Onde de pouls (m/s)" dot={{ r: 3, fill: '#22d3ee', strokeWidth: 0 }} connectNulls activeDot={{ r: 5 }}/>
-                    </ComposedChart>
-                </ResponsiveContainer>
-             </div>
-             {latestPWV && (
-               <div className="mt-3 flex items-center justify-between text-xs">
-                 <span className="text-slate-400">Dernière valeur : <span className="font-bold text-cyan-400">{latestPWV} m/s</span></span>
-                 <span className={`font-semibold px-2 py-0.5 rounded-full ${latestPWV < 7.5 ? 'bg-emerald-500/20 text-emerald-400' : latestPWV < 9 ? 'bg-cyan-500/20 text-cyan-400' : latestPWV < 10.5 ? 'bg-yellow-500/20 text-yellow-400' : 'bg-red-500/20 text-red-400'}`}>
-                   {latestPWV < 7.5 ? '✓ Optimal' : latestPWV < 9 ? '✓ Normal' : latestPWV < 10.5 ? '⚠ Élevé' : '⛔ Très élevé'}
-                 </span>
-               </div>
-             )}
-          </div>
-          <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 min-h-[300px]">
-             <h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Percent size={16} className="text-yellow-500"/> Graisse Corporelle (%)</h3>
-             <div className="h-56">
-                <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={chartDataWithTrends}>
-                        <defs><linearGradient id="yellowGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#eab308" stopOpacity={1}/><stop offset="100%" stopColor="#eab308" stopOpacity={0}/></linearGradient></defs>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" />
-                        <XAxis dataKey="date" stroke="#94a3b8" tick={{fontSize:10}} padding={{ left: 10, right: 30 }} />
-                        <YAxis domain={safeDomain} allowDataOverflow={true} stroke="#94a3b8" tick={{fontSize:10}} />
-                        <Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} />
-                        <Bar dataKey="bodyFat" fill="url(#yellowGradient)" radius={[4, 4, 0, 0]} name="Graisse (%)" />
-                        <Line type="monotone" dataKey="bodyFatTrend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" />
-                    </ComposedChart>
-                </ResponsiveContainer>
-             </div>
-             {latestFat && (
-               <div className="mt-3 flex items-center justify-between text-xs">
-                 <span className="text-slate-400">Dernière valeur : <span className="font-bold text-yellow-400">{latestFat} %</span></span>
-                 <span className={`font-semibold px-2 py-0.5 rounded-full ${latestFat < 18 ? 'bg-blue-500/20 text-blue-400' : latestFat < 25 ? 'bg-emerald-500/20 text-emerald-400' : latestFat < 30 ? 'bg-yellow-500/20 text-yellow-400' : 'bg-red-500/20 text-red-400'}`}>
-                   {latestFat < 18 ? '⬇ Trop faible' : latestFat < 25 ? '✓ Normal' : latestFat < 30 ? '⚠ Élevé' : '⛔ Obésité'}
-                 </span>
-               </div>
-             )}
-          </div>
-          <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 min-h-[300px]">
-             <h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Dumbbell size={16} className="text-emerald-500"/> Masse Musculaire (%)</h3>
-             <div className="h-56">
-                <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={safeChartData}>
-                        <defs><linearGradient id="emeraldGradient2" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#10b981" stopOpacity={0.3}/><stop offset="100%" stopColor="#10b981" stopOpacity={0}/></linearGradient></defs>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" />
-                        <XAxis dataKey="date" stroke="#94a3b8" tick={{fontSize:10}} padding={{ left: 10, right: 30 }} />
-                        <YAxis domain={safeDomain} allowDataOverflow={true} stroke="#94a3b8" tick={{fontSize:10}} />
-                        <Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} />
-                        <Area type="monotone" dataKey="muscleMass" stroke="#10b981" fill="url(#emeraldGradient2)" strokeWidth={2} name="Muscle (%)" connectNulls/>
-                    </AreaChart>
-                </ResponsiveContainer>
-             </div>
-             {latestMuscle && (
-               <div className="mt-3 flex items-center justify-between text-xs">
-                 <span className="text-slate-400">Dernière valeur : <span className="font-bold text-emerald-400">{latestMuscle} %</span></span>
-                 <span className={`font-semibold px-2 py-0.5 rounded-full ${latestMuscle > 40 ? 'bg-emerald-500/20 text-emerald-400' : latestMuscle > 33 ? 'bg-cyan-500/20 text-cyan-400' : latestMuscle > 28 ? 'bg-yellow-500/20 text-yellow-400' : 'bg-red-500/20 text-red-400'}`}>
-                   {latestMuscle > 40 ? '✓ Athlétique' : latestMuscle > 33 ? '✓ Bon' : latestMuscle > 28 ? '⚠ Faible' : '⛔ Sarcopénie'}
-                 </span>
-               </div>
-             )}
-          </div>
-          <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 min-h-[300px]">
-             <h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Droplet size={16} className="text-blue-400"/> Hydratation (%)</h3>
-             <div className="h-56">
-                <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={safeChartData}>
-                        <defs><linearGradient id="blueGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#60a5fa" stopOpacity={1}/><stop offset="100%" stopColor="#60a5fa" stopOpacity={0}/></linearGradient></defs>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" />
-                        <XAxis dataKey="date" stroke="#94a3b8" tick={{fontSize:10}} padding={{ left: 10, right: 30 }} />
-                        <YAxis stroke="#94a3b8" tick={{fontSize:10}} domain={[50, 65]} allowDataOverflow={true} />
-                        <Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} />
-                        <Bar dataKey="hydration" fill="url(#blueGradient)" radius={[4, 4, 0, 0]} name="Eau %" />
-                    </BarChart>
-                </ResponsiveContainer>
-             </div>
-             {latestHydration && (
-               <div className="mt-3 flex items-center justify-between text-xs">
-                 <span className="text-slate-400">Dernière valeur : <span className="font-bold text-blue-400">{latestHydration} %</span></span>
-                 <span className={`font-semibold px-2 py-0.5 rounded-full ${latestHydration >= 55 ? 'bg-emerald-500/20 text-emerald-400' : latestHydration >= 50 ? 'bg-yellow-500/20 text-yellow-400' : 'bg-red-500/20 text-red-400'}`}>
-                   {latestHydration >= 55 ? '✓ Bonne hydratation' : latestHydration >= 50 ? '⚠ Limite' : '⛔ Déshydratation'}
-                 </span>
-               </div>
-             )}
-          </div>
-          <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 min-h-[300px]">
-             <h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Flame size={16} className="text-amber-500"/> Graisse Viscérale (%)</h3>
-             <div className="h-56">
-                <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={chartDataWithTrends}>
-                        <defs><linearGradient id="amberGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#f59e0b" stopOpacity={0.8}/><stop offset="100%" stopColor="#f59e0b" stopOpacity={0}/></linearGradient></defs>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" />
-                        <XAxis dataKey="date" stroke="#94a3b8" tick={{fontSize:10}} padding={{ left: 10, right: 30 }} />
-                        <YAxis domain={safeDomain} allowDataOverflow={true} stroke="#94a3b8" tick={{fontSize:10}} />
-                        <Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(v) => [`${v}`, 'Graisse viscérale %']} />
-                        <Area type="monotone" dataKey="visceralFat" stroke="#f59e0b" fill="url(#amberGradient)" strokeWidth={2} name="Graisse viscérale (%)" dot={false} connectNulls/>
-                        <Line type="monotone" dataKey="visceralFatTrend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" />
-                    </ComposedChart>
-                </ResponsiveContainer>
-             </div>
-             {latestVisceral && (
-               <div className="mt-3 flex items-center justify-between text-xs">
-                 <span className="text-slate-400">Dernière valeur : <span className="font-bold text-amber-400">{latestVisceral}</span></span>
-                 <span className={`font-semibold px-2 py-0.5 rounded-full ${latestVisceral <= 9 ? 'bg-emerald-500/20 text-emerald-400' : latestVisceral <= 14 ? 'bg-yellow-500/20 text-yellow-400' : 'bg-red-500/20 text-red-400'}`}>
-                   {latestVisceral <= 9 ? '✓ Normal' : latestVisceral <= 14 ? '⚠ Élevé' : '⛔ Très élevé'}
-                 </span>
-               </div>
-             )}
-          </div>
+        );
+      })}
+
+      {/* Section Coros : Sommeil + VFC nocturne — rendues comme des health cards dans la grille */}
+      <CorosSection user={user} db={db} timeFrame={timeFrame} healthLogs={healthLogs} hiddenCards={healthHiddenCards} />
       </div>
 
-      <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 col-span-full">
-         <div className="flex justify-between items-start mb-6">
-             <div>
-                 <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">COMPOSITION CORPORELLE</h3>
-                 <div className="flex items-center gap-2">
-                     <div className="bg-indigo-500/20 p-1 rounded-full"><ArrowRight size={16} className="text-indigo-400"/></div>
-                     <h2 className="text-xl font-bold text-white">Stable</h2>
-                 </div>
-             </div>
-             <div className="flex gap-4">
-                 <div className="flex items-center gap-2 text-xs font-bold text-[#2dd4bf]"><div className="w-2 h-2 rounded-full bg-[#2dd4bf] ring-2 ring-[#2dd4bf]/30"></div> Muscle</div>
-                 <div className="flex items-center gap-2 text-xs font-bold text-[#e879f9]"><div className="w-2 h-2 rotate-45 bg-[#e879f9] ring-2 ring-[#e879f9]/30"></div> Graisse</div>
-             </div>
-         </div>
-         
-         <div className="h-72 w-full relative min-h-[300px]">
-            {safeChartData.length === 0 && (<div className="absolute inset-0 flex items-center justify-center text-slate-500 text-sm z-10 bg-slate-800/50 backdrop-blur-sm">En attente de données pour le graphique...</div>)}
-            <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={safeChartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={true} horizontal={true} stroke="#334155" opacity={0.5} />
-                    <XAxis dataKey="date" stroke="#94a3b8" tick={{fontSize:10}} padding={{ left: 10, right: 30 }} axisLine={false} tickLine={false} dy={10} />
-                    <YAxis orientation="right" domain={[0, 90]} ticks={[0, 15, 30, 45, 60, 75, 90]} stroke="#94a3b8" tick={{fontSize:10}} axisLine={false} tickLine={false} />
-                    <Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{stroke: '#fff', strokeWidth: 1, strokeDasharray: '3 3'}} />
-                    <Line type="monotone" dataKey="muscleMass" stroke="#2dd4bf" strokeWidth={3} dot={false} activeDot={{r: 6, strokeWidth: 0}} connectNulls={true} isAnimationActive={false} />
-                    <Line type="monotone" dataKey="bodyFat" stroke="#e879f9" strokeWidth={3} dot={false} activeDot={{r: 6, strokeWidth: 0}} connectNulls={true} isAnimationActive={false} />
-                </LineChart>
-            </ResponsiveContainer>
-         </div>
-
-         <div className="grid grid-cols-2 gap-4 mt-6">
-             <div className="bg-black/40 rounded-xl p-4 border border-slate-700/50">
-                 <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">MASSE MUSCULAIRE</div>
-                 <div className={`text-2xl font-bold ${muscleTrend >= 0 ? 'text-white' : 'text-slate-200'}`}>{muscleTrend > 0 ? '+' : ''}{muscleTrend}%</div>
-             </div>
-             <div className="bg-black/40 rounded-xl p-4 border border-slate-700/50">
-                 <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">MASSE GRASSE</div>
-                 <div className={`text-2xl font-bold ${fatTrend <= 0 ? 'text-white' : 'text-slate-200'}`}>{fatTrend > 0 ? '+' : ''}{fatTrend}%</div>
-             </div>
-         </div>
+      <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-lg">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="font-bold text-slate-200 flex items-center gap-2"><Plus size={18} className="text-violet-400"/> Nouvelle mesure</h3>
+          {isDemo ? (
+            <span className="text-xs text-slate-500 italic">Lecture seule en démo</span>
+          ) : isSyncingWithings ? (
+            <span className="flex items-center gap-2 text-xs text-slate-400"><RefreshCw size={14} className="animate-spin text-violet-400"/> Sync Withings...</span>
+          ) : (
+            <button onClick={() => onWithingsSync()} className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-bold px-3 py-2 rounded-lg transition-colors border border-slate-600">
+              <RefreshCw size={14} className="text-violet-400"/> Sync Withings
+            </button>
+          )}
+        </div>
+        <div className={`grid grid-cols-2 md:grid-cols-3 gap-4 ${isDemo ? 'opacity-50 pointer-events-none' : ''}`}>
+            <input type="date" value={date} onChange={e => setDate(e.target.value)} className="bg-slate-900 border border-slate-600 rounded p-2 text-white" disabled={isDemo} />
+            <input type="text" value={weight} onChange={e => setWeight(e.target.value)} placeholder="Poids (kg)" className="bg-slate-900 border border-slate-600 rounded p-2 text-white" disabled={isDemo} />
+            <input type="text" value={waist} onChange={e => setWaist(e.target.value)} placeholder="Tour de taille (cm)" className="bg-slate-900 border border-slate-600 rounded p-2 text-white border-orange-500/50" disabled={isDemo} />
+            <input type="text" value={bodyFat} onChange={e => setBodyFat(e.target.value)} placeholder="Fat %" className="bg-slate-900 border border-slate-600 rounded p-2 text-white" disabled={isDemo} />
+            <input type="text" value={muscleMass} onChange={e => setMuscleMass(e.target.value)} placeholder="Mus %" className="bg-slate-900 border border-slate-600 rounded p-2 text-white" disabled={isDemo} />
+            <input type="text" value={hydration} onChange={e => setHydration(e.target.value)} placeholder="Eau %" className="bg-slate-900 border border-slate-600 rounded p-2 text-white" disabled={isDemo} />
+            <input type="text" value={glucose} onChange={e => setGlucose(e.target.value)} placeholder="Glucose (mg/dl)" className="bg-slate-900 border border-slate-600 rounded p-2 text-white border-[#EBAA6D]/50" disabled={isDemo} />
+            <input type="text" value={ketones} onChange={e => setKetones(e.target.value)} placeholder="Cétones (mmol/L)" className="bg-slate-900 border border-slate-600 rounded p-2 text-white border-cyan-500/50" disabled={isDemo} />
+            <input type="text" value={respiratoryRate} onChange={e => setRespiratoryRate(e.target.value)} placeholder="Fréq. resp. (brpm)" className="bg-slate-900 border border-slate-600 rounded p-2 text-white border-sky-500/50" disabled={isDemo} />
+            <input type="text" value={spo2} onChange={e => setSpo2(e.target.value)} placeholder="SpO2 (%)" className="bg-slate-900 border border-slate-600 rounded p-2 text-white border-emerald-500/50" disabled={isDemo} />
+            <button onClick={handleSave} disabled={isDemo} className="col-span-2 md:col-span-3 w-full bg-violet-600 text-white font-bold p-2 rounded hover:bg-violet-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">Enregistrer</button>
+        </div>
       </div>
 
       <div className="space-y-2 col-span-full">
          {[...healthLogs].reverse().slice(0, 5).map(log => (
              <div key={log.id} className="flex justify-between items-center bg-slate-800 p-3 rounded-lg border border-slate-700">
                  <div className="text-white text-sm">
-                    {formatDate(log.date)} {log.weight && ` - ${log.weight}kg`} {log.steps && ` - ${log.steps} pas`} {log.waist && ` - ${log.waist} cm`}
+                    {formatDate(log.date)} {log.weight && ` - ${log.weight}kg`} {log.steps && ` - ${log.steps} pas`} {log.waist && ` - ${log.waist} cm`} {log.glucose && ` - ${log.glucose} mg/dl`} {log.ketones && ` - ${log.ketones} mmol/L`}
                  </div>
                  {!isDemo && <button onClick={() => deleteEntry(log.id)} className="text-slate-500 hover:text-red-500 p-2"><Trash2 size={16} /></button>}
              </div>
@@ -1447,9 +1982,133 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings,
 }
 
 // --- SETTINGS VIEW ---
-function SettingsView({ user, isWithingsEnabled, handleWithingsAuth, isStravaEnabled, handleStravaAuth, withingsNeedsReconnect, hevyApiKey, onSaveHevyApiKey, goals, setGoals, isDemo }) {
+function SettingsView({ user, db, isWithingsEnabled, handleWithingsAuth, isStravaEnabled, handleStravaAuth, withingsNeedsReconnect, hevyApiKey, onSaveHevyApiKey, goals, setGoals, dataSourcePrefs, setDataSourcePrefs, connectedSources, isDemo, setNutritionVersion }) {
   const [hevyKeyInput, setHevyKeyInput] = useState(hevyApiKey || '');
   const [hevyKeySaved, setHevyKeySaved] = useState(false);
+
+  // --- CRONOMETER IMPORT STATE ---
+  const [csvDragOver, setCsvDragOver] = useState(false);
+  const [csvParsedRows, setCsvParsedRows] = useState(null);
+  const [csvError, setCsvError] = useState(null);
+  const [csvImporting, setCsvImporting] = useState(false);
+  const [csvResult, setCsvResult] = useState(null);
+  const [csvConflicts, setCsvConflicts] = useState(null);
+  const csvFileRef = useRef(null);
+
+  const csvReset = () => { setCsvParsedRows(null); setCsvError(null); setCsvResult(null); setCsvConflicts(null); };
+  const csvFormatDate = (s) => { const [y, m, d] = s.split('-'); return `${d}/${m}/${y}`; };
+
+  // Parse une ligne CSV en gérant les guillemets
+  const csvParseLine = (line) => {
+    const result = []; let cur = '', inQ = false;
+    for (let j = 0; j < line.length; j++) { const c = line[j]; if (c === '"') inQ = !inQ; else if (c === ',' && !inQ) { result.push(cur); cur = ''; } else cur += c; }
+    result.push(cur); return result;
+  };
+
+  // Détecte le format et parse le CSV
+  const csvParseFile = async (file) => {
+    csvReset();
+    if (!file.name.endsWith('.csv')) { setCsvError('Le fichier doit être au format CSV.'); return; }
+    try {
+      const text = await file.text();
+      const lines = text.trim().split('\n');
+      if (lines.length < 2) throw new Error('Fichier CSV vide ou invalide');
+      const headers = lines[0].split(',').map(h => h.trim());
+
+      // Détection auto du format : Servings a "Day" + "Group", Daily Summary a "Date"
+      const isServings = headers.includes('Day') && headers.includes('Group');
+
+      if (isServings) {
+        // --- FORMAT SERVINGS ---
+        const dayIdx = headers.indexOf('Day');
+        const groupIdx = headers.indexOf('Group');
+        const kcalIdx = headers.indexOf('Energy (kcal)');
+        const carbsIdx = headers.indexOf('Carbs (g)');
+        const fatIdx = headers.indexOf('Fat (g)');
+        const protIdx = headers.indexOf('Protein (g)');
+        const fiberIdx = headers.indexOf('Fiber (g)');
+        const sugarsIdx = headers.indexOf('Sugars (g)');
+        const sodiumIdx = headers.indexOf('Sodium (mg)');
+        if (kcalIdx === -1) throw new Error('Colonne "Energy (kcal)" manquante.');
+
+        const GROUP_MAP = { 'Breakfast': 'petitDej', 'Lunch': 'dejeuner', 'Dinner': 'diner', 'Snack': 'encas' };
+        const byDay = {};
+        for (let i = 1; i < lines.length; i++) {
+          const line = lines[i].trim(); if (!line) continue;
+          const vals = csvParseLine(line);
+          const dateStr = vals[dayIdx]?.trim();
+          if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) continue;
+          const group = vals[groupIdx]?.trim();
+          const mealKey = GROUP_MAP[group] || 'encas';
+          const kcal = parseFloat(vals[kcalIdx]) || 0;
+          if (!byDay[dateStr]) byDay[dateStr] = { date: dateStr, source: 'cronometer-servings', calories: 0, carbs: 0, fat: 0, protein: 0, fiber: 0, sugars: 0, sodium: 0, petitDej: 0, dejeuner: 0, diner: 0, encas: 0 };
+          const d = byDay[dateStr];
+          d.calories += kcal;
+          d[mealKey] += kcal;
+          if (carbsIdx !== -1) d.carbs += parseFloat(vals[carbsIdx]) || 0;
+          if (fatIdx !== -1) d.fat += parseFloat(vals[fatIdx]) || 0;
+          if (protIdx !== -1) d.protein += parseFloat(vals[protIdx]) || 0;
+          if (fiberIdx !== -1) d.fiber += parseFloat(vals[fiberIdx]) || 0;
+          if (sugarsIdx !== -1) d.sugars += parseFloat(vals[sugarsIdx]) || 0;
+          if (sodiumIdx !== -1) d.sodium += parseFloat(vals[sodiumIdx]) || 0;
+        }
+        // Arrondir
+        const rows = Object.values(byDay).map(d => {
+          for (const k of ['calories','carbs','fat','protein','fiber','sugars','sodium','petitDej','dejeuner','diner','encas']) d[k] = Math.round(d[k] * 100) / 100;
+          return d;
+        });
+        if (rows.length === 0) throw new Error('Aucune donnée nutritionnelle trouvée.');
+        setCsvParsedRows(rows);
+      } else {
+        // --- FORMAT DAILY SUMMARY ---
+        const reqCols = ['Date', 'Energy (kcal)'];
+        for (const col of reqCols) { if (!headers.includes(col)) throw new Error(`Colonne manquante : "${col}". Est-ce bien un export Cronometer ?`); }
+        const colMap = { 'Date': 'date', 'Energy (kcal)': 'calories', 'Carbs (g)': 'carbs', 'Fat (g)': 'fat', 'Protein (g)': 'protein', 'Fiber (g)': 'fiber', 'Sugars (g)': 'sugars', 'Sodium (mg)': 'sodium' };
+        const indices = {};
+        for (const [csv, field] of Object.entries(colMap)) { const idx = headers.indexOf(csv); if (idx !== -1) indices[field] = idx; }
+        const rows = [];
+        for (let i = 1; i < lines.length; i++) {
+          const line = lines[i].trim(); if (!line) continue;
+          const vals = csvParseLine(line);
+          const dateStr = vals[indices.date]?.trim();
+          if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) continue;
+          const row = { date: dateStr, source: 'cronometer' }; let hasData = false;
+          for (const [field, idx] of Object.entries(indices)) {
+            if (field === 'date') continue;
+            const v = parseFloat(vals[idx]);
+            if (!isNaN(v) && v > 0) { row[field] = Math.round(v * 100) / 100; hasData = true; } else row[field] = 0;
+          }
+          if (hasData) rows.push(row);
+        }
+        if (rows.length === 0) throw new Error('Aucune donnée nutritionnelle trouvée.');
+        setCsvParsedRows(rows);
+      }
+    } catch (e) { setCsvError(e.message); }
+  };
+
+  const csvDoImport = async (overwrite = false) => {
+    if (!csvParsedRows || !user || !db || isDemo) return;
+    setCsvImporting(true); setCsvError(null);
+    try {
+      let imported = 0;
+      for (const row of csvParsedRows) {
+        const docRef = doc(db, 'users', user.uid, 'nutrition', row.date);
+        // Merge : conserver les champs existants (ex: macros du Daily Summary + repas du Servings)
+        const data = { date: row.date, source: row.source || 'cronometer' };
+        for (const k of ['calories','carbs','fat','protein','fiber','sugars','sodium','petitDej','dejeuner','diner','encas']) {
+          if (row[k] !== undefined) data[k] = row[k];
+        }
+        await setDoc(docRef, data, { merge: true });
+        imported++;
+      }
+      if (imported > 0) {
+        const dates = csvParsedRows.map(r => r.date).sort();
+        setCsvResult({ count: imported, skipped: 0, from: csvFormatDate(dates[0]), to: csvFormatDate(dates[dates.length - 1]) });
+        setNutritionVersion(v => v + 1);
+      } else setCsvError('Aucun jour importé.');
+    } catch (e) { setCsvError(`Erreur : ${e.message}`); }
+    finally { setCsvImporting(false); }
+  };
   const updateGoal = (key, value) => {
     const num = parseFloat(value);
     if (!isNaN(num)) setGoals(prev => ({ ...prev, [key]: num }));
@@ -1519,6 +2178,33 @@ function SettingsView({ user, isWithingsEnabled, handleWithingsAuth, isStravaEna
           </div>
        </section>
 
+       {connectedSources.length >= 2 && (
+       <section className="bg-slate-800 p-4 rounded-xl border border-slate-700">
+          <h3 className="font-bold text-slate-200 mb-4 flex items-center gap-2"><Filter size={18} className="text-emerald-400"/> Sources de données</h3>
+          <p className="text-xs text-slate-500 mb-3">Choisissez la source pour chaque type de donnée.</p>
+          <div className="space-y-2">
+            {DATA_TYPE_SOURCES.map(({ key, label, sources }) => {
+              const available = sources.filter(s => connectedSources.includes(s));
+              if (available.length < 2) return null;
+              const current = dataSourcePrefs[key] || available[0];
+              return (
+                <div key={key} className="flex justify-between items-center bg-slate-900/50 p-3 rounded-lg border border-slate-600/50">
+                  <span className="text-sm text-slate-300">{label}</span>
+                  <div className="flex gap-1">
+                    {available.map(src => (
+                      <button key={src} onClick={() => !isDemo && setDataSourcePrefs(p => ({...p, [key]: src}))}
+                        className={`px-2 py-1 rounded text-xs font-bold capitalize ${current === src ? 'bg-emerald-500 text-white' : 'bg-slate-700 text-slate-400 hover:bg-slate-600'}`}>
+                        {src}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+       </section>
+       )}
+
        <section className="bg-slate-800 p-4 rounded-xl border border-slate-700">
           <h3 className="font-bold text-slate-200 mb-4 flex items-center gap-2"><Target size={18} className="text-violet-400"/> Objectifs</h3>
           <div className="space-y-4">
@@ -1542,14 +2228,165 @@ function SettingsView({ user, isWithingsEnabled, handleWithingsAuth, isStravaEna
               </div>
             ))}
           </div>
+          {/* NUTRITION KETO */}
+          <div className="bg-slate-900/50 p-3 rounded-lg border border-slate-600/50 mt-4">
+            <div className="text-sm font-bold text-emerald-400 mb-2">Nutrition — Régime cétogène</div>
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <div>
+                <label className="text-[10px] text-slate-500 uppercase tracking-wider">Obj. Calories</label>
+                <input type="number" value={goals.targetCalories} onChange={e => updateGoal('targetCalories', e.target.value)} disabled={isDemo} className={`w-full bg-slate-800 border border-slate-600 rounded p-2 text-white text-sm mt-1 ${isDemo ? 'opacity-50 cursor-not-allowed' : ''}`} />
+              </div>
+              <div className="flex items-end">
+                <span className="text-xs text-slate-400 pb-2">kcal / jour</span>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              {[
+                { label: 'Glucides', key: 'pctCarbs', color: 'text-orange-400' },
+                { label: 'Protéines', key: 'pctProtein', color: 'text-yellow-400' },
+                { label: 'Lipides', key: 'pctFat', color: 'text-violet-400' },
+              ].map(({ label, key, color }) => {
+                const pct = goals[key] || 0;
+                const cal = goals.targetCalories || 0;
+                const divisor = key === 'pctFat' ? 9 : 4;
+                const grams = Math.round(cal * pct / 100 / divisor);
+                return (
+                  <div key={key}>
+                    <label className={`text-[10px] uppercase tracking-wider ${color}`}>{label} (%)</label>
+                    <input type="number" value={goals[key]} onChange={e => updateGoal(key, e.target.value)} disabled={isDemo} className={`w-full bg-slate-800 border border-slate-600 rounded p-2 text-white text-sm mt-1 ${isDemo ? 'opacity-50 cursor-not-allowed' : ''}`} />
+                    <div className="text-[10px] text-slate-500 mt-1">= {grams}g / jour</div>
+                  </div>
+                );
+              })}
+            </div>
+            {(goals.pctCarbs + goals.pctProtein + goals.pctFat) !== 100 && (
+              <p className="text-[10px] text-red-400 mt-2 text-center">Total : {goals.pctCarbs + goals.pctProtein + goals.pctFat}% — doit faire 100%</p>
+            )}
+          </div>
           <p className="text-[10px] text-slate-500 mt-3 text-center">Les modifications sont sauvegardées automatiquement</p>
+       </section>
+
+       {/* SAUVEGARDE */}
+       <section className="bg-slate-800 p-4 rounded-xl border border-slate-700">
+          <h3 className="font-bold text-slate-200 mb-4 flex items-center gap-2"><Download size={18} className="text-cyan-400"/> Sauvegarde des données</h3>
+          <p className="text-xs text-slate-500 mb-3">Téléchargez une copie complète de vos données (santé, objectifs, intégrations).</p>
+          <button
+            disabled={isDemo}
+            onClick={async () => {
+              if (!user || !db) return;
+              try {
+                const docSnap = await getDoc(doc(db, "users", user.uid));
+                if (!docSnap.exists()) { alert("Aucune donnée trouvée."); return; }
+                const data = docSnap.data();
+                const backup = { exportDate: new Date().toISOString(), uid: user.uid, ...data };
+                const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a'); a.href = url;
+                a.download = `bioz-backup-${new Date().toISOString().slice(0,10)}.json`;
+                a.click(); URL.revokeObjectURL(url);
+              } catch(e) { console.error("Backup error:", e); alert("Erreur lors de l'export."); }
+            }}
+            className={`w-full py-3 rounded-lg text-sm font-bold transition-colors ${isDemo ? 'bg-slate-700 text-slate-500 cursor-not-allowed' : 'bg-cyan-600 hover:bg-cyan-500 text-white'}`}
+          >
+            <Download size={16} className="inline mr-2" />Télécharger la sauvegarde (.json)
+          </button>
+          <div className="mt-3">
+            <label
+              className={`w-full py-3 rounded-lg text-sm font-bold transition-colors flex items-center justify-center cursor-pointer ${isDemo ? 'bg-slate-700 text-slate-500 cursor-not-allowed' : 'bg-slate-700 hover:bg-slate-600 text-slate-200 border border-slate-600'}`}
+            >
+              <Upload size={16} className="inline mr-2" />Restaurer depuis un backup (.json)
+              <input type="file" accept=".json" className="hidden" disabled={isDemo} onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file || !user || !db) return;
+                if (!confirm("Attention : cette action va REMPLACER toutes vos données actuelles par celles du fichier. Continuer ?")) { e.target.value = ''; return; }
+                try {
+                  const text = await file.text();
+                  const backup = JSON.parse(text);
+                  const { exportDate, uid, ...restoreData } = backup;
+                  await setDoc(doc(db, "users", user.uid), restoreData, { merge: true });
+                  alert(`Données restaurées depuis le backup du ${exportDate ? new Date(exportDate).toLocaleDateString('fr-FR') : 'inconnu'}. Rechargement...`);
+                  window.location.reload();
+                } catch(err) { console.error("Restore error:", err); alert("Erreur : fichier invalide ou problème de connexion."); }
+                e.target.value = '';
+              }} />
+            </label>
+            <p className="text-[10px] text-slate-500 mt-2 text-center">Utilisez un fichier .json précédemment exporté depuis cette page</p>
+          </div>
+       </section>
+
+       {/* CRONOMETER IMPORT */}
+       <section className="bg-slate-800 p-4 rounded-xl border border-slate-700">
+          <h3 className="font-bold text-slate-200 mb-4 flex items-center gap-2"><Upload size={18} className="text-green-400"/> Import Cronometer</h3>
+          <p className="text-xs text-slate-500 mb-3">Importez vos données nutritionnelles depuis un export CSV Cronometer. Formats supportés : <b>Daily Summary</b> (macros) et <b>Servings</b> (détail par repas).</p>
+          <div className="space-y-3">
+            <div className="flex items-center gap-3">
+              <a href="https://cronometer.com" target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+                <ExternalLink size={16} /> Ouvrir Cronometer
+              </a>
+              <span className="text-[10px] text-slate-500">Profile → ⚙️ → Export Data → Export</span>
+            </div>
+            <div
+              onDrop={(e) => { e.preventDefault(); setCsvDragOver(false); const f = e.dataTransfer.files[0]; if (f) csvParseFile(f); }}
+              onDragOver={(e) => { e.preventDefault(); setCsvDragOver(true); }}
+              onDragLeave={() => setCsvDragOver(false)}
+              onClick={() => csvFileRef.current?.click()}
+              className={`border-2 border-dashed rounded-xl p-5 text-center cursor-pointer transition-all ${csvDragOver ? 'border-green-400 bg-green-500/10' : 'border-slate-600 hover:border-slate-500 hover:bg-slate-700/30'}`}>
+              <Upload size={24} className={`mx-auto mb-2 ${csvDragOver ? 'text-green-400' : 'text-slate-500'}`} />
+              <p className="text-sm text-slate-300">Glissez votre fichier CSV ici</p>
+              <p className="text-xs text-slate-500 mt-1">ou cliquez pour parcourir</p>
+            </div>
+            <input ref={csvFileRef} type="file" accept=".csv" onChange={(e) => { const f = e.target.files[0]; if (f) csvParseFile(f); e.target.value = ''; }} className="hidden" />
+
+            {csvError && <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 flex items-start gap-2"><AlertCircle size={16} className="text-red-400 shrink-0 mt-0.5" /><p className="text-xs text-red-300">{csvError}</p></div>}
+
+            {csvParsedRows && !csvResult && !csvConflicts && (
+              <div className="bg-slate-900/50 p-3 rounded-lg border border-slate-600/50">
+                <div className="flex items-center gap-2 mb-2"><FileText size={16} className="text-green-400" /><span className="text-sm font-semibold text-slate-200">{csvParsedRows.length} jour{csvParsedRows.length > 1 ? 's' : ''}</span><span className="text-xs text-slate-500">du {csvFormatDate(csvParsedRows[0].date)} au {csvFormatDate(csvParsedRows[csvParsedRows.length - 1].date)}</span></div>
+                <button onClick={() => csvDoImport(false)} disabled={csvImporting || isDemo} className={`w-full py-2 rounded-lg text-sm font-semibold transition-all ${csvImporting ? 'bg-slate-600 text-slate-400 cursor-wait' : isDemo ? 'bg-slate-600 text-slate-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-500 text-white active:scale-[0.98]'}`}>{csvImporting ? 'Import en cours…' : isDemo ? 'Désactivé en démo' : `Importer ${csvParsedRows.length} jour${csvParsedRows.length > 1 ? 's' : ''}`}</button>
+              </div>
+            )}
+
+            {csvConflicts && csvConflicts.length > 0 && (
+              <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3">
+                <p className="text-xs text-yellow-300 font-semibold mb-2">{csvConflicts.length} jour{csvConflicts.length > 1 ? 's' : ''} déjà présent{csvConflicts.length > 1 ? 's' : ''}</p>
+                <div className="flex gap-2">
+                  <button onClick={() => { setCsvConflicts(null); setCsvResult(null); csvDoImport(true); }} disabled={csvImporting} className="flex-1 py-1.5 rounded-lg text-xs font-semibold bg-yellow-600 hover:bg-yellow-500 text-white transition-colors">{csvImporting ? 'Import…' : 'Écraser tout'}</button>
+                  <button onClick={csvReset} className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-700 hover:bg-slate-600 text-slate-300 transition-colors">Annuler</button>
+                </div>
+              </div>
+            )}
+
+            {csvResult && (
+              <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-3 flex items-start gap-2">
+                <CheckCircle2 size={16} className="text-green-400 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-xs text-green-300 font-semibold">{csvResult.count} jour{csvResult.count > 1 ? 's' : ''} importé{csvResult.count > 1 ? 's' : ''}, du {csvResult.from} au {csvResult.to}</p>
+                  {csvResult.skipped > 0 && <p className="text-[10px] text-slate-400 mt-0.5">{csvResult.skipped} ignoré{csvResult.skipped > 1 ? 's' : ''}</p>}
+                  <button onClick={csvReset} className="text-[10px] text-slate-400 hover:text-slate-300 underline mt-1">Importer un autre fichier</button>
+                </div>
+              </div>
+            )}
+          </div>
+       </section>
+
+       {/* KETO-MOJO */}
+       <section className="bg-slate-800 p-4 rounded-xl border border-slate-700">
+          <h3 className="font-bold text-slate-200 mb-4 flex items-center gap-2">
+            <div className="bg-[#EBAA6D] text-slate-900 font-bold w-8 h-8 rounded-full flex items-center justify-center text-xs">KM</div>
+            Keto-Mojo
+          </h3>
+          <p className="text-sm text-slate-300 mb-3">Saisissez vos mesures de glucose et cétones sanguines via le formulaire de saisie.</p>
+          <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-3 mb-3">
+            <p className="text-xs text-emerald-300">Les champs Glucose (mg/dl) et Cétones (mmol/L) sont disponibles dans le formulaire « Nouvelle mesure ». Le GKI est calculé automatiquement.</p>
+          </div>
        </section>
     </div>
   );
 }
 
 // --- STRAVA VIEW ---
-function StravaView({ stravaLogs, onSync, isSyncing, isDemo }) {
+function EnduranceView({ stravaLogs, onSync, isSyncing, isDemo }) {
     const safeLogs = Array.isArray(stravaLogs) ? stravaLogs : [];
 
     const getActivityIcon = (act, className) => {
@@ -1610,49 +2447,122 @@ function StravaView({ stravaLogs, onSync, isSyncing, isDemo }) {
         return `${(act.average_speed * 3.6).toFixed(1)} km/h`;
     };
 
+    // --- Calcul des stats résumé (30 derniers jours) ---
+    const thirtyDaysAgo = Date.now() - 30 * 24 * 3600 * 1000;
+    const recentLogs = safeLogs.filter(a => a.start_date && new Date(a.start_date).getTime() > thirtyDaysAgo);
+
+    const cyclingTypes = ['Ride', 'VirtualRide', 'EBikeRide'];
+    const runningTypes = ['Run'];
+    const enduranceTypes = [...cyclingTypes, ...runningTypes, 'Swim', 'Rowing', 'VirtualRow', 'Walk', 'Hike'];
+
+    const rowingTypes = ['Rowing', 'VirtualRow'];
+
+    const cyclingLogs = recentLogs.filter(a => cyclingTypes.includes(a.type));
+    const runningLogs = recentLogs.filter(a => runningTypes.includes(a.type));
+    const rowingLogs = recentLogs.filter(a => rowingTypes.includes(a.type));
+    const enduranceLogs = recentLogs.filter(a => enduranceTypes.includes(a.type));
+
+    const sumDistance = (logs) => logs.reduce((s, a) => s + (a.distance || 0), 0);
+    const sumDuration = (logs) => logs.reduce((s, a) => s + (a.moving_time || 0), 0);
+    const avgSpeed = (logs) => {
+        const withSpeed = logs.filter(a => a.average_speed);
+        return withSpeed.length > 0 ? withSpeed.reduce((s, a) => s + a.average_speed, 0) / withSpeed.length : 0;
+    };
+    const avgHR = (logs) => {
+        const withHR = logs.filter(a => a.average_heartrate);
+        return withHR.length > 0 ? Math.round(withHR.reduce((s, a) => s + a.average_heartrate, 0) / withHR.length) : 0;
+    };
+
+    const cyclingDist = sumDistance(cyclingLogs);
+    const runningDist = sumDistance(runningLogs);
+    const rowingDist = sumDistance(rowingLogs);
+    const cyclingDur = sumDuration(cyclingLogs);
+    const runningDur = sumDuration(runningLogs);
+    const rowingDur = sumDuration(rowingLogs);
+    const cyclingSpeed = avgSpeed(cyclingLogs);
+    const runningSpeed = avgSpeed(runningLogs);
+    const enduranceHR = avgHR(enduranceLogs);
+
+    const formatPace = (speedMs) => {
+        if (!speedMs) return '—';
+        const paceSecPerKm = 1000 / speedMs;
+        const pm = Math.floor(paceSecPerKm / 60);
+        const ps = Math.round(paceSecPerKm % 60);
+        return `${pm}'${String(ps).padStart(2,'0')}" /km`;
+    };
+
+    const summaryCards = [
+        { label: 'Cyclisme — Distance', value: cyclingDist ? `${(cyclingDist / 1000).toFixed(1)} km` : '—', icon: <Bike size={18} />, color: 'text-blue-400', bg: 'bg-blue-500/10', border: 'border-blue-500/30' },
+        { label: 'Running — Distance', value: runningDist ? `${(runningDist / 1000).toFixed(1)} km` : '—', icon: <Footprints size={18} />, color: 'text-orange-400', bg: 'bg-orange-500/10', border: 'border-orange-500/30' },
+        { label: 'FC moy. endurance', value: enduranceHR ? `${enduranceHR} bpm` : '—', icon: <Heart size={18} />, color: 'text-red-400', bg: 'bg-red-500/10', border: 'border-red-500/30' },
+        { label: 'Cyclisme — Durée', value: cyclingDur ? formatDuration(cyclingDur) : '—', icon: <Clock size={18} />, color: 'text-blue-400', bg: 'bg-blue-500/10', border: 'border-blue-500/30' },
+        { label: 'Running — Durée', value: runningDur ? formatDuration(runningDur) : '—', icon: <Clock size={18} />, color: 'text-orange-400', bg: 'bg-orange-500/10', border: 'border-orange-500/30' },
+        { label: 'Cyclisme — Vit. moy.', value: cyclingSpeed ? `${(cyclingSpeed * 3.6).toFixed(1)} km/h` : '—', icon: <Bike size={18} />, color: 'text-blue-400', bg: 'bg-blue-500/10', border: 'border-blue-500/30' },
+        { label: 'Running — Allure moy.', value: formatPace(runningSpeed), icon: <Footprints size={18} />, color: 'text-orange-400', bg: 'bg-orange-500/10', border: 'border-orange-500/30' },
+        { label: 'Aviron — Distance', value: rowingDist ? `${(rowingDist / 1000).toFixed(1)} km` : '—', icon: <Waves size={18} />, color: 'text-cyan-400', bg: 'bg-cyan-500/10', border: 'border-cyan-500/30' },
+        { label: 'Aviron — Durée', value: rowingDur ? formatDuration(rowingDur) : '—', icon: <Clock size={18} />, color: 'text-cyan-400', bg: 'bg-cyan-500/10', border: 'border-cyan-500/30' },
+    ];
+
     return (
         <div className="animate-fade-in space-y-6">
             <div className="flex justify-between items-center">
-                <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2"><MapIcon size={22} className="text-[#fc4c02]" /> Activités Strava</h2>
-                <button onClick={() => onSync()} disabled={isSyncing || isDemo} className="bg-[#fc4c02] hover:bg-[#e34402] text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-lg disabled:opacity-50 transition-colors">
+                <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2"><MapIcon size={22} className="text-emerald-400" /> Endurance</h2>
+                <button onClick={() => onSync()} disabled={isSyncing || isDemo} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-lg disabled:opacity-50 transition-colors">
                     <RefreshCw size={15} className={isSyncing ? "animate-spin" : ""}/>{isSyncing ? 'Sync...' : 'Synchroniser'}
                 </button>
             </div>
 
-            {safeLogs.length === 0 ? (
-                <div className="text-center text-slate-500 py-16 bg-slate-800/50 rounded-2xl border border-dashed border-slate-700"><MapIcon size={40} className="mx-auto mb-3 opacity-20"/><p className="font-medium">Aucune activité synchronisée.</p><p className="text-sm mt-1">Cliquez sur "Synchroniser" pour récupérer vos séances du jour.</p></div>
-            ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                    {safeLogs.map(act => {
-                        const colors = getActivityColor(act);
-                        return (
-                            <div key={act.id} className={`bg-slate-800 rounded-2xl border ${colors.border} shadow-md overflow-hidden hover:shadow-lg hover:scale-[1.01] transition-all duration-200`}>
-                                <div className={`${colors.bg} px-4 pt-4 pb-3 border-b border-slate-700/50`}>
-                                    <div className="flex items-start justify-between gap-2">
-                                        <div className="flex items-center gap-2 min-w-0">
-                                            <span className="shrink-0">{getActivityIcon(act, colors.accent)}</span>
-                                            <div className="min-w-0">
-                                                <h3 className="font-bold text-white text-sm leading-tight truncate">{act.name}</h3>
-                                                <span className={`text-xs font-semibold ${colors.accent}`}>{getActivityLabel(act)}</span>
+            {/* Cartes résumé — 30 derniers jours */}
+            <div>
+                <h3 className="text-sm font-semibold text-slate-400 mb-3 uppercase tracking-wider">30 derniers jours</h3>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                    {summaryCards.map((card, i) => (
+                        <div key={i} className={`${card.bg} border ${card.border} rounded-2xl p-4 text-center`}>
+                            <div className={`flex items-center justify-center gap-1.5 mb-2 ${card.color}`}>{card.icon}<span className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">{card.label}</span></div>
+                            <div className={`text-xl font-bold ${card.color}`}>{card.value}</div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            {/* Liste des activités */}
+            <div>
+                <h3 className="text-sm font-semibold text-slate-400 mb-3 uppercase tracking-wider">Activités récentes</h3>
+                {safeLogs.length === 0 ? (
+                    <div className="text-center text-slate-500 py-16 bg-slate-800/50 rounded-2xl border border-dashed border-slate-700"><MapIcon size={40} className="mx-auto mb-3 opacity-20"/><p className="font-medium">Aucune activité synchronisée.</p><p className="text-sm mt-1">Cliquez sur "Synchroniser" pour récupérer vos séances.</p></div>
+                ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                        {safeLogs.map(act => {
+                            const colors = getActivityColor(act);
+                            return (
+                                <div key={act.id} className={`bg-slate-800 rounded-2xl border ${colors.border} shadow-md overflow-hidden hover:shadow-lg hover:scale-[1.01] transition-all duration-200`}>
+                                    <div className={`${colors.bg} px-4 pt-4 pb-3 border-b border-slate-700/50`}>
+                                        <div className="flex items-start justify-between gap-2">
+                                            <div className="flex items-center gap-2 min-w-0">
+                                                <span className="shrink-0">{getActivityIcon(act, colors.accent)}</span>
+                                                <div className="min-w-0">
+                                                    <h3 className="font-bold text-white text-sm leading-tight truncate">{act.name}</h3>
+                                                    <span className={`text-xs font-semibold ${colors.accent}`}>{getActivityLabel(act)}</span>
+                                                </div>
+                                            </div>
+                                            <div className="text-right shrink-0">
+                                                <div className="text-xs text-slate-400">{act.start_date ? new Date(act.start_date).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }) : '—'}</div>
+                                                <div className="text-xs text-slate-500">{act.start_date ? new Date(act.start_date).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : ''}</div>
                                             </div>
                                         </div>
-                                        <div className="text-right shrink-0">
-                                            <div className="text-xs text-slate-400">{act.start_date ? new Date(act.start_date).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }) : '—'}</div>
-                                            <div className="text-xs text-slate-500">{act.start_date ? new Date(act.start_date).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : ''}</div>
-                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-px bg-slate-700/30 m-3 rounded-xl overflow-hidden">
+                                        <div className="bg-slate-800/80 p-3 text-center"><div className="text-[10px] uppercase tracking-wider text-slate-500 mb-1">Durée</div><div className="font-bold text-slate-100 text-base">{act.moving_time ? formatDuration(act.moving_time) : '—'}</div></div>
+                                        <div className="bg-slate-800/80 p-3 text-center"><div className="text-[10px] uppercase tracking-wider text-slate-500 mb-1">Distance</div><div className="font-bold text-slate-100 text-base">{act.distance ? `${(act.distance / 1000).toFixed(2)} km` : '—'}</div></div>
+                                        <div className="bg-slate-800/80 p-3 text-center"><div className="text-[10px] uppercase tracking-wider text-slate-500 mb-1">{act.type === 'Run' ? 'Allure' : 'Vit. moy.'}</div><div className={`font-bold text-base ${colors.accent}`}>{formatSpeed(act)}</div></div>
+                                        <div className="bg-slate-800/80 p-3 text-center"><div className="text-[10px] uppercase tracking-wider text-slate-500 mb-1">FC moy.</div><div className="font-bold text-slate-100 text-base flex items-center justify-center gap-1">{act.average_heartrate ? <><Heart size={13} className="text-red-400 shrink-0"/>{Math.round(act.average_heartrate)} bpm</> : <span className="text-slate-600">—</span>}</div></div>
                                     </div>
                                 </div>
-                                <div className="grid grid-cols-2 gap-px bg-slate-700/30 m-3 rounded-xl overflow-hidden">
-                                    <div className="bg-slate-800/80 p-3 text-center"><div className="text-[10px] uppercase tracking-wider text-slate-500 mb-1">Durée</div><div className="font-bold text-slate-100 text-base">{act.moving_time ? formatDuration(act.moving_time) : '—'}</div></div>
-                                    <div className="bg-slate-800/80 p-3 text-center"><div className="text-[10px] uppercase tracking-wider text-slate-500 mb-1">Distance</div><div className="font-bold text-slate-100 text-base">{act.distance ? `${(act.distance / 1000).toFixed(2)} km` : '—'}</div></div>
-                                    <div className="bg-slate-800/80 p-3 text-center"><div className="text-[10px] uppercase tracking-wider text-slate-500 mb-1">{act.type === 'Run' ? 'Allure' : 'Vit. moy.'}</div><div className={`font-bold text-base ${colors.accent}`}>{formatSpeed(act)}</div></div>
-                                    <div className="bg-slate-800/80 p-3 text-center"><div className="text-[10px] uppercase tracking-wider text-slate-500 mb-1">FC moy.</div><div className="font-bold text-slate-100 text-base flex items-center justify-center gap-1">{act.average_heartrate ? <><Heart size={13} className="text-red-400 shrink-0"/>{Math.round(act.average_heartrate)} bpm</> : <span className="text-slate-600">—</span>}</div></div>
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
-            )}
+                            );
+                        })}
+                    </div>
+                )}
+            </div>
         </div>
     );
 }
@@ -1757,7 +2667,7 @@ function LoginScreen({ onLogin, onDemo, version }) {
       <div className="mb-8 text-center">
         <img src={biozLogo} alt="BIOZ" className="h-16 mx-auto mb-4" />
         <p className="text-slate-400">Un briefing sport santé quotidien alimenté par toutes tes applications.</p>
-        <div className="text-xs text-slate-600 mt-2 font-mono">Version Bêta : 1.0</div>
+        <div className="text-xs text-slate-600 mt-2 font-mono">Version Bêta : 1.1</div>
       </div>
       <div className="w-full max-w-sm bg-slate-800 rounded-2xl border border-slate-700 p-6 shadow-2xl">
         <div className="space-y-4">
@@ -1836,6 +2746,7 @@ function App() {
     startWeight: 106, targetWeight: 95,
     startFat: 26, targetFat: 15,
     startWaist: 107, targetWaist: 95,
+    targetCalories: 2200, pctCarbs: 8, pctProtein: 25, pctFat: 67,
   });
 
   // HEVY STATE
@@ -1846,14 +2757,27 @@ function App() {
   const lastHevyFetch = useRef(null);                         // Timestamp du dernier fetch
   const [hevyApiKey, setHevyApiKey] = useState('');            // Clé API Hevy personnelle (per-user)
 
+  // NUTRITION VERSION (incremented after CSV import to trigger refresh)
+  const [nutritionVersion, setNutritionVersion] = useState(0);
+
   // WITHINGS STATE
   const [isSyncingWithings, setIsSyncingWithings] = useState(false);
   const [withingsNeedsReconnect, setWithingsNeedsReconnect] = useState(false);
 
   // STRAVA STATE
-  const [stravaLogs, setStravaLogs] = useState([]); 
+  const [stravaLogs, setStravaLogs] = useState([]);
   const [isSyncingStrava, setIsSyncingStrava] = useState(false);
   const [stravaNextSync, setStravaNextSync] = useState(null); // FIX P3: timestamp du prochain auto-sync
+
+  // DATA SOURCE PREFERENCES
+  const [dataSourcePrefs, setDataSourcePrefs] = useState({});
+
+  const connectedSources = useMemo(() => {
+    const s = [];
+    if (isWithingsEnabled) s.push('withings');
+    if (isStravaEnabled) s.push('strava');
+    return s;
+  }, [isWithingsEnabled, isStravaEnabled]);
 
   const isRemoteUpdate = useRef(false);
   const isDataLoaded = useRef(false); 
@@ -1873,6 +2797,7 @@ function App() {
       setHevyApiKey('');
       setIsWithingsEnabled(false);
       setIsStravaEnabled(false);
+      setDataSourcePrefs({});
       setGoals({ startWeight: 106, targetWeight: 95, startFat: 26, targetFat: 15, startWaist: 107, targetWaist: 95 });
       setDataLoaded(false);
       setSyncStatus('idle');
@@ -2115,7 +3040,7 @@ function App() {
   const handleStartStravaAuth = () => {
      window.location.href = `${STRAVA_CONFIG.authUrl}?client_id=${STRAVA_CONFIG.clientId}&response_type=code&redirect_uri=${encodeURIComponent(STRAVA_CONFIG.redirectUri)}&approval_prompt=force&scope=${STRAVA_CONFIG.scope}&state=${generateId()}`;
   };
-  
+
   const handleStartWithingsAuth = () => {
      window.location.href = `${WITHINGS_CONFIG.authUrl}?response_type=code&client_id=${WITHINGS_CONFIG.clientId}&state=${generateId()}&scope=${WITHINGS_CONFIG.scope}&redirect_uri=${encodeURIComponent(WITHINGS_CONFIG.redirectUri)}`;
   };
@@ -2244,6 +3169,7 @@ function App() {
         // Ne charger les workouts Hevy que si l'utilisateur a sa propre clé API
         setHevyWorkouts(userHasHevyKey ? (data.hevyWorkouts || []) : []);
         if (data.goals) setGoals(prev => ({ ...prev, ...data.goals }));
+        if (data.dataSourcePrefs) setDataSourcePrefs(data.dataSourcePrefs);
         isDataLoaded.current = true;
         setDataLoaded(true);
         setSyncStatus('idle');
@@ -2273,12 +3199,13 @@ function App() {
             healthLogs: trimmedHealthLogs,
             isWithingsEnabled,
             isStravaEnabled,
+            dataSourcePrefs,
             stravaLogs: trimmedStravaLogs,
             hevyWorkouts: trimmedHevyWorkouts,
             goals
         });
         await setDoc(doc(db, "users", user.uid), safeData, { merge: true });
-        setSyncStatus('saved'); 
+        setSyncStatus('saved');
         setTimeout(() => setSyncStatus('idle'), 2000);
       } catch (e) { 
         console.error("Save Error:", e); 
@@ -2290,7 +3217,7 @@ function App() {
     };
     const timeoutId = setTimeout(saveData, 2000); // debounce 2s au lieu de 500ms
     return () => clearTimeout(timeoutId);
-  }, [healthLogs, user, isWithingsEnabled, isStravaEnabled, stravaLogs, hevyWorkouts, goals]);
+  }, [healthLogs, user, isWithingsEnabled, isStravaEnabled, dataSourcePrefs, stravaLogs, hevyWorkouts, goals]);
 
   const handleLogin = async (email, password) => {
     try {
@@ -2389,28 +3316,44 @@ function App() {
           }
 
           const now = Math.floor(Date.now() / 1000);
-          const twoYearsAgo = now - (2 * 365 * 24 * 3600);
-          
+          // Données limitées à l'année en cours
+          const jan1 = Math.floor(new Date(new Date().getFullYear(), 0, 1).getTime() / 1000);
+          const monthsSinceJan = new Date().getMonth() + 1;
+
+          const withingsPostHeaders = { 'Content-Type': 'application/x-www-form-urlencoded', 'Authorization': `Bearer ${tokenData.access_token}` };
           const [measResponse1, measResponse2, actDataArray] = await Promise.all([
-              fetchWithFallback(`${WITHINGS_CONFIG.measureUrl}?action=getmeas&meastype=1,6,11,76,77,91,170,226,155&category=1&startdate=${twoYearsAgo}&enddate=${now}`, { method: 'GET', headers: { 'Authorization': `Bearer ${tokenData.access_token}` } }),
-              fetchWithFallback(`${WITHINGS_CONFIG.measureUrl}?action=getmeas&meastype=9,10&category=1&startdate=${twoYearsAgo}&enddate=${now}`, { method: 'GET', headers: { 'Authorization': `Bearer ${tokenData.access_token}` } }),
+              fetchWithFallback(WITHINGS_CONFIG.measureUrl, { method: 'POST', headers: withingsPostHeaders, body: new URLSearchParams({ action: 'getmeas', meastypes: '1,6,11,76,77,91,170,226,155', category: '1', startdate: jan1, enddate: now }).toString() }),
+              fetchWithFallback(WITHINGS_CONFIG.measureUrl, { method: 'POST', headers: withingsPostHeaders, body: new URLSearchParams({ action: 'getmeas', meastypes: '9,10', category: '1', startdate: jan1, enddate: now }).toString() }),
               Promise.all(
-                  Array.from({length: 24}, (_, i) => {
+                  Array.from({length: monthsSinceJan}, (_, i) => {
                       const endTs = now - (i * 30 * 24 * 3600);
                       const startTs = endTs - (30 * 24 * 3600);
                       const startDateStr = new Date(startTs * 1000).toISOString().split('T')[0];
                       const endDateStr = new Date(endTs * 1000).toISOString().split('T')[0];
-                      return fetchWithFallback(`${WITHINGS_CONFIG.activityUrl}?action=getactivity&startdateymd=${startDateStr}&enddateymd=${endDateStr}&data_fields=steps,distance`, { method: 'GET', headers: { 'Authorization': `Bearer ${tokenData.access_token}` } });
+                      return fetchWithFallback(WITHINGS_CONFIG.activityUrl, { method: 'POST', headers: withingsPostHeaders, body: new URLSearchParams({ action: 'getactivity', startdateymd: startDateStr, enddateymd: endDateStr, data_fields: 'steps,distance' }).toString() });
                   })
               )
           ]);
 
-          let newHealthLogs = [...healthLogs];
+          // FIX: toujours lire les données fraîches depuis Firestore avant de fusionner
+          // Evite d'écraser les saisies manuelles (waist, etc.) si healthLogs n'est pas encore chargé en state
+          let baseHealthLogs = healthLogs;
+          if (user && db) {
+            try {
+              const docSnap = await getDoc(doc(db, "users", user.uid));
+              if (docSnap.exists() && docSnap.data().healthLogs && docSnap.data().healthLogs.length > baseHealthLogs.length) {
+                baseHealthLogs = docSnap.data().healthLogs;
+              }
+            } catch(e) { console.error("[Withings] Cloud fetch before sync failed:", e); }
+          }
+          let newHealthLogs = [...baseHealthLogs];
           let updates = 0;
 
           const processGroups = (response) => {
               if (response && response.status === 0 && response.body && response.body.measuregrps) {
-                  response.body.measuregrps.forEach(group => {
+                  // Trier par timestamp croissant pour que la mesure la plus récente de chaque jour gagne
+                  const sortedGroups = [...response.body.measuregrps].sort((a, b) => a.date - b.date);
+                  sortedGroups.forEach(group => {
                       const date = new Date(group.date * 1000).toISOString();
                       const dateKey = getLocalDateKey(date);
                       let weight = null, bodyFat = null, muscleMass = null, hydration = null;
@@ -2435,7 +3378,7 @@ function App() {
                           updates++;
                       } else {
                           const existing = newHealthLogs[logIndex];
-                          newHealthLogs[logIndex] = { ...existing, weight: weight || existing.weight, bodyFat: bodyFat || existing.bodyFat, muscleMass: (muscleMass && weight) ? parseFloat(((muscleMass / weight) * 100).toFixed(1)) : existing.muscleMass, hydration: (hydration && weight) ? parseFloat(((hydration / weight) * 100).toFixed(1)) : existing.hydration, systolic: systolic || existing.systolic, diastolic: diastolic || existing.diastolic, pwv: pwv || existing.pwv, visceralFat: visceralFat || existing.visceralFat, bmr: bmr || existing.bmr, vascularAge: vascularAge || existing.vascularAge, restingHR: restingHR || existing.restingHR };
+                          newHealthLogs[logIndex] = { ...existing, weight: existing.weight || weight, bodyFat: existing.bodyFat || bodyFat, muscleMass: existing.muscleMass || ((muscleMass && weight) ? parseFloat(((muscleMass / weight) * 100).toFixed(1)) : null), hydration: existing.hydration || ((hydration && weight) ? parseFloat(((hydration / weight) * 100).toFixed(1)) : null), systolic: existing.systolic || systolic, diastolic: existing.diastolic || diastolic, pwv: existing.pwv || pwv, visceralFat: existing.visceralFat || visceralFat, bmr: existing.bmr || bmr, vascularAge: existing.vascularAge || vascularAge, restingHR: existing.restingHR || restingHR };
                           updates++;
                       }
                   });
@@ -2468,8 +3411,9 @@ function App() {
   };
 
   if (showSplash || loadingAuth) return (
-    <div className="min-h-screen bg-black flex items-center justify-center">
+    <div className="min-h-screen bg-black flex flex-col items-center justify-center gap-2">
       <img src={new URL('./picto-transparent.png', import.meta.url).href} alt="BIOZ" className="w-24 h-24 md:w-32 md:h-32" />
+      <div className="text-slate-600 text-[10px] font-mono">{APP_VERSION}</div>
     </div>
   );
 
@@ -2493,9 +3437,10 @@ function App() {
     switch(activeTab) {
       case 'dashboard': return dataLoaded ? <Dashboard healthLogs={healthLogs} stravaLogs={stravaLogs} /> : <div className="flex items-center justify-center h-64 text-slate-500">Chargement...</div>;
       case 'workout': return <HevyView hevyWorkouts={hevyWorkouts} loadingHevy={loadingHevy} fetchHevyWorkouts={demoFetchHevy} hevyError={hevyError} hevySyncStatus={hevySyncStatus} onDeleteWorkout={demoDeleteHevy} isDemo={isDemo} />;
-      case 'health': return <HealthTracker user={user} db={db} healthLogs={healthLogs} setHealthLogs={demoSetHealthLogs} isSyncingWithings={isSyncingWithings} onWithingsSync={demoWithingsSync} goals={goals} isDemo={isDemo} />;
-      case 'strava': return <StravaView stravaLogs={stravaLogs} onSync={demoStravaSync} isSyncing={isSyncingStrava} isDemo={isDemo} />;
-      case 'settings': return <SettingsView user={user} isWithingsEnabled={isDemo || isWithingsEnabled} handleWithingsAuth={isDemo ? demoNoOp : handleStartWithingsAuth} isStravaEnabled={isDemo || isStravaEnabled} handleStravaAuth={isDemo ? demoNoOp : handleStartStravaAuth} withingsNeedsReconnect={false} hevyApiKey={hevyApiKey} onSaveHevyApiKey={isDemo ? demoNoOp : saveHevyApiKey} goals={goals} setGoals={demoSetGoals} isDemo={isDemo} />;
+      case 'health': return <HealthTracker user={user} db={db} healthLogs={healthLogs} setHealthLogs={demoSetHealthLogs} isSyncingWithings={isSyncingWithings} onWithingsSync={demoWithingsSync} goals={goals} isDemo={isDemo} onAddWater={(amount) => { handleAddWater(amount); }} onOpenWaterModal={() => setShowWaterModal(true)} />;
+      case 'endurance': return <EnduranceView stravaLogs={stravaLogs} onSync={demoStravaSync} isSyncing={isSyncingStrava} isDemo={isDemo} />;
+      case 'nutrition': return <NutritionImport user={user} db={db} isDemo={isDemo} demoNutritionDocs={isDemo ? DEMO_DATA.nutritionDocs : null} goals={goals} healthLogs={healthLogs} nutritionVersion={nutritionVersion} />;
+      case 'settings': return <SettingsView user={user} db={db} isWithingsEnabled={isDemo || isWithingsEnabled} handleWithingsAuth={isDemo ? demoNoOp : handleStartWithingsAuth} isStravaEnabled={isDemo || isStravaEnabled} handleStravaAuth={isDemo ? demoNoOp : handleStartStravaAuth} withingsNeedsReconnect={false} hevyApiKey={hevyApiKey} onSaveHevyApiKey={isDemo ? demoNoOp : saveHevyApiKey} goals={goals} setGoals={demoSetGoals} dataSourcePrefs={dataSourcePrefs} setDataSourcePrefs={setDataSourcePrefs} connectedSources={connectedSources} isDemo={isDemo} setNutritionVersion={setNutritionVersion} />;
       default: return <div className="flex items-center justify-center h-64 text-slate-500">Chargement...</div>;
     }
   };
@@ -2512,9 +3457,9 @@ function App() {
         <div className="max-w-[98%] mx-auto flex justify-between items-center">
           <img src={new URL('./BIOZ.png', import.meta.url).href} alt="Bodycontrol" className="h-11" />
           <div className="flex items-center gap-3">
-             <button onClick={() => !isDemo && setShowWaterModal(true)} className={`bg-blue-600/20 text-blue-400 p-2 rounded-full hover:bg-blue-600/40 border border-blue-500/50 mr-2 flex items-center justify-center active:scale-95 transition-all shadow-lg shadow-blue-900/20 ${isDemo ? 'opacity-50 cursor-not-allowed' : ''}`}><Droplet size={20} fill="currentColor" className="opacity-80"/></button>
              {!isDemo && <div className="text-xs">{syncStatus === 'syncing' && <CloudLightning className="text-yellow-400 animate-pulse" size={20} />}{syncStatus === 'saved' && <Cloud className="text-green-400" size={20} />}{syncStatus === 'error' && <AlertCircle className="text-red-500" size={20} />}{syncStatus === 'idle' && <Cloud className="text-slate-600" size={20} />}</div>}
              <div className="hidden md:flex items-center gap-2 text-sm text-slate-400"><User size={16}/> {isDemo ? 'Visiteur Démo' : (user?.displayName || user?.email || 'Anonyme')}</div>
+             <button onClick={() => setActiveTab('settings')} className={`p-2 rounded-full transition-colors ${activeTab === 'settings' ? 'text-violet-400 bg-slate-700/50' : 'text-slate-400 hover:text-slate-300 hover:bg-slate-700'}`}><Settings size={20} /></button>
              {isDemo ? (
                <button onClick={handleExitDemo} className="text-slate-400 hover:text-red-400 transition-colors p-2 rounded-full hover:bg-slate-700"><LogOut size={20} /></button>
              ) : (
@@ -2529,11 +3474,11 @@ function App() {
           <NavButton icon={BarChart2} label="Sport" active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} />
           <NavButton icon={Dumbbell} label="Musculation" active={activeTab === 'workout'} onClick={() => setActiveTab('workout')} />
           <NavButton icon={HeartPulse} label="Santé" active={activeTab === 'health'} onClick={() => setActiveTab('health')} />
-          <NavButton icon={MapIcon} label="Strava" active={activeTab === 'strava'} onClick={() => setActiveTab('strava')} />
-          <NavButton icon={Settings} label="Params" active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} />
+          <NavButton icon={MapIcon} label="Endurance" active={activeTab === 'endurance'} onClick={() => setActiveTab('endurance')} />
+          <NavButton icon={UtensilsCrossed} label="Nutrition" active={activeTab === 'nutrition'} onClick={() => setActiveTab('nutrition')} />
         </div>
       </nav>
-      <WaterModal isOpen={showWaterModal} onClose={() => setShowWaterModal(false)} onAdd={handleAddWater} />
+      <WaterModal isOpen={showWaterModal} onClose={() => setShowWaterModal(false)} onAdd={(amount) => { handleAddWater(amount); setShowWaterModal(false); }} />
     </div>
   );
 }
