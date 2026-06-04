@@ -8,6 +8,18 @@ coros-sync/service-account.json
 coros-sync/.env
 coros-sync/tokens.json
 
+# Fitbit / Google Health sync daemon — secrets et configs locales
+fitbit-sync/service-account.json
+fitbit-sync/.env
+fitbit-sync/tokens.json
+fitbit-sync/client_secret*.json
+
 # Filet de sécurité : toute clé de service Firebase, où qu'elle soit
 **/*-firebase-adminsdk-*.json
 **/serviceAccountKey*.json
+
+# Config locale Claude Code
+.claude/
+
+# Backups de données perso — ne pas versionner ni servir publiquement
+public/*backup*.json

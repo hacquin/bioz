@@ -95,7 +95,7 @@ function buildGaugeOption(value, min, max, splitNumber, color, formatter, revers
       axisLabel: { distance: 25, color: '#999', fontSize: 14, formatter: reverse ? (v => `${max + min - v}`) : undefined },
       anchor: { show: true, showAbove: true, size: 25, itemStyle: { borderWidth: 10 } },
       title: { show: false },
-      detail: { valueAnimation: true, fontSize: 46, fontWeight: 400, color: '#f8fafc', offsetCenter: [0, '70%'], formatter: formatter || (v => reverse ? `${max + min - v}` : `${v}`) },
+      detail: { valueAnimation: true, fontSize: 46, fontWeight: 400, color: '#f8fafc', offsetCenter: [0, '70%'], formatter: formatter || (v => reverse ? `${max + min - v}` : `${Math.round(value)}`) },
       pointer: { itemStyle: { color: 'auto' } },
       min, max, splitNumber,
       itemStyle: { color: color[1] },
@@ -227,20 +227,42 @@ export default function NutritionImport({ user, db, isDemo, demoNutritionDocs, g
     if (!user || !db) return;
     const fetchNutrition = async () => {
       const today = new Date();
-      const docs = [];
+      const docsByDate = {};
       for (let i = 6; i >= 0; i--) {
         const d = new Date(today);
         d.setDate(d.getDate() - i);
         const key = d.toISOString().split('T')[0];
+        // Base : nutrition Google Health (repas loggés, sync Fitbit -> fitbitDaily).
+        try {
+          const fsnap = await getDoc(doc(db, 'users', user.uid, 'fitbitDaily', key));
+          if (fsnap.exists()) {
+            const f = fsnap.data();
+            if (f.kcalIntake != null || f.carbsG != null) {
+              docsByDate[key] = {
+                date: key,
+                calories: f.kcalIntake ?? 0,
+                carbs: f.carbsG ?? 0,
+                fat: f.fatG ?? 0,
+                protein: f.proteinG ?? 0,
+                petitDej: f.kcalBreakfast ?? 0,
+                dejeuner: f.kcalLunch ?? 0,
+                diner: f.kcalDinner ?? 0,
+                encas: f.kcalSnack ?? 0,
+                source: 'google-health',
+              };
+            }
+          }
+        } catch {}
+        // Cronometer (collection nutrition) — prioritaire si présent ce jour-là.
         try {
           const snap = await getDoc(doc(db, 'users', user.uid, 'nutrition', key));
-          if (snap.exists()) docs.push(snap.data());
+          if (snap.exists()) docsByDate[key] = snap.data();
         } catch {}
       }
+      const docs = Object.values(docsByDate);
       setWeeklyData(buildWeeklyData(docs, targets));
       const todayKey = today.toISOString().split('T')[0];
-      const todayDoc = docs.find(d => d.date === todayKey);
-      if (todayDoc) setTodayData(todayDoc);
+      if (docsByDate[todayKey]) setTodayData(docsByDate[todayKey]);
     };
     fetchNutrition();
   }, [user, db, isDemo, demoNutritionDocs, nutritionVersion]);

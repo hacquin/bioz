@@ -19,8 +19,11 @@ import {
 } from 'lucide-react';
 import {
   LineChart, Line, BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, ReferenceArea, ReferenceLine,
+  ResponsiveContainer, ReferenceArea, ReferenceLine, ComposedChart, Area,
 } from 'recharts';
+import {
+  useFitbitData, mergeHealthDaily, SourceChip, FitbitCard, FITBIT_CARD_IDS,
+} from './FitbitCards';
 
 // =============================================================================
 //  Hook : abonnement Firestore
@@ -132,6 +135,22 @@ const daysInRange = (start, end) => {
   const out = [];
   for (let d = new Date(start); d <= end; d = addDays(d, 1)) out.push(localDateKey(d));
   return out;
+};
+
+// Régression linéaire → ajoute un champ trendKey sur chaque point (ligne pointillée).
+const addTrend = (series, valueKey, trendKey) => {
+  const pts = series.map((d, i) => ({ i, v: d[valueKey] })).filter((p) => p.v != null);
+  if (pts.length < 2) return series.map((d) => ({ ...d, [trendKey]: null }));
+  const n = pts.length;
+  const sx = pts.reduce((a, p) => a + p.i, 0);
+  const sy = pts.reduce((a, p) => a + p.v, 0);
+  const sxx = pts.reduce((a, p) => a + p.i * p.i, 0);
+  const sxy = pts.reduce((a, p) => a + p.i * p.v, 0);
+  const denom = n * sxx - sx * sx;
+  if (denom === 0) return series.map((d) => ({ ...d, [trendKey]: null }));
+  const slope = (n * sxy - sx * sy) / denom;
+  const intercept = (sy - slope * sx) / n;
+  return series.map((d, i) => ({ ...d, [trendKey]: Math.round((slope * i + intercept) * 10) / 10 }));
 };
 
 // Moyennes (ignorant null)
@@ -281,6 +300,14 @@ const scoreColor = (s) => {
   return COLORS.scoreLow;
 };
 
+// Couleur de repli quand il n'y a pas de score (nuits Fitbit) : basée sur la durée.
+const durationColor = (min) => {
+  if (min == null) return '#475569';
+  if (min >= 450) return COLORS.scoreHigh; // ≥ 7h30
+  if (min >= 390) return COLORS.scoreMid;  // ≥ 6h30
+  return COLORS.scoreLow;
+};
+
 const evalLabelFr = (ev) => ({ normal: 'Normal', below_normal: 'Basse', above_normal: 'Élevée' }[ev] || '—');
 const evalColor = (ev) => ({ normal: COLORS.hrvNormal, below_normal: COLORS.hrvBelow, above_normal: COLORS.hrvAbove }[ev] || '#64748b');
 
@@ -309,14 +336,70 @@ const qualifyRhr = (bpm) => {
 //   - 1 carte Sommeil (1 colonne du grid parent)
 //   - 1 carte VFC nocturne (1 colonne du grid parent)
 // Les états loading / error / empty sont aussi col-span-full pour rester lisibles.
+// Ordre par défaut du groupe "wearables" (Coros + Fitbit), réordonnable par drag.
+const WEARABLE_DEFAULT_ORDER = [
+  'h_corosBilan', 'h_corosSommeil', 'h_corosVfc', 'h_corosFcRepos', ...FITBIT_CARD_IDS,
+];
+const WEARABLE_ORDER_KEY = 'bioz_wearableCardOrder';
+
 export function CorosSection({ user, db, timeFrame, healthLogs, hiddenCards = [] }) {
-  const { daily, baseline, loading, error } = useCorosData(user, db);
+  const { daily: corosDaily, baseline, loading, error } = useCorosData(user, db);
+  const fitbitDaily = useFitbitData(user, db);
   const [anchorDate, setAnchorDate] = useState(new Date());
 
-  if (loading) {
+  // Fusion "Google prioritaire" : Fitbit prime, Coros en repli (cf. mergeHealthDaily).
+  const daily = useMemo(() => mergeHealthDaily(corosDaily, fitbitDaily), [corosDaily, fitbitDaily]);
+
+  // Ordre réordonnable (persisté), fusionné avec le défaut pour intégrer de nouveaux ids.
+  const [order, setOrder] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(WEARABLE_ORDER_KEY) || 'null');
+      if (Array.isArray(saved)) {
+        const missing = WEARABLE_DEFAULT_ORDER.filter((id) => !saved.includes(id));
+        return [...saved.filter((id) => WEARABLE_DEFAULT_ORDER.includes(id)), ...missing];
+      }
+    } catch { /* ignore */ }
+    return WEARABLE_DEFAULT_ORDER;
+  });
+  const [dragId, setDragId] = useState(null);
+  const [dropId, setDropId] = useState(null);
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+  const onDragStart = (e, id) => {
+    setDragId(id);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', id);
+  };
+  const onDragOver = (e, id) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (id !== dragId) setDropId(id);
+  };
+  const onDrop = (e, targetId) => {
+    e.preventDefault();
+    const sourceId = e.dataTransfer.getData('text/plain');
+    if (sourceId && targetId && sourceId !== targetId) {
+      setOrder((prev) => {
+        const next = [...prev];
+        const fromIdx = next.indexOf(sourceId);
+        const toIdx = next.indexOf(targetId);
+        if (fromIdx !== -1 && toIdx !== -1) {
+          next.splice(fromIdx, 1);
+          next.splice(toIdx, 0, sourceId);
+        }
+        localStorage.setItem(WEARABLE_ORDER_KEY, JSON.stringify(next));
+        return next;
+      });
+    }
+    setDragId(null);
+    setDropId(null);
+  };
+  const onDragEnd = () => { setDragId(null); setDropId(null); };
+
+  if (loading && !fitbitDaily) {
     return (
       <div className="col-span-full bg-slate-800 rounded-xl p-6 text-center text-slate-400 flex items-center justify-center gap-2 border border-slate-700">
-        <RefreshCw size={16} className="animate-spin" /> Chargement Coros…
+        <RefreshCw size={16} className="animate-spin" /> Chargement des données santé…
       </div>
     );
   }
@@ -326,7 +409,7 @@ export function CorosSection({ user, db, timeFrame, healthLogs, hiddenCards = []
       <div className="col-span-full bg-slate-800 border border-red-900 rounded-xl p-4 text-red-400 flex items-start gap-2">
         <AlertCircle size={18} className="mt-0.5 flex-shrink-0" />
         <div>
-          <div className="font-semibold">Impossible de charger les données Coros.</div>
+          <div className="font-semibold">Impossible de charger les données santé.</div>
           <div className="text-xs text-red-300 mt-1">{String(error.message || error)}</div>
         </div>
       </div>
@@ -337,43 +420,45 @@ export function CorosSection({ user, db, timeFrame, healthLogs, hiddenCards = []
     return (
       <div className="col-span-full bg-slate-800 rounded-xl p-6 text-center text-slate-400 border border-slate-700">
         <Moon size={24} className="mx-auto mb-2 text-slate-500" />
-        <div>Aucune donnée Coros pour le moment.</div>
-        <div className="text-xs mt-1">Lance `npm run sync` depuis le daemon coros-sync.</div>
+        <div>Aucune donnée santé (Fitbit / Coros) pour le moment.</div>
       </div>
     );
   }
 
+  const content = {
+    h_corosBilan: <BilanSanteCard daily={daily} healthLogs={healthLogs} user={user} />,
+    h_corosSommeil: <SommeilCard daily={daily} baseline={baseline} timeFrame={timeFrame} anchorDate={anchorDate} setAnchorDate={setAnchorDate} />,
+    h_corosVfc: <VfcCard daily={daily} baseline={baseline} timeFrame={timeFrame} anchorDate={anchorDate} setAnchorDate={setAnchorDate} />,
+    h_corosFcRepos: <FcReposCard daily={daily} timeFrame={timeFrame} anchorDate={anchorDate} setAnchorDate={setAnchorDate} />,
+  };
+  for (const id of FITBIT_CARD_IDS) {
+    content[id] = <FitbitCard id={id} fitbitDaily={fitbitDaily} timeFrame={timeFrame} anchorDate={anchorDate} setAnchorDate={setAnchorDate} />;
+  }
+
   return (
     <>
-      {!hiddenCards.includes('h_corosBilan') && (
-        <BilanSanteCard daily={daily} healthLogs={healthLogs} user={user} />
-      )}
-      {!hiddenCards.includes('h_corosSommeil') && (
-        <SommeilCard
-          daily={daily}
-          baseline={baseline}
-          timeFrame={timeFrame}
-          anchorDate={anchorDate}
-          setAnchorDate={setAnchorDate}
-        />
-      )}
-      {!hiddenCards.includes('h_corosVfc') && (
-        <VfcCard
-          daily={daily}
-          baseline={baseline}
-          timeFrame={timeFrame}
-          anchorDate={anchorDate}
-          setAnchorDate={setAnchorDate}
-        />
-      )}
-      {!hiddenCards.includes('h_corosFcRepos') && (
-        <FcReposCard
-          daily={daily}
-          timeFrame={timeFrame}
-          anchorDate={anchorDate}
-          setAnchorDate={setAnchorDate}
-        />
-      )}
+      {order.filter((id) => !hiddenCards.includes(id)).map((id) => {
+        const el = content[id];
+        if (!el) return null;
+        const isDragging = dragId === id;
+        const isDropTarget = dropId === id && dragId !== id;
+        const wide = id === 'h_corosBilan' ? 'col-span-full' : '';
+        return (
+          <div
+            key={id}
+            className={`${wide} rounded-xl transition-all duration-150 ${isDragging ? 'opacity-40 scale-95' : isDropTarget ? 'ring-2 ring-violet-400/50' : ''}`}
+            draggable={!isMobile}
+            onDragStart={(e) => onDragStart(e, id)}
+            onDragOver={(e) => onDragOver(e, id)}
+            onDrop={(e) => onDrop(e, id)}
+            onDragEnd={onDragEnd}
+            onDragLeave={() => { if (dropId === id) setDropId(null); }}
+            style={!isMobile ? { cursor: isDragging ? 'grabbing' : 'grab' } : {}}
+          >
+            {el}
+          </div>
+        );
+      })}
     </>
   );
 }
@@ -389,15 +474,19 @@ function FcReposCard({ daily, timeFrame, anchorDate, setAnchorDate }) {
 
   // Série pour le graphe selon le mode
   const chartSeries = useMemo(() => {
+    let s;
     if (mode === 'day') {
-      return days.map((dateKey) => ({
+      s = days.map((dateKey) => ({
         date: dateKey,
         label: new Date(dateKey + 'T00:00:00').toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }),
         rhr: daily[dateKey]?.rhrBpm ?? null,
       }));
+    } else if (mode === 'week') {
+      s = aggregateRhrByWeekOfYear(daily, anchorDate);
+    } else {
+      s = aggregateRhrByMonthOfYear(daily, anchorDate);
     }
-    if (mode === 'week') return aggregateRhrByWeekOfYear(daily, anchorDate);
-    return aggregateRhrByMonthOfYear(daily, anchorDate);
+    return addTrend(s, 'rhr', 'rhrTrend');
   }, [mode, anchorDate, daily, days]);
 
   // Dernière valeur connue dans la période courante (pour le footer)
@@ -409,6 +498,10 @@ function FcReposCard({ daily, timeFrame, anchorDate, setAnchorDate }) {
   const displayValue = mode === 'day' ? lastValue : (meanValue != null ? Math.round(meanValue) : null);
   const qualif = qualifyRhr(displayValue);
 
+  // Source de la valeur affichée (mode jour uniquement — sem/mois sont mixtes)
+  const srcKey = mode === 'day' ? [...days].reverse().find((k) => daily[k]?.rhrBpm != null) : null;
+  const valueSrc = srcKey ? daily[srcKey]?._src?.rhr : null;
+
   const navLabel = (() => {
     if (mode === 'day') return fmtDateFr(anchorDate, { weekday: 'long', day: 'numeric', month: 'long' });
     if (mode === 'week') return `${fmtDateFr(range.start, { day: 'numeric', month: 'short' })} – ${fmtDateFr(range.end, { day: 'numeric', month: 'short' })}`;
@@ -419,13 +512,13 @@ function FcReposCard({ daily, timeFrame, anchorDate, setAnchorDate }) {
   const BAR_COLOR = '#ec4899';
 
   return (
-    <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
+    <div className="bg-slate-800 rounded-xl p-4 border border-slate-700 h-full flex flex-col">
       <DayNavigator
         anchorDate={anchorDate}
         setAnchorDate={setAnchorDate}
         label={navLabel}
         icon={<Heart size={18} className="text-pink-400" />}
-        title="FC Repos - Coros"
+        title="FC Repos"
         step={mode === 'day' ? 1 : mode === 'week' ? 7 : 30}
       />
 
@@ -436,6 +529,7 @@ function FcReposCard({ daily, timeFrame, anchorDate, setAnchorDate }) {
             {displayValue != null ? displayValue : '—'}
           </span>
           <span className="text-xs font-semibold text-slate-400">bpm</span>
+          <SourceChip src={valueSrc} />
           {qualif && (
             <span
               className="ml-1 px-2 py-0.5 text-[10px] font-bold rounded text-white"
@@ -450,36 +544,32 @@ function FcReposCard({ daily, timeFrame, anchorDate, setAnchorDate }) {
         </div>
       </div>
 
-      {/* Histogramme — hauteur fixe plus généreuse qu'avant */}
-      <div className="mt-4 h-72">
+      {/* Charte : aire+tendance en jour/sem, barres en mois */}
+      <div className="mt-4 h-56">
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={chartSeries} margin={{ top: 5, right: 5, bottom: 0, left: -25 }}>
-            <CartesianGrid stroke="#1e293b" vertical={false} />
-            <XAxis
-              dataKey="label"
-              tick={{ fill: '#64748b', fontSize: 10 }}
-              axisLine={{ stroke: '#334155' }}
-              tickLine={{ stroke: '#334155' }}
-              interval={mode === 'week' ? 'preserveStartEnd' : 0}
-            />
-            <YAxis
-              tick={{ fill: '#64748b', fontSize: 10 }}
-              axisLine={{ stroke: '#334155' }}
-              tickLine={{ stroke: '#334155' }}
-              domain={['dataMin - 3', 'dataMax + 3']}
-            />
+          <ComposedChart data={chartSeries} margin={{ top: 5, right: 5, bottom: 0, left: -25 }}>
+            <defs>
+              <linearGradient id="rhrGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={BAR_COLOR} stopOpacity={0.3} />
+                <stop offset="100%" stopColor={BAR_COLOR} stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" />
+            <XAxis dataKey="label" stroke="#94a3b8" tick={{ fontSize: 10 }} interval={mode === 'week' ? 'preserveStartEnd' : 0} />
+            <YAxis stroke="#94a3b8" tick={{ fontSize: 10 }} domain={['dataMin - 3', 'dataMax + 3']} allowDecimals={false} />
             <Tooltip
               contentStyle={{ background: '#0f172a', border: '1px solid #334155', borderRadius: 8, fontSize: 12 }}
               labelStyle={{ color: '#f8fafc' }}
-              formatter={(v) => [`${v} bpm`, 'FC repos']}
-              cursor={{ fill: '#1e293b', opacity: 0.4 }}
+              formatter={(v, name) => [`${v} bpm`, name === 'Tendance' ? 'Tendance' : 'FC repos']}
+              cursor={{ fill: '#334155', opacity: 0.4 }}
             />
-            <Bar dataKey="rhr" radius={[3, 3, 0, 0]}>
-              {chartSeries.map((p, i) => (
-                <Cell key={i} fill={p.rhr == null ? 'transparent' : BAR_COLOR} />
-              ))}
-            </Bar>
-          </BarChart>
+            {mode === 'month' ? (
+              <Bar dataKey="rhr" fill={BAR_COLOR} radius={[4, 4, 0, 0]} name="FC repos" />
+            ) : (
+              <Area type="monotone" dataKey="rhr" stroke={BAR_COLOR} fill="url(#rhrGrad)" strokeWidth={2} dot={false} connectNulls name="FC repos" />
+            )}
+            <Line type="monotone" dataKey="rhrTrend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" />
+          </ComposedChart>
         </ResponsiveContainer>
       </div>
 
@@ -512,7 +602,13 @@ function BilanSanteCard({ daily, healthLogs, user }) {
     ? [...healthLogs].sort((a, b) => new Date(b.date) - new Date(a.date))
     : [];
   const lastRespiratoryRate = sortedLogs.find((l) => l && l.respiratoryRate != null)?.respiratoryRate ?? null;
-  const lastSpo2 = sortedLogs.find((l) => l && l.spo2 != null)?.spo2 ?? null;
+  const lastManualSpo2 = sortedLogs.find((l) => l && l.spo2 != null)?.spo2 ?? null;
+
+  // SpO2 : Fitbit prioritaire (nuit), repli sur la saisie manuelle.
+  const spo2Key = Object.keys(daily || {}).filter((k) => daily[k]?.spo2AvgPct != null).sort().reverse()[0];
+  const lastFitbitSpo2 = spo2Key ? Math.round(daily[spo2Key].spo2AvgPct) : null;
+  const lastSpo2 = lastFitbitSpo2 ?? lastManualSpo2;
+  const spo2Src = lastFitbitSpo2 != null ? 'F' : null;
 
   // Date affichée : la plus récente des 2 sources
   const lastManualDate = sortedLogs.find((l) => l && (l.respiratoryRate != null || l.spo2 != null))?.date ?? null;
@@ -556,7 +652,7 @@ function BilanSanteCard({ daily, healthLogs, user }) {
       <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
         <div className="flex items-center gap-2">
           <span className="text-xl">🩺</span>
-          <h3 className="font-bold text-slate-100 text-base">Bilan de santé - Coros</h3>
+          <h3 className="font-bold text-slate-100 text-base">Bilan de santé</h3>
         </div>
         <div className="flex items-center gap-3 flex-wrap justify-end">
           {syncMsg && (
@@ -577,8 +673,8 @@ function BilanSanteCard({ daily, healthLogs, user }) {
       </div>
 
       <div className="grid grid-cols-3 md:grid-cols-5 gap-4">
-        <MiniMetric value={last?.rhrBpm}        unit="bpm"  label="Fréq. card." />
-        <MiniMetric value={last?.hrvAvgMs}      unit="ms"   label="VFC" />
+        <MiniMetric value={last?.rhrBpm}        unit="bpm"  label="Fréq. card." src={last?._src?.rhr} />
+        <MiniMetric value={last?.hrvAvgMs}      unit="ms"   label="VFC" src={last?._src?.hrv} />
         <MiniMetric
           value={last?.stressAvg}
           unit=""
@@ -586,13 +682,13 @@ function BilanSanteCard({ daily, healthLogs, user }) {
           badge={last?.stressLevel ? { text: stressLabelFr(last.stressLevel), color: stressColor(last.stressLevel) } : null}
         />
         <MiniMetric value={lastRespiratoryRate} unit="brpm" label="Fréquence respiratoire" />
-        <MiniMetric value={lastSpo2}            unit="%"    label="SpO2" />
+        <MiniMetric value={lastSpo2}            unit="%"    label="SpO2" src={spo2Src} />
       </div>
     </div>
   );
 }
 
-function MiniMetric({ value, unit, label, badge }) {
+function MiniMetric({ value, unit, label, badge, src }) {
   const hasValue = value != null;
   return (
     <div>
@@ -603,6 +699,7 @@ function MiniMetric({ value, unit, label, badge }) {
         {unit && (
           <span className="text-xs font-semibold text-slate-400 lowercase">{unit}</span>
         )}
+        {hasValue && src && <SourceChip src={src} />}
         {badge && (
           <span
             className="ml-1 px-2 py-0.5 text-[10px] font-bold rounded text-white"
@@ -634,19 +731,23 @@ function SommeilJour({ daily, baseline, anchorDate, setAnchorDate }) {
   // On affiche le jour ancré. Si pas de data, on cherche le jour le plus récent avec data.
   const dateKey = localDateKey(anchorDate);
   const day = daily[dateKey];
-  const fallback = day ? null : Object.keys(daily).filter((k) => daily[k]?.sleepScore != null).sort().reverse()[0];
+  const fallback = day ? null : Object.keys(daily).filter((k) => daily[k]?.sleepMainMin != null).sort().reverse()[0];
   const focusKey = day ? dateKey : fallback;
   const focus = focusKey ? daily[focusKey] : null;
+  const focusSrc = focusKey ? daily[focusKey]?._src?.sleep : null;
 
   return (
-    <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
+    <div className="bg-slate-800 rounded-xl p-4 border border-slate-700 h-full flex flex-col">
       <DayNavigator
         anchorDate={anchorDate}
         setAnchorDate={setAnchorDate}
         label={focusKey ? fmtDateFr(new Date(focusKey + 'T00:00:00'), { weekday: 'long', day: 'numeric', month: 'long' }) : '—'}
         icon={<Moon size={18} className="text-blue-400" />}
-        title="Sommeil - Coros"
+        title="Sommeil"
       />
+      {focus && focusSrc && (
+        <div className="mt-2 flex justify-end"><SourceChip src={focusSrc} /></div>
+      )}
 
       {!focus ? (
         <EmptyState text="Pas de nuit enregistrée. Porte ta montre la nuit pour voir tes métriques." />
@@ -738,7 +839,7 @@ function SommeilSemaine({ daily, anchorDate, setAnchorDate }) {
   const weekData = days.map((k) => daily[k] ? { ...daily[k], date: k } : null);
   // Une "vraie nuit" = Coros a calculé un score valide (les siestes courtes ont score -1
   // que le parser transforme en null, donc on filtre les sleepScore != null).
-  const sleepingDays = weekData.filter((d) => d && d.sleepScore != null);
+  const sleepingDays = weekData.filter((d) => d && d.sleepMainMin != null);
   const weekdayDays = sleepingDays.filter((d) => !isWeekend(d.date));
   const weekendDays = sleepingDays.filter((d) =>  isWeekend(d.date));
 
@@ -758,13 +859,13 @@ function SommeilSemaine({ daily, anchorDate, setAnchorDate }) {
   const labelRange = `${fmtDateFr(range.start, { day: 'numeric', month: 'short' })} – ${fmtDateFr(range.end, { day: 'numeric', month: 'short' })}`;
 
   return (
-    <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
+    <div className="bg-slate-800 rounded-xl p-4 border border-slate-700 h-full flex flex-col">
       <DayNavigator
         anchorDate={anchorDate}
         setAnchorDate={setAnchorDate}
         label={labelRange}
         icon={<Moon size={18} className="text-blue-400" />}
-        title="Sommeil - Coros"
+        title="Sommeil"
         step={7}
       />
 
@@ -888,8 +989,9 @@ function SommeilMois({ daily, anchorDate, setAnchorDate }) {
   const days = useMemo(() => daysInRange(range.start, range.end), [range]);
 
   const monthData = days.map((k) => ({ date: k, ...(daily[k] || {}) }));
-  // Idem mode semaine : on ne compte que les nuits avec un Sleep Score valide.
-  const sleepingDays = monthData.filter((d) => d.sleepScore != null);
+  // Idem mode semaine : on compte les nuits avec une durée de sommeil (Fitbit
+  // n'expose pas de score, donc on ne peut pas filtrer dessus).
+  const sleepingDays = monthData.filter((d) => d.sleepMainMin != null);
 
   const avgDur = avg(sleepingDays.map((d) => d.sleepMainMin));
   const avgScore = avg(sleepingDays.map((d) => d.sleepScore));
@@ -902,7 +1004,7 @@ function SommeilMois({ daily, anchorDate, setAnchorDate }) {
         anchorDate={anchorDate}
         setAnchorDate={setAnchorDate}
         icon={<Moon size={18} className="text-blue-400" />}
-        title="Sommeil - Coros"
+        title="Sommeil"
       />
 
       <MonthHeatmap days={monthData} startDate={range.start} />
@@ -938,15 +1040,23 @@ function MonthHeatmap({ days, startDate }) {
         {cells.map((d, i) => {
           if (!d) return <div key={i} className="aspect-square" />;
           const score = d.sleepScore;
-          const bg = score != null ? scoreColor(score) : '#1e293b';
-          const opacity = score != null ? Math.max(0.35, score / 100) : 0.25;
+          // Coros : couleur = score. Fitbit (pas de score) : couleur = durée.
+          let bg = '#1e293b';
+          let opacity = 0.25;
+          if (score != null) {
+            bg = scoreColor(score);
+            opacity = Math.max(0.35, score / 100);
+          } else if (d.sleepMainMin != null) {
+            bg = durationColor(d.sleepMainMin);
+            opacity = Math.max(0.35, Math.min(1, d.sleepMainMin / 480));
+          }
           const dayNum = new Date(d.date + 'T00:00:00').getDate();
           return (
             <div
               key={i}
               className="aspect-square rounded flex items-center justify-center text-[10px] font-medium"
               style={{ background: bg, opacity }}
-              title={`${d.date} — Score ${score ?? '—'}, Durée ${fmtMin(d.sleepMainMin)}`}
+              title={`${d.date} — ${score != null ? `Score ${score}` : 'Durée'} ${fmtMin(d.sleepMainMin)}`}
             >
               <span className="text-white/90">{dayNum}</span>
             </div>
@@ -985,6 +1095,10 @@ function VfcView({ daily, baseline, anchorDate, setAnchorDate, mode }) {
   const lastValue = periodValues[periodValues.length - 1] ?? null;
   const meanValue = avg(periodValues);
   const focusValue = mode === 'day' ? lastValue : meanValue;
+
+  // Source de la valeur affichée (mode jour uniquement)
+  const srcKey = mode === 'day' ? [...days].reverse().find((k) => daily[k]?.hrvAvgMs != null) : null;
+  const valueSrc = srcKey ? daily[srcKey]?._src?.hrv : null;
 
   // Pour le GRAPHE :
   //   - Mode Jour : 7 derniers jours (résolution journalière)
@@ -1031,13 +1145,13 @@ function VfcView({ daily, baseline, anchorDate, setAnchorDate, mode }) {
   })();
 
   return (
-    <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
+    <div className="bg-slate-800 rounded-xl p-4 border border-slate-700 h-full flex flex-col">
       <DayNavigator
         anchorDate={anchorDate}
         setAnchorDate={setAnchorDate}
         label={navLabel}
         icon={<Heart size={18} className="text-rose-400" />}
-        title="VFC nocturne - Coros"
+        title="VFC nocturne"
         step={mode === 'day' ? 1 : mode === 'week' ? 7 : 30}
       />
 
@@ -1051,8 +1165,9 @@ function VfcView({ daily, baseline, anchorDate, setAnchorDate, mode }) {
         </div>
         <div>
           <div className="text-[10px] uppercase tracking-wide text-slate-400">{labelByMode[mode]}</div>
-          <div className="text-base font-bold text-slate-100">
+          <div className="text-base font-bold text-slate-100 flex items-center gap-1.5">
             {focusValue != null ? `${Math.round(focusValue)} ms` : '—'}
+            <SourceChip src={valueSrc} />
           </div>
           <HrvGauge value={focusValue} min={rangeMin} max={rangeMax} />
         </div>
@@ -1068,42 +1183,34 @@ function VfcView({ daily, baseline, anchorDate, setAnchorDate, mode }) {
         <p className="mt-3 text-sm text-slate-300">{phraseByZone[zoneLabel]}</p>
       )}
 
-      {/* Graphe — hauteur fixe plus généreuse qu'avant */}
-      <div className="mt-4 h-72">
+      {/* Charte : aire en jour/sem, barres en mois — avec la zone normale en fond */}
+      <div className="mt-4 h-56">
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={chartSeries} margin={{ top: 5, right: 5, bottom: 0, left: -25 }}>
-            <CartesianGrid stroke="#1e293b" vertical={false} />
+          <ComposedChart data={chartSeries} margin={{ top: 5, right: 5, bottom: 0, left: -25 }}>
+            <defs>
+              <linearGradient id="hrvGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#22d3ee" stopOpacity={0.3} />
+                <stop offset="100%" stopColor="#22d3ee" stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" />
             {rangeMin != null && rangeMax != null && (
               <ReferenceArea y1={rangeMin} y2={rangeMax} fill="#1e293b" fillOpacity={0.6} />
             )}
-            <XAxis
-              dataKey="label"
-              tick={{ fill: '#64748b', fontSize: 10 }}
-              axisLine={{ stroke: '#334155' }}
-              tickLine={{ stroke: '#334155' }}
-              interval={mode === 'week' ? 'preserveStartEnd' : mode === 'month' ? 0 : 0}
-            />
-            <YAxis
-              tick={{ fill: '#64748b', fontSize: 10 }}
-              axisLine={{ stroke: '#334155' }}
-              tickLine={{ stroke: '#334155' }}
-              domain={['dataMin - 4', 'dataMax + 4']}
-            />
+            <XAxis dataKey="label" stroke="#94a3b8" tick={{ fontSize: 10 }} interval={mode === 'week' ? 'preserveStartEnd' : 0} />
+            <YAxis stroke="#94a3b8" tick={{ fontSize: 10 }} domain={['dataMin - 4', 'dataMax + 4']} allowDecimals={false} />
             <Tooltip
               contentStyle={{ background: '#0f172a', border: '1px solid #334155', borderRadius: 8, fontSize: 12 }}
               labelStyle={{ color: '#f8fafc' }}
               formatter={(v) => [`${v} ms`, 'VFC']}
+              cursor={{ fill: '#334155', opacity: 0.4 }}
             />
-            <Line
-              type="monotone"
-              dataKey="hrv"
-              stroke="#22d3ee"
-              strokeWidth={2}
-              dot={{ r: 3, fill: '#22d3ee' }}
-              activeDot={{ r: 5 }}
-              connectNulls
-            />
-          </LineChart>
+            {mode === 'month' ? (
+              <Bar dataKey="hrv" fill="#22d3ee" radius={[4, 4, 0, 0]} name="VFC" />
+            ) : (
+              <Area type="monotone" dataKey="hrv" stroke="#22d3ee" fill="url(#hrvGrad)" strokeWidth={2} dot={{ r: 3, fill: '#22d3ee' }} activeDot={{ r: 5 }} connectNulls name="VFC" />
+            )}
+          </ComposedChart>
         </ResponsiveContainer>
       </div>
 
@@ -1154,7 +1261,7 @@ function HrvGauge({ value, min, max }) {
 //  Petits composants UI partagés
 // =============================================================================
 
-function DayNavigator({ anchorDate, setAnchorDate, label, icon, title, step = 1 }) {
+export function DayNavigator({ anchorDate, setAnchorDate, label, icon, title, step = 1 }) {
   return (
     <div className="flex items-center justify-between">
       <div className="flex items-center gap-2 min-w-0">
@@ -1184,7 +1291,7 @@ function DayNavigator({ anchorDate, setAnchorDate, label, icon, title, step = 1 
   );
 }
 
-function MonthNavigator({ anchorDate, setAnchorDate, icon, title }) {
+export function MonthNavigator({ anchorDate, setAnchorDate, icon, title }) {
   const prev = () => {
     const d = new Date(anchorDate);
     d.setMonth(d.getMonth() - 1, 1);
@@ -1231,7 +1338,7 @@ const isAfterToday = (d) => {
   return candidate > today;
 };
 
-function StatCell({ label, value, hint, valueColor }) {
+export function StatCell({ label, value, hint, valueColor }) {
   return (
     <div className="bg-slate-900/40 rounded-lg p-2 border border-slate-700/50">
       <div className="text-[10px] uppercase tracking-wide text-slate-400 truncate">{label}</div>

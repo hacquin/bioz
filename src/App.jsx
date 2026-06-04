@@ -58,17 +58,6 @@ const STRAVA_CONFIG = {
   scope: "activity:read_all,activity:read"
 };
 
-// --- HUAWEI HEALTH KIT CONFIGURATION ---
-const HUAWEI_CONFIG = {
-  clientId: import.meta.env.VITE_HUAWEI_CLIENT_ID,
-  clientSecret: import.meta.env.VITE_HUAWEI_CLIENT_SECRET,
-  redirectUri: "https://bioz.app",
-  authUrl: "https://oauth-login.cloud.huawei.com/oauth2/v3/authorize",
-  tokenUrl: "https://oauth-login.cloud.huawei.com/oauth2/v3/token",
-  apiBase: "https://health-api.cloud.huawei.com/healthkit/v1",
-  scope: "https://www.huawei.com/healthkit/bodyweight.read https://www.huawei.com/healthkit/bodyfat.read https://www.huawei.com/healthkit/heartrate.read https://www.huawei.com/healthkit/activity.read"
-};
-
 // --- HEVY CONFIGURATION ---
 const HEVY_CONFIG = {
   apiBase: "https://api.hevyapp.com/v1",
@@ -76,20 +65,20 @@ const HEVY_CONFIG = {
 
 // --- DATA SOURCE PREFERENCES ---
 const DATA_TYPE_SOURCES = [
-  { key: 'weight', label: 'Poids', sources: ['withings', 'huawei'] },
-  { key: 'bodyFat', label: 'Body fat %', sources: ['withings', 'huawei'] },
-  { key: 'muscleMass', label: 'Masse musculaire', sources: ['withings', 'huawei'] },
-  { key: 'hydration', label: 'Hydratation', sources: ['withings', 'huawei'] },
-  { key: 'restingHR', label: 'FC repos', sources: ['withings', 'huawei', 'strava'] },
+  { key: 'weight', label: 'Poids', sources: ['withings'] },
+  { key: 'bodyFat', label: 'Body fat %', sources: ['withings'] },
+  { key: 'muscleMass', label: 'Masse musculaire', sources: ['withings'] },
+  { key: 'hydration', label: 'Hydratation', sources: ['withings'] },
+  { key: 'restingHR', label: 'FC repos', sources: ['withings', 'strava'] },
   { key: 'systolic', label: 'Tension systolique', sources: ['withings'] },
   { key: 'diastolic', label: 'Tension diastolique', sources: ['withings'] },
   { key: 'pwv', label: 'PWV', sources: ['withings'] },
-  { key: 'visceralFat', label: 'Graisse viscérale', sources: ['withings', 'huawei'] },
-  { key: 'bmr', label: 'BMR', sources: ['withings', 'huawei'] },
+  { key: 'visceralFat', label: 'Graisse viscérale', sources: ['withings'] },
+  { key: 'bmr', label: 'BMR', sources: ['withings'] },
   { key: 'vascularAge', label: 'Âge vasculaire', sources: ['withings'] },
-  { key: 'steps', label: 'Pas', sources: ['withings', 'huawei', 'strava'] },
-  { key: 'distance', label: 'Distance', sources: ['withings', 'huawei', 'strava'] },
-  { key: 'endurance', label: 'Activités endurance', sources: ['strava', 'huawei'] },
+  { key: 'steps', label: 'Pas', sources: ['withings', 'strava'] },
+  { key: 'distance', label: 'Distance', sources: ['withings', 'strava'] },
+  { key: 'endurance', label: 'Activités endurance', sources: ['strava'] },
 ];
 
 const LOCAL_PROXY = "/proxy.php?url=";
@@ -361,6 +350,19 @@ function Dashboard({ healthLogs, stravaLogs }) {
 
   const chartTheme = { background: '#1e293b', grid: '#334155', text: '#94a3b8' };
 
+  // Ajoute un champ __trend (régression linéaire) à un tableau de points, pour la ligne de tendance pointillée.
+  const addSportTrend = (arr, key) => {
+    const pts = (arr || []).map((d, i) => ({ i, v: d[key] })).filter(p => p.v != null);
+    if (pts.length < 2) return (arr || []).map(d => ({ ...d, __trend: null }));
+    const n = pts.length;
+    const sx = pts.reduce((a, p) => a + p.i, 0), sy = pts.reduce((a, p) => a + p.v, 0);
+    const sxx = pts.reduce((a, p) => a + p.i * p.i, 0), sxy = pts.reduce((a, p) => a + p.i * p.v, 0);
+    const den = n * sxx - sx * sx;
+    if (den === 0) return (arr || []).map(d => ({ ...d, __trend: null }));
+    const m = (n * sxy - sx * sy) / den, b = (sy - m * sx) / n;
+    return (arr || []).map((d, i) => ({ ...d, __trend: parseFloat((m * i + b).toFixed(2)) }));
+  };
+
   return (
     <div className="animate-fade-in grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
       <div className="bg-slate-800 p-4 rounded-xl shadow-lg border border-slate-700 flex flex-col gap-4 col-span-full">
@@ -389,20 +391,20 @@ function Dashboard({ healthLogs, stravaLogs }) {
 
       {cardOrder.filter(id => isCardVisible(id)).map(id => {
         const cardContent = {
-          frequency: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Calendar size={16} className="text-cyan-400"/> Fréquence d'entraînement</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><BarChart data={stravaChartData}><defs><linearGradient id="cyanGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#06b6d4" stopOpacity={1}/><stop offset="100%" stopColor="#06b6d4" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.grid} /><XAxis dataKey="date" tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} padding={{ left: 10, right: 30 }} /><YAxis tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} allowDecimals={false} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} /><Bar dataKey="count" name="Séances" fill="url(#cyanGradient)" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></div></>,
-          volume: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Activity size={16} className="text-[#fc4c02]"/> Volume d'entraînement (mn)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><BarChart data={stravaChartData}><defs><linearGradient id="stravaGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#fc4c02" stopOpacity={1}/><stop offset="100%" stopColor="#fc4c02" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.grid} /><XAxis dataKey="date" tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} padding={{ left: 10, right: 30 }} /><YAxis tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(value) => [`${value} min`, "Durée"]} /><Bar dataKey="durationMin" name="Durée (min)" fill="url(#stravaGradient)" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></div></>,
+          frequency: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Calendar size={16} className="text-cyan-400"/> Fréquence d'entraînement</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={addSportTrend(stravaChartData, 'count')}><defs><linearGradient id="cyanGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#06b6d4" stopOpacity={1}/><stop offset="100%" stopColor="#06b6d4" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.grid} /><XAxis dataKey="date" tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} padding={{ left: 10, right: 30 }} /><YAxis tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} allowDecimals={false} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} /><Bar dataKey="count" name="Séances" fill="url(#cyanGradient)" radius={[4, 4, 0, 0]} /><Line type="monotone" dataKey="__trend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" connectNulls /></ComposedChart></ResponsiveContainer></div></>,
+          volume: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Activity size={16} className="text-[#fc4c02]"/> Volume d'entraînement (mn)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={addSportTrend(stravaChartData, 'durationMin')}><defs><linearGradient id="stravaGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#fc4c02" stopOpacity={1}/><stop offset="100%" stopColor="#fc4c02" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.grid} /><XAxis dataKey="date" tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} padding={{ left: 10, right: 30 }} /><YAxis tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(value) => [`${value} min`, "Durée"]} /><Bar dataKey="durationMin" name="Durée (min)" fill="url(#stravaGradient)" radius={[4, 4, 0, 0]} /><Line type="monotone" dataKey="__trend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" connectNulls /></ComposedChart></ResponsiveContainer></div></>,
           repartition: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><PieChart size={16} className="text-violet-400"/> Répartition</h3><div className="h-56 flex items-center justify-center">{pieData.length > 0 ? (<ResponsiveContainer width="100%" height="100%"><PieChart><Tooltip contentStyle={DARK_TOOLTIP_STYLE} itemStyle={{color: '#fff'}} /><Pie data={pieData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={5} dataKey="value" stroke="none">{pieData.map((entry, index) => (<Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} style={{ filter: 'drop-shadow(0px 4px 6px rgba(0, 0, 0, 0.4))' }} />))}</Pie><Legend wrapperStyle={{ fontSize: 10 }} /></PieChart></ResponsiveContainer>) : (<div className="text-slate-500 text-sm">Aucune donnée sur cette période.</div>)}</div></>,
-          steps: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Footprints size={16} className="text-emerald-400"/> Pas par jour</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><BarChart data={stepsData}><defs><linearGradient id="emeraldGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#10b981" stopOpacity={1}/><stop offset="100%" stopColor="#10b981" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.grid} /><XAxis dataKey="date" tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} padding={{ left: 10, right: 30 }} /><YAxis tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} /><Bar dataKey="total" fill="url(#emeraldGradient)" radius={[4, 4, 0, 0]} name="Pas" /></BarChart></ResponsiveContainer></div></>,
-          cycling_dist: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Bike size={16} className="text-blue-400"/> Cyclisme — Distance (km)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><BarChart data={cyclingDistData}><defs><linearGradient id="bikeDistGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#3b82f6" stopOpacity={1}/><stop offset="100%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.grid} /><XAxis dataKey="date" tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} padding={{ left: 10, right: 30 }} /><YAxis tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(v) => [`${v} km`, 'Distance']} /><Bar dataKey="distance" fill="url(#bikeDistGrad)" radius={[4, 4, 0, 0]} name="Distance (km)" /></BarChart></ResponsiveContainer></div></>,
-          running_dist: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Footprints size={16} className="text-orange-400"/> Running — Distance (km)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><BarChart data={runningDistData}><defs><linearGradient id="runDistGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#f97316" stopOpacity={1}/><stop offset="100%" stopColor="#f97316" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.grid} /><XAxis dataKey="date" tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} padding={{ left: 10, right: 30 }} /><YAxis tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(v) => [`${v} km`, 'Distance']} /><Bar dataKey="distance" fill="url(#runDistGrad)" radius={[4, 4, 0, 0]} name="Distance (km)" /></BarChart></ResponsiveContainer></div></>,
-          endurance_hr: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Heart size={16} className="text-red-400"/> FC moy. endurance (bpm)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><BarChart data={enduranceHRData}><defs><linearGradient id="hrEndGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#ef4444" stopOpacity={1}/><stop offset="100%" stopColor="#ef4444" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.grid} /><XAxis dataKey="date" tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} padding={{ left: 10, right: 30 }} /><YAxis tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} domain={['auto', 'auto']} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(v) => [`${v} bpm`, 'FC moy.']} /><Bar dataKey="hr" fill="url(#hrEndGrad)" radius={[4, 4, 0, 0]} name="FC moy. (bpm)" /></BarChart></ResponsiveContainer></div></>,
-          cycling_dur: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Clock size={16} className="text-blue-400"/> Cyclisme — Durée (min)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><BarChart data={cyclingDurData}><defs><linearGradient id="bikeDurGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#60a5fa" stopOpacity={1}/><stop offset="100%" stopColor="#60a5fa" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.grid} /><XAxis dataKey="date" tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} padding={{ left: 10, right: 30 }} /><YAxis tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(v) => [`${v} min`, 'Durée']} /><Bar dataKey="duration" fill="url(#bikeDurGrad)" radius={[4, 4, 0, 0]} name="Durée (min)" /></BarChart></ResponsiveContainer></div></>,
-          running_dur: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Clock size={16} className="text-orange-400"/> Running — Durée (min)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><BarChart data={runningDurData}><defs><linearGradient id="runDurGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#fb923c" stopOpacity={1}/><stop offset="100%" stopColor="#fb923c" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.grid} /><XAxis dataKey="date" tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} padding={{ left: 10, right: 30 }} /><YAxis tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(v) => [`${v} min`, 'Durée']} /><Bar dataKey="duration" fill="url(#runDurGrad)" radius={[4, 4, 0, 0]} name="Durée (min)" /></BarChart></ResponsiveContainer></div></>,
-          cycling_speed: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Bike size={16} className="text-blue-400"/> Cyclisme — Vit. moy. (km/h)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><BarChart data={cyclingSpeedData}><defs><linearGradient id="bikeSpdGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#3b82f6" stopOpacity={1}/><stop offset="100%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.grid} /><XAxis dataKey="date" tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} padding={{ left: 10, right: 30 }} /><YAxis tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} domain={['auto', 'auto']} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(v) => [`${v} km/h`, 'Vit. moy.']} /><Bar dataKey="speed" fill="url(#bikeSpdGrad)" radius={[4, 4, 0, 0]} name="Vit. moy. (km/h)" /></BarChart></ResponsiveContainer></div></>,
-          running_pace: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Footprints size={16} className="text-orange-400"/> Running — Allure moy. (min/km)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><AreaChart data={runningPaceData}><defs><linearGradient id="runPaceGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#f97316" stopOpacity={0.6}/><stop offset="100%" stopColor="#f97316" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.grid} /><XAxis dataKey="date" tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} padding={{ left: 10, right: 30 }} /><YAxis tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} domain={['auto', 'auto']} reversed /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(v) => [`${v} min/km`, 'Allure']} /><Area type="monotone" dataKey="pace" stroke="#f97316" fill="url(#runPaceGrad)" strokeWidth={2} name="Allure (min/km)" dot={false} connectNulls /></AreaChart></ResponsiveContainer></div></>,
-          rowing_dist: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Waves size={16} className="text-cyan-400"/> Aviron — Distance (km)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><BarChart data={rowingDistData}><defs><linearGradient id="rowDistGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#06b6d4" stopOpacity={1}/><stop offset="100%" stopColor="#06b6d4" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.grid} /><XAxis dataKey="date" tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} padding={{ left: 10, right: 30 }} /><YAxis tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(v) => [`${v} km`, 'Distance']} /><Bar dataKey="distance" fill="url(#rowDistGrad)" radius={[4, 4, 0, 0]} name="Distance (km)" /></BarChart></ResponsiveContainer></div></>,
-          rowing_dur: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Clock size={16} className="text-cyan-400"/> Aviron — Durée (min)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><BarChart data={rowingDurData}><defs><linearGradient id="rowDurGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#22d3ee" stopOpacity={1}/><stop offset="100%" stopColor="#22d3ee" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.grid} /><XAxis dataKey="date" tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} padding={{ left: 10, right: 30 }} /><YAxis tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(v) => [`${v} min`, 'Durée']} /><Bar dataKey="duration" fill="url(#rowDurGrad)" radius={[4, 4, 0, 0]} name="Durée (min)" /></BarChart></ResponsiveContainer></div></>,
-          rowing_hr: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Heart size={16} className="text-cyan-400"/> Aviron — FC moy. (bpm)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><BarChart data={rowingHRData}><defs><linearGradient id="rowHRGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#06b6d4" stopOpacity={1}/><stop offset="100%" stopColor="#06b6d4" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.grid} /><XAxis dataKey="date" tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} padding={{ left: 10, right: 30 }} /><YAxis tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} domain={['auto', 'auto']} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(v) => [`${v} bpm`, 'FC moy.']} /><Bar dataKey="hr" fill="url(#rowHRGrad)" radius={[4, 4, 0, 0]} name="FC moy. (bpm)" /></BarChart></ResponsiveContainer></div></>,
+          steps: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Footprints size={16} className="text-emerald-400"/> Pas par jour</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={addSportTrend(stepsData, 'total')}><defs><linearGradient id="emeraldGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#10b981" stopOpacity={1}/><stop offset="100%" stopColor="#10b981" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.grid} /><XAxis dataKey="date" tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} padding={{ left: 10, right: 30 }} /><YAxis tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} /><Bar dataKey="total" fill="url(#emeraldGradient)" radius={[4, 4, 0, 0]} name="Pas" /><Line type="monotone" dataKey="__trend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" connectNulls /></ComposedChart></ResponsiveContainer></div></>,
+          cycling_dist: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Bike size={16} className="text-blue-400"/> Cyclisme — Distance (km)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={addSportTrend(cyclingDistData, 'distance')}><defs><linearGradient id="bikeDistGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#3b82f6" stopOpacity={1}/><stop offset="100%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.grid} /><XAxis dataKey="date" tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} padding={{ left: 10, right: 30 }} /><YAxis tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(v) => [`${v} km`, 'Distance']} /><Bar dataKey="distance" fill="url(#bikeDistGrad)" radius={[4, 4, 0, 0]} name="Distance (km)" /><Line type="monotone" dataKey="__trend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" connectNulls /></ComposedChart></ResponsiveContainer></div></>,
+          running_dist: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Footprints size={16} className="text-orange-400"/> Running — Distance (km)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={addSportTrend(runningDistData, 'distance')}><defs><linearGradient id="runDistGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#f97316" stopOpacity={1}/><stop offset="100%" stopColor="#f97316" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.grid} /><XAxis dataKey="date" tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} padding={{ left: 10, right: 30 }} /><YAxis tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(v) => [`${v} km`, 'Distance']} /><Bar dataKey="distance" fill="url(#runDistGrad)" radius={[4, 4, 0, 0]} name="Distance (km)" /><Line type="monotone" dataKey="__trend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" connectNulls /></ComposedChart></ResponsiveContainer></div></>,
+          endurance_hr: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Heart size={16} className="text-red-400"/> FC moy. endurance (bpm)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={addSportTrend(enduranceHRData, 'hr')}><defs><linearGradient id="hrEndGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#ef4444" stopOpacity={1}/><stop offset="100%" stopColor="#ef4444" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.grid} /><XAxis dataKey="date" tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} padding={{ left: 10, right: 30 }} /><YAxis tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} domain={['auto', 'auto']} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(v) => [`${v} bpm`, 'FC moy.']} /><Bar dataKey="hr" fill="url(#hrEndGrad)" radius={[4, 4, 0, 0]} name="FC moy. (bpm)" /><Line type="monotone" dataKey="__trend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" connectNulls /></ComposedChart></ResponsiveContainer></div></>,
+          cycling_dur: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Clock size={16} className="text-blue-400"/> Cyclisme — Durée (min)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={addSportTrend(cyclingDurData, 'duration')}><defs><linearGradient id="bikeDurGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#60a5fa" stopOpacity={1}/><stop offset="100%" stopColor="#60a5fa" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.grid} /><XAxis dataKey="date" tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} padding={{ left: 10, right: 30 }} /><YAxis tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(v) => [`${v} min`, 'Durée']} /><Bar dataKey="duration" fill="url(#bikeDurGrad)" radius={[4, 4, 0, 0]} name="Durée (min)" /><Line type="monotone" dataKey="__trend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" connectNulls /></ComposedChart></ResponsiveContainer></div></>,
+          running_dur: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Clock size={16} className="text-orange-400"/> Running — Durée (min)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={addSportTrend(runningDurData, 'duration')}><defs><linearGradient id="runDurGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#fb923c" stopOpacity={1}/><stop offset="100%" stopColor="#fb923c" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.grid} /><XAxis dataKey="date" tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} padding={{ left: 10, right: 30 }} /><YAxis tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(v) => [`${v} min`, 'Durée']} /><Bar dataKey="duration" fill="url(#runDurGrad)" radius={[4, 4, 0, 0]} name="Durée (min)" /><Line type="monotone" dataKey="__trend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" connectNulls /></ComposedChart></ResponsiveContainer></div></>,
+          cycling_speed: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Bike size={16} className="text-blue-400"/> Cyclisme — Vit. moy. (km/h)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={addSportTrend(cyclingSpeedData, 'speed')}><defs><linearGradient id="bikeSpdGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#3b82f6" stopOpacity={1}/><stop offset="100%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.grid} /><XAxis dataKey="date" tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} padding={{ left: 10, right: 30 }} /><YAxis tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} domain={['auto', 'auto']} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(v) => [`${v} km/h`, 'Vit. moy.']} /><Bar dataKey="speed" fill="url(#bikeSpdGrad)" radius={[4, 4, 0, 0]} name="Vit. moy. (km/h)" /><Line type="monotone" dataKey="__trend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" connectNulls /></ComposedChart></ResponsiveContainer></div></>,
+          running_pace: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Footprints size={16} className="text-orange-400"/> Running — Allure moy. (min/km)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={addSportTrend(runningPaceData, 'pace')}><defs><linearGradient id="runPaceGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#f97316" stopOpacity={0.6}/><stop offset="100%" stopColor="#f97316" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.grid} /><XAxis dataKey="date" tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} padding={{ left: 10, right: 30 }} /><YAxis tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} domain={['auto', 'auto']} reversed /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(v) => [`${v} min/km`, 'Allure']} /><Area type="monotone" dataKey="pace" stroke="#f97316" fill="url(#runPaceGrad)" strokeWidth={2} name="Allure (min/km)" dot={false} connectNulls /><Line type="monotone" dataKey="__trend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" connectNulls /></ComposedChart></ResponsiveContainer></div></>,
+          rowing_dist: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Waves size={16} className="text-cyan-400"/> Aviron — Distance (km)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={addSportTrend(rowingDistData, 'distance')}><defs><linearGradient id="rowDistGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#06b6d4" stopOpacity={1}/><stop offset="100%" stopColor="#06b6d4" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.grid} /><XAxis dataKey="date" tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} padding={{ left: 10, right: 30 }} /><YAxis tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(v) => [`${v} km`, 'Distance']} /><Bar dataKey="distance" fill="url(#rowDistGrad)" radius={[4, 4, 0, 0]} name="Distance (km)" /><Line type="monotone" dataKey="__trend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" connectNulls /></ComposedChart></ResponsiveContainer></div></>,
+          rowing_dur: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Clock size={16} className="text-cyan-400"/> Aviron — Durée (min)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={addSportTrend(rowingDurData, 'duration')}><defs><linearGradient id="rowDurGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#22d3ee" stopOpacity={1}/><stop offset="100%" stopColor="#22d3ee" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.grid} /><XAxis dataKey="date" tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} padding={{ left: 10, right: 30 }} /><YAxis tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(v) => [`${v} min`, 'Durée']} /><Bar dataKey="duration" fill="url(#rowDurGrad)" radius={[4, 4, 0, 0]} name="Durée (min)" /><Line type="monotone" dataKey="__trend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" connectNulls /></ComposedChart></ResponsiveContainer></div></>,
+          rowing_hr: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Heart size={16} className="text-cyan-400"/> Aviron — FC moy. (bpm)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={addSportTrend(rowingHRData, 'hr')}><defs><linearGradient id="rowHRGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#06b6d4" stopOpacity={1}/><stop offset="100%" stopColor="#06b6d4" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.grid} /><XAxis dataKey="date" tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} padding={{ left: 10, right: 30 }} /><YAxis tick={{fill: chartTheme.text, fontSize: 10}} axisLine={{stroke: chartTheme.grid}} domain={['auto', 'auto']} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(v) => [`${v} bpm`, 'FC moy.']} /><Bar dataKey="hr" fill="url(#rowHRGrad)" radius={[4, 4, 0, 0]} name="FC moy. (bpm)" /><Line type="monotone" dataKey="__trend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" connectNulls /></ComposedChart></ResponsiveContainer></div></>,
         }[id];
         if (!cardContent) return null;
         const isDragging = dragId === id;
@@ -663,6 +665,28 @@ function HevyView({ hevyWorkouts, loadingHevy, hevyError, hevySyncStatus, fetchH
 }
 
 function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings, onWithingsSync, goals, isDemo, onAddWater, onOpenWaterModal }) {
+  // Sync manuel des wearables via les gateways PHP sur le VPS.
+  const [fitbitSyncing, setFitbitSyncing] = useState(false);
+  const [corosSyncing, setCorosSyncing] = useState(false);
+  const [topSyncMsg, setTopSyncMsg] = useState(null); // { ok, text }
+  const triggerSync = async (url, label, setBusy) => {
+    if (!user) return;
+    setBusy(true);
+    setTopSyncMsg(null);
+    try {
+      const res = await fetch(url, { method: 'POST', headers: { 'X-Bioz-Uid': user.uid } });
+      const data = await res.json();
+      setTopSyncMsg({ ok: !!data.ok, text: data.ok ? `✓ ${label} · ${data.summary || 'OK'} · ${data.duration_sec}s` : (data.error || 'Erreur sync') });
+    } catch (e) {
+      setTopSyncMsg({ ok: false, text: e.message || 'Erreur réseau' });
+    } finally {
+      setBusy(false);
+      setTimeout(() => setTopSyncMsg(null), 8000);
+    }
+  };
+  const handleFitbitSync = () => triggerSync('https://bioz.app/fitbit-trigger.php', 'Google Health', setFitbitSyncing);
+  const handleCorosSync = () => triggerSync('https://bioz.app/coros-trigger.php', 'Coros', setCorosSyncing);
+
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [weight, setWeight] = useState('');
   const [bodyFat, setBodyFat] = useState('');
@@ -693,8 +717,8 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings,
   };
   const isHealthCardVisible = (cardId) => !healthHiddenCards.includes(cardId);
 
-  const HEALTH_DEFAULT_ORDER = ['h_bodySilhouette', 'h_weightFat', 'h_composition', 'h_muscleFatBar', 'h_weight', 'h_waist', 'h_bp', 'h_restingHR', 'h_pwv', 'h_bodyFat', 'h_muscleMass', 'h_hydration', 'h_visceralFat', 'h_corosBilan', 'h_corosSommeil', 'h_corosVfc', 'h_corosFcRepos'];
-  const HEALTH_CARD_LABELS = { h_bodySilhouette: 'Silhouette Corporelle', h_weightFat: 'Poids & Graisse', h_composition: 'Composition Corporelle', h_muscleFatBar: 'Répartition Muscle / Graisse', h_weight: 'Poids', h_waist: 'Tour de taille', h_bp: 'Tension Artérielle', h_restingHR: 'FC Repos', h_pwv: "Vitesse d'Onde de Pouls", h_bodyFat: 'Graisse Corporelle', h_muscleMass: 'Masse Musculaire', h_hydration: 'Hydratation', h_visceralFat: 'Graisse Viscérale', h_corosBilan: 'Bilan Santé — Coros', h_corosSommeil: 'Sommeil — Coros', h_corosVfc: 'VFC nocturne — Coros', h_corosFcRepos: 'FC Repos — Coros' };
+  const HEALTH_DEFAULT_ORDER = ['h_bodySilhouette', 'h_weightFat', 'h_composition', 'h_muscleFatBar', 'h_weight', 'h_waist', 'h_bp', 'h_restingHR', 'h_pwv', 'h_bodyFat', 'h_muscleMass', 'h_hydration', 'h_visceralFat', 'h_corosBilan', 'h_corosSommeil', 'h_corosVfc', 'h_corosFcRepos', 'h_fitbitPas', 'h_fitbitEnergie', 'h_fitbitSpo2', 'h_fitbitGlycemie'];
+  const HEALTH_CARD_LABELS = { h_bodySilhouette: 'Silhouette Corporelle', h_weightFat: 'Poids & Graisse', h_composition: 'Composition Corporelle', h_muscleFatBar: 'Répartition Muscle / Graisse', h_weight: 'Poids', h_waist: 'Tour de taille', h_bp: 'Tension Artérielle', h_restingHR: 'FC Repos', h_pwv: "Vitesse d'Onde de Pouls", h_bodyFat: 'Graisse Corporelle', h_muscleMass: 'Masse Musculaire', h_hydration: 'Hydratation', h_visceralFat: 'Graisse Viscérale', h_corosBilan: 'Bilan Santé', h_corosSommeil: 'Sommeil', h_corosVfc: 'VFC nocturne', h_corosFcRepos: 'FC Repos', h_fitbitPas: 'Pas — Fitbit', h_fitbitEnergie: 'Énergie — Fitbit', h_fitbitSpo2: 'SpO2 — Fitbit', h_fitbitGlycemie: 'Glycémie — Fitbit' };
   const [bodySilhouetteGender, setBodySilhouetteGender] = useState(() => localStorage.getItem('bioz_bodySilhouetteGender') || 'homme');
 
   const [healthCardOrder, setHealthCardOrder] = useState(() => {
@@ -1047,6 +1071,10 @@ BMR : ${f(ind.bmr)} kcal`;
     data = calculateTrendLine(data, 'waist', 'waistTrend');
     data = calculateTrendLine(data, 'bodyFat', 'bodyFatTrend');
     data = calculateTrendLine(data, 'visceralFat', 'visceralFatTrend');
+    data = calculateTrendLine(data, 'muscleMass', 'muscleMassTrend');
+    data = calculateTrendLine(data, 'hydration', 'hydrationTrend');
+    data = calculateTrendLine(data, 'restingHR_bp', 'restingHR_bpTrend');
+    data = calculateTrendLine(data, 'pwv', 'pwvTrend');
     return data;
   }, [safeChartData]);
 
@@ -1203,6 +1231,27 @@ BMR : ${f(ind.bmr)} kcal`;
 
       <div className="bg-slate-800 p-4 rounded-xl shadow-lg border border-slate-700 flex flex-col gap-4">
         <div className="flex justify-between items-center"><h2 className="text-xl font-bold text-slate-100 flex items-center gap-2"><Scale className="text-pink-500" /> Santé</h2><div className="flex bg-slate-900/50 p-1 rounded-lg">{['day', 'week', 'month'].map(tf => (<button key={tf} onClick={() => setTimeFrame(tf)} className={`px-3 py-1 rounded text-sm ${timeFrame === tf ? 'bg-violet-600 text-white' : 'text-slate-400'}`}>{tf === 'day' ? 'Jour' : tf === 'week' ? 'Sem.' : 'Mois'}</button>))}</div></div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-slate-500">Synchroniser :</span>
+          <button onClick={() => !isDemo && onWithingsSync()} disabled={isSyncingWithings || isDemo}
+            className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-bold px-3 py-2 rounded-lg transition-colors border border-slate-600 disabled:opacity-50 disabled:cursor-not-allowed">
+            <RefreshCw size={14} className={isSyncingWithings ? 'animate-spin text-violet-400' : 'text-violet-400'} />
+            {isSyncingWithings ? 'Withings…' : 'Withings'}
+          </button>
+          <button onClick={() => !isDemo && handleFitbitSync()} disabled={fitbitSyncing || isDemo}
+            className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-bold px-3 py-2 rounded-lg transition-colors border border-slate-600 disabled:opacity-50 disabled:cursor-not-allowed">
+            <RefreshCw size={14} className={fitbitSyncing ? 'animate-spin text-emerald-400' : 'text-emerald-400'} />
+            {fitbitSyncing ? 'Google Health…' : 'Google Health'}
+          </button>
+          <button onClick={() => !isDemo && handleCorosSync()} disabled={corosSyncing || isDemo}
+            className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-bold px-3 py-2 rounded-lg transition-colors border border-slate-600 disabled:opacity-50 disabled:cursor-not-allowed">
+            <RefreshCw size={14} className={corosSyncing ? 'animate-spin text-orange-400' : 'text-orange-400'} />
+            {corosSyncing ? 'Coros…' : 'Coros'}
+          </button>
+          {topSyncMsg && (
+            <span className={`text-xs ${topSyncMsg.ok ? 'text-green-400' : 'text-red-400'} max-w-[320px] truncate`} title={topSyncMsg.text}>{topSyncMsg.text}</span>
+          )}
+        </div>
         <div className="grid grid-cols-2 gap-2 text-sm">
           <div className="flex items-center gap-1 bg-slate-900/50 p-2 rounded border border-slate-600"><Filter size={14} className="text-slate-400 shrink-0" /><input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="bg-transparent text-slate-200 focus:outline-none w-full text-xs" /></div>
           <div className="flex items-center gap-1 bg-slate-900/50 p-2 rounded border border-slate-600"><span className="text-slate-500 text-xs px-1">à</span><input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="bg-transparent text-slate-200 focus:outline-none w-full text-xs" /></div>
@@ -1633,11 +1682,11 @@ BMR : ${f(ind.bmr)} kcal`;
           h_weight: <><h3 className="text-sm font-bold text-slate-300 mb-4">Poids</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={chartDataWithTrends}><defs><linearGradient id="violetGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#8b5cf6" stopOpacity={0.3}/><stop offset="100%" stopColor="#8b5cf6" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" /><XAxis dataKey="date" stroke="#94a3b8" tick={{fontSize:10}} padding={{ left: 10, right: 30 }} /><YAxis domain={safeDomain} allowDataOverflow={true} stroke="#94a3b8" tick={{fontSize:10}} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} />{timeFrame === 'month' ? <Bar dataKey="weight" fill="#8b5cf6" radius={[4, 4, 0, 0]} name="Poids (kg)" /> : <Area type="monotone" dataKey="weight" stroke="#8b5cf6" fill="url(#violetGradient)" strokeWidth={2} name="Poids (kg)" dot={false} connectNulls/>}<Line type="monotone" dataKey="weightTrend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" /></ComposedChart></ResponsiveContainer></div>{latestWeight && (<div className="mt-3 flex items-center justify-between text-xs"><span className="text-slate-400">Dernière valeur : <span className="font-bold text-violet-400">{latestWeight} kg</span></span><span className={`font-semibold px-2 py-0.5 rounded-full ${latestWeight < 60 ? 'bg-blue-500/20 text-blue-400' : latestWeight < 75 ? 'bg-emerald-500/20 text-emerald-400' : latestWeight < 90 ? 'bg-yellow-500/20 text-yellow-400' : 'bg-red-500/20 text-red-400'}`}>{latestWeight < 60 ? '⬇ Insuffisant' : latestWeight < 75 ? '✓ Optimal' : latestWeight < 90 ? '⚠ Surpoids' : '⛔ Obésité'}</span></div>)}</>,
           h_waist: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Ruler size={16} className="text-orange-400"/> Tour de taille (cm)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={chartDataWithTrends}><defs><linearGradient id="orangeGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#fb923c" stopOpacity={0.3}/><stop offset="100%" stopColor="#fb923c" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" /><XAxis dataKey="date" stroke="#94a3b8" tick={{fontSize:10}} padding={{ left: 10, right: 30 }} /><YAxis domain={safeDomain} allowDataOverflow={true} stroke="#94a3b8" tick={{fontSize:10}} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} />{timeFrame === 'month' ? <Bar dataKey="waist" fill="#fb923c" radius={[4, 4, 0, 0]} name="Taille (cm)" /> : <Area type="monotone" dataKey="waist" stroke="#fb923c" fill="url(#orangeGradient)" strokeWidth={2} name="Taille (cm)" dot={false} connectNulls/>}<Line type="monotone" dataKey="waistTrend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" /></ComposedChart></ResponsiveContainer></div>{latestWaist && (<div className="mt-3 flex items-center justify-between text-xs"><span className="text-slate-400">Dernière valeur : <span className="font-bold text-orange-400">{latestWaist} cm</span></span><span className={`font-semibold px-2 py-0.5 rounded-full ${latestWaist < 80 ? 'bg-emerald-500/20 text-emerald-400' : latestWaist < 88 ? 'bg-yellow-500/20 text-yellow-400' : 'bg-red-500/20 text-red-400'}`}>{latestWaist < 80 ? '✓ Optimal' : latestWaist < 88 ? '⚠ Risque modéré' : '⛔ Risque élevé'}</span></div>)}</>,
           h_bp: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Heart size={16} className="text-red-500"/> Tension Artérielle (mmHg)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={safeChartData}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" /><XAxis dataKey="date" stroke="#94a3b8" tick={{fontSize:10}} padding={{ left: 10, right: 30 }} /><YAxis stroke="#94a3b8" tick={{fontSize:10}} domain={[40, 180]} allowDataOverflow={true} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} /><Legend wrapperStyle={{fontSize: 10, paddingTop: 10}} /><Bar dataKey="bpRange" fill="#94a3b8" barSize={2} radius={[2, 2, 2, 2]} name="Plage" /><Line type="monotone" dataKey="systolic" stroke="#ef4444" strokeWidth={0} dot={{ r: 4, fill: '#ef4444', strokeWidth: 0 }} activeDot={{ r: 5 }} name="Systolique" isAnimationActive={false}/><Line type="monotone" dataKey="diastolic" stroke="#8b5cf6" strokeWidth={0} dot={{ r: 4, fill: '#8b5cf6', strokeWidth: 0 }} activeDot={{ r: 5 }} name="Diastolique" isAnimationActive={false}/></ComposedChart></ResponsiveContainer></div>{latestSystolic && latestDiastolic && (<div className="mt-3 flex items-center justify-between text-xs"><span className="text-slate-400">Dernière valeur : <span className="font-bold text-red-400">{latestSystolic}</span><span className="text-slate-500">/</span><span className="font-bold text-violet-400">{latestDiastolic}</span> mmHg</span><span className={`font-semibold px-2 py-0.5 rounded-full ${latestSystolic < 120 && latestDiastolic < 80 ? 'bg-emerald-500/20 text-emerald-400' : latestSystolic < 130 && latestDiastolic < 85 ? 'bg-yellow-500/20 text-yellow-400' : latestSystolic < 140 && latestDiastolic < 90 ? 'bg-orange-500/20 text-orange-400' : 'bg-red-500/20 text-red-400'}`}>{latestSystolic < 120 && latestDiastolic < 80 ? '✓ Optimale' : latestSystolic < 130 && latestDiastolic < 85 ? '✓ Normale' : latestSystolic < 140 && latestDiastolic < 90 ? '⚠ Normale haute' : '⛔ Hypertension'}</span></div>)}</>,
-          h_restingHR: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><HeartPulse size={16} className="text-pink-400"/> FC Repos — tensiomètre (bpm)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={safeChartData}><defs><linearGradient id="pinkGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#f472b6" stopOpacity={0.3}/><stop offset="100%" stopColor="#f472b6" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" /><XAxis dataKey="date" stroke="#94a3b8" tick={{fontSize:10}} padding={{ left: 10, right: 30 }} /><YAxis stroke="#94a3b8" tick={{fontSize:10}} domain={['auto', 'auto']} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(v) => [`${v} bpm`, 'FC repos (tensiomètre)']} />{timeFrame === 'month' ? <Bar dataKey="restingHR_bp" fill="#f472b6" radius={[4, 4, 0, 0]} name="FC repos — tensiomètre (bpm)" /> : <Area type="monotone" dataKey="restingHR_bp" stroke="#f472b6" fill="url(#pinkGradient)" strokeWidth={2} name="FC repos — tensiomètre (bpm)" dot={false} connectNulls/>}</ComposedChart></ResponsiveContainer></div>{latestRestingHR && (<div className="mt-3 flex items-center justify-between text-xs"><span className="text-slate-400">Dernière valeur : <span className="font-bold text-pink-400">{latestRestingHR} bpm</span></span><span className={`font-semibold px-2 py-0.5 rounded-full ${latestRestingHR < 60 ? 'bg-emerald-500/20 text-emerald-400' : latestRestingHR < 70 ? 'bg-cyan-500/20 text-cyan-400' : latestRestingHR < 85 ? 'bg-yellow-500/20 text-yellow-400' : latestRestingHR < 100 ? 'bg-orange-500/20 text-orange-400' : 'bg-red-500/20 text-red-400'}`}>{latestRestingHR < 60 ? '✓ Athlétique' : latestRestingHR < 70 ? '✓ Excellent' : latestRestingHR < 85 ? '✓ Normal' : latestRestingHR < 100 ? '⚠ Élevé' : '⛔ Tachycardie'}</span></div>)}</>,
-          h_pwv: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Activity size={16} className="text-cyan-400"/> Vitesse d'Onde de Pouls (m/s)</h3><p className="text-[10px] text-slate-500 mb-3">Seuils adaptés à votre âge (55 ans) — source : Reference Values for Arterial Stiffness, Eur. Heart J. 2010. Plus la valeur est basse, plus vos artères sont souples.</p><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={safeChartData}><defs><linearGradient id="pwvGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#22d3ee" stopOpacity={0.4}/><stop offset="100%" stopColor="#22d3ee" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" /><XAxis dataKey="date" stroke="#94a3b8" tick={{fontSize:10}} padding={{ left: 10, right: 30 }} /><YAxis stroke="#94a3b8" tick={{fontSize:10}} domain={[5, 13]} unit=" m/s" /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(v, name) => name === 'Seuil normal (55 ans)' ? [`${v} m/s`, name] : [`${v} m/s`, 'Onde de pouls']} />{/* Seuil à 9 m/s — limite haute du normal pour 50-59 ans */}<Line type="monotone" dataKey={() => 9} stroke="#f97316" strokeDasharray="4 4" strokeWidth={1.5} dot={false} name="Seuil normal (55 ans)" isAnimationActive={false} />{timeFrame === 'month' ? <Bar dataKey="pwv" fill="#22d3ee" radius={[4, 4, 0, 0]} name="Onde de pouls (m/s)" /> : <Area type="monotone" dataKey="pwv" stroke="#22d3ee" fill="url(#pwvGradient)" strokeWidth={2} name="Onde de pouls (m/s)" dot={{ r: 3, fill: '#22d3ee', strokeWidth: 0 }} connectNulls activeDot={{ r: 5 }}/>}</ComposedChart></ResponsiveContainer></div>{latestPWV && (<div className="mt-3 flex items-center justify-between text-xs"><span className="text-slate-400">Dernière valeur : <span className="font-bold text-cyan-400">{latestPWV} m/s</span></span><span className={`font-semibold px-2 py-0.5 rounded-full ${latestPWV < 7.5 ? 'bg-emerald-500/20 text-emerald-400' : latestPWV < 9 ? 'bg-cyan-500/20 text-cyan-400' : latestPWV < 10.5 ? 'bg-yellow-500/20 text-yellow-400' : 'bg-red-500/20 text-red-400'}`}>{latestPWV < 7.5 ? '✓ Optimal' : latestPWV < 9 ? '✓ Normal' : latestPWV < 10.5 ? '⚠ Élevé' : '⛔ Très élevé'}</span></div>)}</>,
+          h_restingHR: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><HeartPulse size={16} className="text-pink-400"/> FC Repos — tensiomètre (bpm)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={chartDataWithTrends}><defs><linearGradient id="pinkGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#f472b6" stopOpacity={0.3}/><stop offset="100%" stopColor="#f472b6" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" /><XAxis dataKey="date" stroke="#94a3b8" tick={{fontSize:10}} padding={{ left: 10, right: 30 }} /><YAxis stroke="#94a3b8" tick={{fontSize:10}} domain={['auto', 'auto']} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(v) => [`${v} bpm`, 'FC repos (tensiomètre)']} />{timeFrame === 'month' ? <Bar dataKey="restingHR_bp" fill="#f472b6" radius={[4, 4, 0, 0]} name="FC repos — tensiomètre (bpm)" /> : <Area type="monotone" dataKey="restingHR_bp" stroke="#f472b6" fill="url(#pinkGradient)" strokeWidth={2} name="FC repos — tensiomètre (bpm)" dot={false} connectNulls/>}<Line type="monotone" dataKey="restingHR_bpTrend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" /></ComposedChart></ResponsiveContainer></div>{latestRestingHR && (<div className="mt-3 flex items-center justify-between text-xs"><span className="text-slate-400">Dernière valeur : <span className="font-bold text-pink-400">{latestRestingHR} bpm</span></span><span className={`font-semibold px-2 py-0.5 rounded-full ${latestRestingHR < 60 ? 'bg-emerald-500/20 text-emerald-400' : latestRestingHR < 70 ? 'bg-cyan-500/20 text-cyan-400' : latestRestingHR < 85 ? 'bg-yellow-500/20 text-yellow-400' : latestRestingHR < 100 ? 'bg-orange-500/20 text-orange-400' : 'bg-red-500/20 text-red-400'}`}>{latestRestingHR < 60 ? '✓ Athlétique' : latestRestingHR < 70 ? '✓ Excellent' : latestRestingHR < 85 ? '✓ Normal' : latestRestingHR < 100 ? '⚠ Élevé' : '⛔ Tachycardie'}</span></div>)}</>,
+          h_pwv: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Activity size={16} className="text-cyan-400"/> Vitesse d'Onde de Pouls (m/s)</h3><p className="text-[10px] text-slate-500 mb-3">Seuils adaptés à votre âge (55 ans) — source : Reference Values for Arterial Stiffness, Eur. Heart J. 2010. Plus la valeur est basse, plus vos artères sont souples.</p><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={chartDataWithTrends}><defs><linearGradient id="pwvGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#22d3ee" stopOpacity={0.4}/><stop offset="100%" stopColor="#22d3ee" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" /><XAxis dataKey="date" stroke="#94a3b8" tick={{fontSize:10}} padding={{ left: 10, right: 30 }} /><YAxis stroke="#94a3b8" tick={{fontSize:10}} domain={[5, 13]} unit=" m/s" /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(v, name) => name === 'Seuil normal (55 ans)' ? [`${v} m/s`, name] : [`${v} m/s`, 'Onde de pouls']} />{/* Seuil à 9 m/s — limite haute du normal pour 50-59 ans */}<Line type="monotone" dataKey={() => 9} stroke="#f97316" strokeDasharray="4 4" strokeWidth={1.5} dot={false} name="Seuil normal (55 ans)" isAnimationActive={false} />{timeFrame === 'month' ? <Bar dataKey="pwv" fill="#22d3ee" radius={[4, 4, 0, 0]} name="Onde de pouls (m/s)" /> : <Area type="monotone" dataKey="pwv" stroke="#22d3ee" fill="url(#pwvGradient)" strokeWidth={2} name="Onde de pouls (m/s)" dot={{ r: 3, fill: '#22d3ee', strokeWidth: 0 }} connectNulls activeDot={{ r: 5 }}/>}<Line type="monotone" dataKey="pwvTrend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" /></ComposedChart></ResponsiveContainer></div>{latestPWV && (<div className="mt-3 flex items-center justify-between text-xs"><span className="text-slate-400">Dernière valeur : <span className="font-bold text-cyan-400">{latestPWV} m/s</span></span><span className={`font-semibold px-2 py-0.5 rounded-full ${latestPWV < 7.5 ? 'bg-emerald-500/20 text-emerald-400' : latestPWV < 9 ? 'bg-cyan-500/20 text-cyan-400' : latestPWV < 10.5 ? 'bg-yellow-500/20 text-yellow-400' : 'bg-red-500/20 text-red-400'}`}>{latestPWV < 7.5 ? '✓ Optimal' : latestPWV < 9 ? '✓ Normal' : latestPWV < 10.5 ? '⚠ Élevé' : '⛔ Très élevé'}</span></div>)}</>,
           h_bodyFat: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Percent size={16} className="text-yellow-500"/> Graisse Corporelle (%)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={chartDataWithTrends}><defs><linearGradient id="yellowGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#eab308" stopOpacity={1}/><stop offset="100%" stopColor="#eab308" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" /><XAxis dataKey="date" stroke="#94a3b8" tick={{fontSize:10}} padding={{ left: 10, right: 30 }} /><YAxis domain={safeDomain} allowDataOverflow={true} stroke="#94a3b8" tick={{fontSize:10}} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} />{timeFrame === 'month' ? <Bar dataKey="bodyFat" fill="#eab308" radius={[4, 4, 0, 0]} name="Graisse (%)" /> : <Area type="monotone" dataKey="bodyFat" stroke="#eab308" fill="url(#yellowGradient)" strokeWidth={2} name="Graisse (%)" dot={false} connectNulls/>}<Line type="monotone" dataKey="bodyFatTrend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" /></ComposedChart></ResponsiveContainer></div>{latestFat && (<div className="mt-3 flex items-center justify-between text-xs"><span className="text-slate-400">Dernière valeur : <span className="font-bold text-yellow-400">{latestFat} %</span></span><span className={`font-semibold px-2 py-0.5 rounded-full ${latestFat < 18 ? 'bg-blue-500/20 text-blue-400' : latestFat < 25 ? 'bg-emerald-500/20 text-emerald-400' : latestFat < 30 ? 'bg-yellow-500/20 text-yellow-400' : 'bg-red-500/20 text-red-400'}`}>{latestFat < 18 ? '⬇ Trop faible' : latestFat < 25 ? '✓ Normal' : latestFat < 30 ? '⚠ Élevé' : '⛔ Obésité'}</span></div>)}</>,
-          h_muscleMass: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Dumbbell size={16} className="text-emerald-500"/> Masse Musculaire (%)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={safeChartData}><defs><linearGradient id="emeraldGradient2" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#10b981" stopOpacity={0.3}/><stop offset="100%" stopColor="#10b981" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" /><XAxis dataKey="date" stroke="#94a3b8" tick={{fontSize:10}} padding={{ left: 10, right: 30 }} /><YAxis domain={safeDomain} allowDataOverflow={true} stroke="#94a3b8" tick={{fontSize:10}} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} />{timeFrame === 'month' ? <Bar dataKey="muscleMass" fill="#10b981" radius={[4, 4, 0, 0]} name="Muscle (%)" /> : <Area type="monotone" dataKey="muscleMass" stroke="#10b981" fill="url(#emeraldGradient2)" strokeWidth={2} name="Muscle (%)" connectNulls/>}</ComposedChart></ResponsiveContainer></div>{latestMuscle && (<div className="mt-3 flex items-center justify-between text-xs"><span className="text-slate-400">Dernière valeur : <span className="font-bold text-emerald-400">{latestMuscle} %</span></span><span className={`font-semibold px-2 py-0.5 rounded-full ${latestMuscle > 40 ? 'bg-emerald-500/20 text-emerald-400' : latestMuscle > 33 ? 'bg-cyan-500/20 text-cyan-400' : latestMuscle > 28 ? 'bg-yellow-500/20 text-yellow-400' : 'bg-red-500/20 text-red-400'}`}>{latestMuscle > 40 ? '✓ Athlétique' : latestMuscle > 33 ? '✓ Bon' : latestMuscle > 28 ? '⚠ Faible' : '⛔ Sarcopénie'}</span></div>)}</>,
-          h_hydration: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Droplet size={16} className="text-blue-400"/> Hydratation (%)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={safeChartData}><defs><linearGradient id="blueGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#60a5fa" stopOpacity={1}/><stop offset="100%" stopColor="#60a5fa" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" /><XAxis dataKey="date" stroke="#94a3b8" tick={{fontSize:10}} padding={{ left: 10, right: 30 }} /><YAxis stroke="#94a3b8" tick={{fontSize:10}} domain={[50, 65]} allowDataOverflow={true} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} />{timeFrame === 'month' ? <Bar dataKey="hydration" fill="#60a5fa" radius={[4, 4, 0, 0]} name="Eau %" /> : <Area type="monotone" dataKey="hydration" stroke="#60a5fa" fill="url(#blueGradient)" strokeWidth={2} name="Eau %" dot={false} connectNulls/>}</ComposedChart></ResponsiveContainer></div>{latestHydration && (<div className="mt-3 flex items-center justify-between text-xs"><span className="text-slate-400">Dernière valeur : <span className="font-bold text-blue-400">{latestHydration} %</span></span><span className={`font-semibold px-2 py-0.5 rounded-full ${latestHydration >= 55 ? 'bg-emerald-500/20 text-emerald-400' : latestHydration >= 50 ? 'bg-yellow-500/20 text-yellow-400' : 'bg-red-500/20 text-red-400'}`}>{latestHydration >= 55 ? '✓ Bonne hydratation' : latestHydration >= 50 ? '⚠ Limite' : '⛔ Déshydratation'}</span></div>)}</>,
+          h_muscleMass: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Dumbbell size={16} className="text-emerald-500"/> Masse Musculaire (%)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={chartDataWithTrends}><defs><linearGradient id="emeraldGradient2" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#10b981" stopOpacity={0.3}/><stop offset="100%" stopColor="#10b981" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" /><XAxis dataKey="date" stroke="#94a3b8" tick={{fontSize:10}} padding={{ left: 10, right: 30 }} /><YAxis domain={safeDomain} allowDataOverflow={true} stroke="#94a3b8" tick={{fontSize:10}} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} />{timeFrame === 'month' ? <Bar dataKey="muscleMass" fill="#10b981" radius={[4, 4, 0, 0]} name="Muscle (%)" /> : <Area type="monotone" dataKey="muscleMass" stroke="#10b981" fill="url(#emeraldGradient2)" strokeWidth={2} name="Muscle (%)" connectNulls/>}<Line type="monotone" dataKey="muscleMassTrend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" /></ComposedChart></ResponsiveContainer></div>{latestMuscle && (<div className="mt-3 flex items-center justify-between text-xs"><span className="text-slate-400">Dernière valeur : <span className="font-bold text-emerald-400">{latestMuscle} %</span></span><span className={`font-semibold px-2 py-0.5 rounded-full ${latestMuscle > 40 ? 'bg-emerald-500/20 text-emerald-400' : latestMuscle > 33 ? 'bg-cyan-500/20 text-cyan-400' : latestMuscle > 28 ? 'bg-yellow-500/20 text-yellow-400' : 'bg-red-500/20 text-red-400'}`}>{latestMuscle > 40 ? '✓ Athlétique' : latestMuscle > 33 ? '✓ Bon' : latestMuscle > 28 ? '⚠ Faible' : '⛔ Sarcopénie'}</span></div>)}</>,
+          h_hydration: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Droplet size={16} className="text-blue-400"/> Hydratation (%)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={chartDataWithTrends}><defs><linearGradient id="blueGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#60a5fa" stopOpacity={1}/><stop offset="100%" stopColor="#60a5fa" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" /><XAxis dataKey="date" stroke="#94a3b8" tick={{fontSize:10}} padding={{ left: 10, right: 30 }} /><YAxis stroke="#94a3b8" tick={{fontSize:10}} domain={[50, 65]} allowDataOverflow={true} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} />{timeFrame === 'month' ? <Bar dataKey="hydration" fill="#60a5fa" radius={[4, 4, 0, 0]} name="Eau %" /> : <Area type="monotone" dataKey="hydration" stroke="#60a5fa" fill="url(#blueGradient)" strokeWidth={2} name="Eau %" dot={false} connectNulls/>}<Line type="monotone" dataKey="hydrationTrend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" /></ComposedChart></ResponsiveContainer></div>{latestHydration && (<div className="mt-3 flex items-center justify-between text-xs"><span className="text-slate-400">Dernière valeur : <span className="font-bold text-blue-400">{latestHydration} %</span></span><span className={`font-semibold px-2 py-0.5 rounded-full ${latestHydration >= 55 ? 'bg-emerald-500/20 text-emerald-400' : latestHydration >= 50 ? 'bg-yellow-500/20 text-yellow-400' : 'bg-red-500/20 text-red-400'}`}>{latestHydration >= 55 ? '✓ Bonne hydratation' : latestHydration >= 50 ? '⚠ Limite' : '⛔ Déshydratation'}</span></div>)}</>,
           h_visceralFat: <><h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2"><Flame size={16} className="text-amber-500"/> Graisse Viscérale (%)</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={chartDataWithTrends}><defs><linearGradient id="amberGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#f59e0b" stopOpacity={0.8}/><stop offset="100%" stopColor="#f59e0b" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" /><XAxis dataKey="date" stroke="#94a3b8" tick={{fontSize:10}} padding={{ left: 10, right: 30 }} /><YAxis domain={safeDomain} allowDataOverflow={true} stroke="#94a3b8" tick={{fontSize:10}} /><Tooltip contentStyle={DARK_TOOLTIP_STYLE} cursor={{fill: '#334155', opacity: 0.4}} formatter={(v) => [`${v}`, 'Graisse viscérale %']} />{timeFrame === 'month' ? <Bar dataKey="visceralFat" fill="#f59e0b" radius={[4, 4, 0, 0]} name="Graisse viscérale (%)" /> : <Area type="monotone" dataKey="visceralFat" stroke="#f59e0b" fill="url(#amberGradient)" strokeWidth={2} name="Graisse viscérale (%)" dot={false} connectNulls/>}<Line type="monotone" dataKey="visceralFatTrend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" /></ComposedChart></ResponsiveContainer></div>{latestVisceral && (<div className="mt-3 flex items-center justify-between text-xs"><span className="text-slate-400">Dernière valeur : <span className="font-bold text-amber-400">{latestVisceral}</span></span><span className={`font-semibold px-2 py-0.5 rounded-full ${latestVisceral <= 9 ? 'bg-emerald-500/20 text-emerald-400' : latestVisceral <= 14 ? 'bg-yellow-500/20 text-yellow-400' : 'bg-red-500/20 text-red-400'}`}>{latestVisceral <= 9 ? '✓ Normal' : latestVisceral <= 14 ? '⚠ Élevé' : '⛔ Très élevé'}</span></div>)}</>,
           h_composition: (() => {
             const compData = weeklyChartData.filter(d => d.muscleMass !== null || d.bodyFat !== null);
@@ -1933,7 +1982,7 @@ BMR : ${f(ind.bmr)} kcal`;
 }
 
 // --- SETTINGS VIEW ---
-function SettingsView({ user, db, isWithingsEnabled, handleWithingsAuth, isStravaEnabled, handleStravaAuth, isHuaweiEnabled, handleHuaweiAuth, huaweiNeedsReconnect, withingsNeedsReconnect, hevyApiKey, onSaveHevyApiKey, goals, setGoals, dataSourcePrefs, setDataSourcePrefs, connectedSources, isDemo, setNutritionVersion }) {
+function SettingsView({ user, db, isWithingsEnabled, handleWithingsAuth, isStravaEnabled, handleStravaAuth, withingsNeedsReconnect, hevyApiKey, onSaveHevyApiKey, goals, setGoals, dataSourcePrefs, setDataSourcePrefs, connectedSources, isDemo, setNutritionVersion }) {
   const [hevyKeyInput, setHevyKeyInput] = useState(hevyApiKey || '');
   const [hevyKeySaved, setHevyKeySaved] = useState(false);
 
@@ -2095,13 +2144,6 @@ function SettingsView({ user, db, isWithingsEnabled, handleWithingsAuth, isStrav
                       <div><div className="font-bold text-slate-200">Strava</div><div className="text-xs text-slate-500">{isStravaEnabled ? 'Connecté' : 'Non connecté'}</div></div>
                   </div>
                   <button onClick={handleStravaAuth} className={`px-3 py-1 rounded text-xs font-bold ${isStravaEnabled ? 'bg-green-500/20 text-green-400' : 'bg-[#fc4c02] text-white'}`}>{isStravaEnabled ? 'Actif' : 'Lier'}</button>
-              </div>
-              <div className="flex justify-between items-center bg-slate-900/50 p-3 rounded-lg border border-slate-600/50">
-                  <div className="flex items-center gap-3">
-                      <div className="bg-[#CF0A2C] text-white font-bold w-8 h-8 rounded-full flex items-center justify-center">H</div>
-                      <div><div className="font-bold text-slate-200">Huawei Health</div><div className={`text-xs ${huaweiNeedsReconnect ? 'text-orange-400' : 'text-slate-500'}`}>{huaweiNeedsReconnect ? '⚠ Token expiré' : isHuaweiEnabled ? 'Connecté' : 'Non connecté'}</div></div>
-                  </div>
-                  <button onClick={handleHuaweiAuth} className={`px-3 py-1 rounded text-xs font-bold ${huaweiNeedsReconnect ? 'bg-orange-500 text-white' : isHuaweiEnabled ? 'bg-green-500/20 text-green-400' : 'bg-[#CF0A2C] text-white'}`}>{huaweiNeedsReconnect ? 'Reconnecter' : isHuaweiEnabled ? 'Actif' : 'Lier'}</button>
               </div>
               <div className="bg-slate-900/50 p-3 rounded-lg border border-slate-600/50 space-y-3">
                   <div className="flex items-center gap-3">
@@ -2727,21 +2769,15 @@ function App() {
   const [isSyncingStrava, setIsSyncingStrava] = useState(false);
   const [stravaNextSync, setStravaNextSync] = useState(null); // FIX P3: timestamp du prochain auto-sync
 
-  // HUAWEI STATE
-  const [isHuaweiEnabled, setIsHuaweiEnabled] = useState(false);
-  const [isSyncingHuawei, setIsSyncingHuawei] = useState(false);
-  const [huaweiNeedsReconnect, setHuaweiNeedsReconnect] = useState(false);
-
   // DATA SOURCE PREFERENCES
   const [dataSourcePrefs, setDataSourcePrefs] = useState({});
 
   const connectedSources = useMemo(() => {
     const s = [];
     if (isWithingsEnabled) s.push('withings');
-    if (isHuaweiEnabled) s.push('huawei');
     if (isStravaEnabled) s.push('strava');
     return s;
-  }, [isWithingsEnabled, isHuaweiEnabled, isStravaEnabled]);
+  }, [isWithingsEnabled, isStravaEnabled]);
 
   const isRemoteUpdate = useRef(false);
   const isDataLoaded = useRef(false); 
@@ -2761,8 +2797,6 @@ function App() {
       setHevyApiKey('');
       setIsWithingsEnabled(false);
       setIsStravaEnabled(false);
-      setIsHuaweiEnabled(false);
-      setHuaweiNeedsReconnect(false);
       setDataSourcePrefs({});
       setGoals({ startWeight: 106, targetWeight: 95, startFat: 26, targetFat: 15, startWaist: 107, targetWaist: 95 });
       setDataLoaded(false);
@@ -3007,185 +3041,6 @@ function App() {
      window.location.href = `${STRAVA_CONFIG.authUrl}?client_id=${STRAVA_CONFIG.clientId}&response_type=code&redirect_uri=${encodeURIComponent(STRAVA_CONFIG.redirectUri)}&approval_prompt=force&scope=${STRAVA_CONFIG.scope}&state=${generateId()}`;
   };
 
-  const handleStartHuaweiAuth = () => {
-     window.location.href = `${HUAWEI_CONFIG.authUrl}?response_type=code&client_id=${HUAWEI_CONFIG.clientId}&state=huawei_${generateId()}&scope=${encodeURIComponent(HUAWEI_CONFIG.scope)}&redirect_uri=${encodeURIComponent(HUAWEI_CONFIG.redirectUri)}`;
-  };
-  
-  // --- HUAWEI OAUTH CALLBACK ---
-  useEffect(() => {
-    const handleHuaweiCallback = async () => {
-      const params = new URLSearchParams(window.location.search);
-      const code = params.get('code');
-      const state = params.get('state');
-      if (!code || !state || !state.startsWith('huawei_')) return;
-      window.history.replaceState({}, document.title, "/");
-      setIsSyncingHuawei(true);
-      try {
-        const formData = new URLSearchParams();
-        formData.append('grant_type', 'authorization_code');
-        formData.append('code', code);
-        formData.append('client_id', HUAWEI_CONFIG.clientId);
-        formData.append('client_secret', HUAWEI_CONFIG.clientSecret);
-        formData.append('redirect_uri', HUAWEI_CONFIG.redirectUri);
-        const data = await fetchWithFallback(HUAWEI_CONFIG.tokenUrl, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: formData.toString() });
-        if (data && data.access_token) {
-          const tokenData = { access_token: data.access_token, refresh_token: data.refresh_token, expires_in: data.expires_in, token_type: data.token_type, timestamp: Date.now() };
-          await setDoc(doc(db, "users", user.uid, "integrations", "huawei"), tokenData);
-          await setDoc(doc(db, "users", user.uid), { isHuaweiEnabled: true }, { merge: true });
-          setIsHuaweiEnabled(true);
-          alert("Huawei Health connecté !");
-          setTimeout(() => handleHuaweiSync(tokenData), 1000);
-        } else {
-          throw new Error(data ? JSON.stringify(data) : "Réponse vide");
-        }
-      } catch (err) {
-        console.error("[Huawei] Auth error:", err);
-        alert("Erreur de connexion Huawei Health. Veuillez réessayer depuis les Paramètres.");
-      } finally {
-        setIsSyncingHuawei(false);
-      }
-    };
-    if (user && !isDemo) handleHuaweiCallback();
-  }, [user, isDemo]);
-
-  // --- HUAWEI HEALTH SYNC ---
-  const handleHuaweiSync = async (forcedToken = null) => {
-    if (!user) return;
-    setIsSyncingHuawei(true);
-    setHuaweiNeedsReconnect(false);
-    try {
-      let tokenData = forcedToken;
-      if (!tokenData) {
-        const tokenSnap = await getDoc(doc(db, "users", user.uid, "integrations", "huawei"));
-        if (!tokenSnap.exists()) { setIsSyncingHuawei(false); return; }
-        tokenData = tokenSnap.data();
-      }
-      if (!tokenData) { setIsSyncingHuawei(false); return; }
-
-      // Refresh token si expiré
-      const isExpired = tokenData.timestamp && (Date.now() - tokenData.timestamp > (tokenData.expires_in - 300) * 1000);
-      if (isExpired) {
-        const refreshForm = new URLSearchParams();
-        refreshForm.append('grant_type', 'refresh_token');
-        refreshForm.append('client_id', HUAWEI_CONFIG.clientId);
-        refreshForm.append('client_secret', HUAWEI_CONFIG.clientSecret);
-        refreshForm.append('refresh_token', tokenData.refresh_token);
-        try {
-          const refreshData = await fetchWithFallback(HUAWEI_CONFIG.tokenUrl, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: refreshForm.toString() });
-          if (refreshData && refreshData.access_token) {
-            tokenData = { ...tokenData, access_token: refreshData.access_token, refresh_token: refreshData.refresh_token || tokenData.refresh_token, expires_in: refreshData.expires_in, timestamp: Date.now() };
-            await setDoc(doc(db, "users", user.uid, "integrations", "huawei"), tokenData);
-          } else {
-            console.error("[Huawei] Refresh token invalide, reconnexion nécessaire.");
-            setHuaweiNeedsReconnect(true);
-            setIsSyncingHuawei(false);
-            return;
-          }
-        } catch (refreshErr) {
-          console.error("[Huawei] Erreur refresh token:", refreshErr);
-          setHuaweiNeedsReconnect(true);
-          setIsSyncingHuawei(false);
-          return;
-        }
-      }
-
-      const authHeaders = { 'Authorization': `Bearer ${tokenData.access_token}`, 'Content-Type': 'application/json' };
-      const now = Date.now();
-      const twoYearsAgo = now - (2 * 365 * 24 * 3600 * 1000);
-
-      // Fetch body weight, body fat, heart rate, activity en parallèle
-      const [weightData, bodyCompData, hrData, activityData] = await Promise.all([
-        // Body weight
-        fetchWithFallback(`${HUAWEI_CONFIG.apiBase}/sampleSet/bodyWeight/query`, { method: 'POST', headers: authHeaders, body: JSON.stringify({ startTime: twoYearsAgo, endTime: now, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }) }).catch(e => { console.warn("[Huawei] Weight fetch error:", e); return null; }),
-        // Body composition (fat, muscle, hydration, visceral fat, BMR)
-        fetchWithFallback(`${HUAWEI_CONFIG.apiBase}/sampleSet/bodyComposition/query`, { method: 'POST', headers: authHeaders, body: JSON.stringify({ startTime: twoYearsAgo, endTime: now, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }) }).catch(e => { console.warn("[Huawei] Body comp fetch error:", e); return null; }),
-        // Resting heart rate
-        fetchWithFallback(`${HUAWEI_CONFIG.apiBase}/sampleSet/heartRate/query`, { method: 'POST', headers: authHeaders, body: JSON.stringify({ startTime: twoYearsAgo, endTime: now, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }) }).catch(e => { console.warn("[Huawei] HR fetch error:", e); return null; }),
-        // Steps & distance (activity)
-        fetchWithFallback(`${HUAWEI_CONFIG.apiBase}/sampleSet/activitySummary/query`, { method: 'POST', headers: authHeaders, body: JSON.stringify({ startTime: twoYearsAgo, endTime: now, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }) }).catch(e => { console.warn("[Huawei] Activity fetch error:", e); return null; })
-      ]);
-
-      let newHealthLogs = [...healthLogs];
-      let updates = 0;
-
-      const upsertLog = (dateKey, isoDate, fields) => {
-        const logIndex = newHealthLogs.findIndex(l => getLocalDateKey(l.date) === dateKey);
-        if (logIndex === -1) {
-          newHealthLogs.push({ id: generateId(), date: isoDate, ...fields });
-          updates++;
-        } else {
-          const existing = newHealthLogs[logIndex];
-          const merged = { ...existing };
-          Object.entries(fields).forEach(([k, v]) => { if (v != null) merged[k] = v; });
-          newHealthLogs[logIndex] = merged;
-          updates++;
-        }
-      };
-
-      // Process weight data
-      if (weightData && weightData.samplePoints) {
-        weightData.samplePoints.forEach(p => {
-          const date = new Date(p.startTime || p.samplingTime);
-          const dateKey = getLocalDateKey(date.toISOString());
-          const weight = p.value?.[0]?.floatValue || p.fieldValues?.weight;
-          if (weight) upsertLog(dateKey, date.toISOString(), { weight: parseFloat(weight.toFixed(2)) });
-        });
-      }
-
-      // Process body composition
-      if (bodyCompData && bodyCompData.samplePoints) {
-        bodyCompData.samplePoints.forEach(p => {
-          const date = new Date(p.startTime || p.samplingTime);
-          const dateKey = getLocalDateKey(date.toISOString());
-          const fields = {};
-          const vals = p.value || [];
-          vals.forEach(v => {
-            if (v.fieldName === 'body_fat_rate' || v.fieldName === 'bodyFat') fields.bodyFat = parseFloat((v.floatValue).toFixed(2));
-            if (v.fieldName === 'muscle_mass' || v.fieldName === 'muscleMass') fields.muscleMass = parseFloat((v.floatValue).toFixed(2));
-            if (v.fieldName === 'moisture_rate' || v.fieldName === 'moisture') fields.hydration = parseFloat((v.floatValue).toFixed(2));
-            if (v.fieldName === 'visceral_fat_level' || v.fieldName === 'visceralFat') fields.visceralFat = parseFloat((v.floatValue).toFixed(1));
-            if (v.fieldName === 'basal_metabolism' || v.fieldName === 'bmr') fields.bmr = Math.round(v.floatValue);
-          });
-          if (Object.keys(fields).length > 0) upsertLog(dateKey, date.toISOString(), fields);
-        });
-      }
-
-      // Process heart rate
-      if (hrData && hrData.samplePoints) {
-        hrData.samplePoints.forEach(p => {
-          const date = new Date(p.startTime || p.samplingTime);
-          const dateKey = getLocalDateKey(date.toISOString());
-          const hr = p.value?.[0]?.floatValue || p.value?.[0]?.intValue || p.fieldValues?.restingHeartRate;
-          if (hr) upsertLog(dateKey, date.toISOString(), { restingHR: Math.round(hr) });
-        });
-      }
-
-      // Process activity (steps, distance)
-      if (activityData && activityData.samplePoints) {
-        activityData.samplePoints.forEach(p => {
-          const date = new Date(p.startTime || p.samplingTime);
-          const dateKey = getLocalDateKey(date.toISOString());
-          const fields = {};
-          const vals = p.value || [];
-          vals.forEach(v => {
-            if (v.fieldName === 'steps' || v.fieldName === 'step') fields.steps = Math.round(v.intValue || v.floatValue);
-            if (v.fieldName === 'distance') fields.distance = parseFloat(((v.floatValue || 0) / 1000).toFixed(2));
-          });
-          if (Object.keys(fields).length > 0) upsertLog(dateKey, date.toISOString(), fields);
-        });
-      }
-
-      if (updates > 0) {
-        newHealthLogs.sort((a, b) => new Date(a.date) - new Date(b.date));
-        setHealthLogs(newHealthLogs);
-      }
-    } catch (e) {
-      console.error("[Huawei] Sync Error:", e);
-    } finally {
-      setIsSyncingHuawei(false);
-    }
-  };
-
   const handleStartWithingsAuth = () => {
      window.location.href = `${WITHINGS_CONFIG.authUrl}?response_type=code&client_id=${WITHINGS_CONFIG.clientId}&state=${generateId()}&scope=${WITHINGS_CONFIG.scope}&redirect_uri=${encodeURIComponent(WITHINGS_CONFIG.redirectUri)}`;
   };
@@ -3290,16 +3145,6 @@ function App() {
     }
   }, [user, isWithingsEnabled, dataLoaded]);
 
-  // Auto-sync Huawei au chargement (désactivé sur mobile — bouton manuel disponible)
-  const huaweiAutoSynced = useRef(false);
-  useEffect(() => {
-    if (isDemo || !user || !dataLoaded || huaweiAutoSynced.current || isMobileDevice) return;
-    if (isHuaweiEnabled) {
-      huaweiAutoSynced.current = true;
-      handleHuaweiSync();
-    }
-  }, [user, isHuaweiEnabled, dataLoaded]);
-
   // Sync Read (Firebase) - onSnapshot écoute les changements distants
   const isWriting = useRef(false); // Empêche onSnapshot de réagir à nos propres écritures
   useEffect(() => {
@@ -3320,7 +3165,6 @@ function App() {
         setHealthLogs(data.healthLogs || []);
         setIsWithingsEnabled(data.isWithingsEnabled || false);
         setIsStravaEnabled(data.isStravaEnabled || false);
-        setIsHuaweiEnabled(data.isHuaweiEnabled || false);
         setStravaLogs(data.stravaLogs || []);
         // Ne charger les workouts Hevy que si l'utilisateur a sa propre clé API
         setHevyWorkouts(userHasHevyKey ? (data.hevyWorkouts || []) : []);
@@ -3355,7 +3199,6 @@ function App() {
             healthLogs: trimmedHealthLogs,
             isWithingsEnabled,
             isStravaEnabled,
-            isHuaweiEnabled,
             dataSourcePrefs,
             stravaLogs: trimmedStravaLogs,
             hevyWorkouts: trimmedHevyWorkouts,
@@ -3374,7 +3217,7 @@ function App() {
     };
     const timeoutId = setTimeout(saveData, 2000); // debounce 2s au lieu de 500ms
     return () => clearTimeout(timeoutId);
-  }, [healthLogs, user, isWithingsEnabled, isStravaEnabled, isHuaweiEnabled, dataSourcePrefs, stravaLogs, hevyWorkouts, goals]);
+  }, [healthLogs, user, isWithingsEnabled, isStravaEnabled, dataSourcePrefs, stravaLogs, hevyWorkouts, goals]);
 
   const handleLogin = async (email, password) => {
     try {
@@ -3597,7 +3440,7 @@ function App() {
       case 'health': return <HealthTracker user={user} db={db} healthLogs={healthLogs} setHealthLogs={demoSetHealthLogs} isSyncingWithings={isSyncingWithings} onWithingsSync={demoWithingsSync} goals={goals} isDemo={isDemo} onAddWater={(amount) => { handleAddWater(amount); }} onOpenWaterModal={() => setShowWaterModal(true)} />;
       case 'endurance': return <EnduranceView stravaLogs={stravaLogs} onSync={demoStravaSync} isSyncing={isSyncingStrava} isDemo={isDemo} />;
       case 'nutrition': return <NutritionImport user={user} db={db} isDemo={isDemo} demoNutritionDocs={isDemo ? DEMO_DATA.nutritionDocs : null} goals={goals} healthLogs={healthLogs} nutritionVersion={nutritionVersion} />;
-      case 'settings': return <SettingsView user={user} db={db} isWithingsEnabled={isDemo || isWithingsEnabled} handleWithingsAuth={isDemo ? demoNoOp : handleStartWithingsAuth} isStravaEnabled={isDemo || isStravaEnabled} handleStravaAuth={isDemo ? demoNoOp : handleStartStravaAuth} isHuaweiEnabled={isDemo || isHuaweiEnabled} handleHuaweiAuth={isDemo ? demoNoOp : handleStartHuaweiAuth} huaweiNeedsReconnect={huaweiNeedsReconnect} withingsNeedsReconnect={false} hevyApiKey={hevyApiKey} onSaveHevyApiKey={isDemo ? demoNoOp : saveHevyApiKey} goals={goals} setGoals={demoSetGoals} dataSourcePrefs={dataSourcePrefs} setDataSourcePrefs={setDataSourcePrefs} connectedSources={connectedSources} isDemo={isDemo} setNutritionVersion={setNutritionVersion} />;
+      case 'settings': return <SettingsView user={user} db={db} isWithingsEnabled={isDemo || isWithingsEnabled} handleWithingsAuth={isDemo ? demoNoOp : handleStartWithingsAuth} isStravaEnabled={isDemo || isStravaEnabled} handleStravaAuth={isDemo ? demoNoOp : handleStartStravaAuth} withingsNeedsReconnect={false} hevyApiKey={hevyApiKey} onSaveHevyApiKey={isDemo ? demoNoOp : saveHevyApiKey} goals={goals} setGoals={demoSetGoals} dataSourcePrefs={dataSourcePrefs} setDataSourcePrefs={setDataSourcePrefs} connectedSources={connectedSources} isDemo={isDemo} setNutritionVersion={setNutritionVersion} />;
       default: return <div className="flex items-center justify-center h-64 text-slate-500">Chargement...</div>;
     }
   };
