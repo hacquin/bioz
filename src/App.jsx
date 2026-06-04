@@ -12,7 +12,7 @@ import ReactECharts from 'echarts-for-react';
 // --- FIREBASE IMPORTS ---
 import { initializeApp } from "firebase/app";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, setPersistence, browserLocalPersistence } from "firebase/auth";
-import { getFirestore, doc, setDoc, onSnapshot, getDoc, initializeFirestore } from "firebase/firestore";
+import { getFirestore, doc, setDoc, onSnapshot, getDoc, getDocs, collection, query, orderBy, limit, initializeFirestore } from "firebase/firestore";
 
 import biozLogo from './BIOZ.png';
 import corpsHomme from './corps-homme-blanc.png';
@@ -876,26 +876,108 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings,
     const f = (v) => v != null ? v : '—';
     const fDelta = (v) => v != null ? (v > 0 ? `+${v}` : `${v}`) : '—';
 
-    const systemPrompt = `Tu es un coach santé expert en composition corporelle et nutrition cétogène. Ton interlocuteur est un homme de 55 ans, 1m74, en régime cétogène.
+    // --- Données wearables (Fitbit / Google Health) : activité, sommeil, récupération, métabolique ---
+    let act = null;
+    try {
+      const wSnap = await getDocs(query(collection(db, 'users', user.uid, 'fitbitDaily'), orderBy('date', 'desc'), limit(35)));
+      const wDocs = wSnap.docs.map((d) => d.data()).filter((d) => d.date);
+      // Moyennes en excluant le jour en cours (bilan généré le matin)
+      const wIn = (n) => wDocs.filter((l) => { const age = (now - new Date(l.date)) / 86400000; return age >= 1 && age <= n; });
+      const w7 = wIn(7), w30 = wIn(30);
+      const wAvg = (logs, key) => { const v = logs.filter((l) => l[key] != null).map((l) => l[key]); return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) : null; };
+      const sleepMin = wAvg(w7, 'sleepMainMin');
+      act = {
+        steps7: wAvg(w7, 'steps'), steps30: wAvg(w30, 'steps'),
+        active7: wAvg(w7, 'activeKcal'),
+        intake7: wAvg(w7, 'kcalIntake'),
+        sleep7: sleepMin != null ? `${Math.floor(sleepMin / 60)}h${String(sleepMin % 60).padStart(2, '0')}` : null,
+        hrv7: wAvg(w7, 'hrvAvgMs'), hrv30: wAvg(w30, 'hrvAvgMs'),
+        rhr7: wAvg(w7, 'rhrBpm'),
+        spo2: wAvg(w7, 'spo2AvgPct'),
+        glucose7: wAvg(w7, 'glucoseAvgMgDl'), glucose30: wAvg(w30, 'glucoseAvgMgDl'),
+      };
+      if (act.intake7 != null && ind.bmr != null && act.active7 != null) {
+        act.balance7 = act.intake7 - (ind.bmr + act.active7);
+      }
+    } catch (e) { console.error('Erreur lecture wearables pour bilan IA', e); }
+
+    // --- Données sport : séances cardio (Strava) + muscu (Hevy), depuis le doc utilisateur ---
+    let sport = null;
+    try {
+      const uSnap = await getDoc(doc(db, 'users', user.uid));
+      const udata = uSnap.exists() ? uSnap.data() : {};
+      const strava = Array.isArray(udata.stravaLogs) ? udata.stravaLogs : [];
+      const hevy = Array.isArray(udata.hevyWorkouts) ? udata.hevyWorkouts : [];
+      const inDays = (dateStr, n) => { if (!dateStr) return false; const age = (now - new Date(dateStr)) / 86400000; return age >= 0 && age <= n; };
+      const s7 = strava.filter((a) => inDays(a.start_date, 7));
+      const s30 = strava.filter((a) => inDays(a.start_date, 30));
+      const h7 = hevy.filter((w) => inDays(w.start_time, 7));
+      const h30 = hevy.filter((w) => inDays(w.start_time, 30));
+      const byType = {};
+      s7.forEach((a) => { const t = a.type || 'Autre'; byType[t] = (byType[t] || 0) + 1; });
+      sport = {
+        cardio7: s7.length, cardio30: s30.length,
+        cardioKm7: Math.round(s7.reduce((t, a) => t + (a.distance || 0), 0) / 1000),
+        cardioMin7: Math.round(s7.reduce((t, a) => t + (a.moving_time || 0), 0) / 60),
+        cardioTypes: Object.entries(byType).map(([t, n]) => `${n}×${t}`).join(', ') || null,
+        muscu7: h7.length, muscu30: h30.length,
+      };
+    } catch (e) { console.error('Erreur lecture sport pour bilan IA', e); }
+
+    const systemPrompt = `Tu es un coach santé GLOBAL expert en composition corporelle, activité physique, sport, sommeil et récupération. Ton interlocuteur est un homme de 55 ans, 1m74, qui suit un régime LOW-CARB (glucides modérés et maîtrisés, PAS de cétose stricte recherchée).
 
 TON : Direct, pince-sans-rire, une seule vanne max par bilan. Tu salues les vrais progrès et tu dis franchement quand ça stagne.
 
+CHAMP D'ANALYSE — tu analyses l'ENSEMBLE des paramètres, pas seulement la composition ou le régime :
+1) Composition & morphologie (poids, graisse, muscle, tour de taille, viscérale)
+2) Cardio-vasculaire (tension, FC repos, onde de pouls, âge vasculaire)
+3) Sport & entraînement (séances cardio Strava et muscu Hevy : fréquence, volume, type)
+4) Activité quotidienne & dépense (pas, énergie active, balance énergétique apport/dépense)
+5) Sommeil & récupération (durée de sommeil, VFC nocturne, FC repos)
+6) Métabolique (glycémie, SpO2)
+Fais des LIENS entre ces dimensions (ex : charge d'entraînement élevée + VFC en baisse → surmenage/récup à surveiller ; déficit énergétique soutenu → perte de poids ; régularité sportive → composition qui s'améliore ; manque de séances → stagnation).
+
 RÈGLES D'ANALYSE :
-- Analyse UNIQUEMENT les deltas pré-calculés fournis. Ne refais pas les calculs.
-- Un delta 7j montre une tendance court terme. Un delta 30j montre une tendance de fond. Priorise le 30j.
+- Analyse UNIQUEMENT les valeurs et deltas pré-calculés fournis. Ne refais pas les calculs.
+- Un delta 7j = tendance court terme, un delta 30j = tendance de fond. Priorise le 30j.
 - Impédancemétrie : si hydratation < 55%, les mesures de graisse et muscle sont FAUSSÉES (graisse surestimée, muscle sous-estimé). Mentionne-le.
-- Priorités dans l'ordre : 1) tour de taille (graisse viscérale), 2) poids, 3) composition (graisse/muscle).
-- La perte de muscle n'est PAS alarmante si la graisse baisse aussi (remodelage normal en perte de poids).
-- PWV > 9 m/s ou FC repos > 80 bpm méritent un commentaire. Sinon, ne parle pas du cardio.
+- Régime LOW-CARB : vise des glucides modérés et une glycémie stable ; ne parle PAS de cétose profonde ni de GKI.
+- Sport : valorise la régularité et le volume ; signale une charge en forte hausse couplée à une VFC en baisse (surmenage) ou au contraire un manque d'entraînement qui peut expliquer une stagnation.
+- Composition : priorité 1) tour de taille (graisse viscérale), 2) poids, 3) graisse/muscle. La perte de muscle n'est PAS alarmante si la graisse baisse aussi.
+- Signale ce qui sort de l'ordinaire : PWV > 9 m/s, FC repos > 80 bpm, VFC en baisse marquée vs 30j, SpO2 < 90%, sommeil < 6h, balance énergétique fortement positive. Ne commente pas un paramètre normal et stable.
 - Ignore les données du jour en cours (bilan généré le matin).
 
 FORMAT STRICT (zéro markdown, zéro tiret, zéro étoile, prose uniquement) :
 [BILAN]
-3-4 phrases factuelles : ce qui progresse, ce qui stagne, ce qui régresse. Cite les chiffres de delta.
+4-5 phrases factuelles couvrant les dimensions pertinentes (composition, sport/activité, sommeil-récup, métabolique). Cite les chiffres clés.
 [ALERTES]
-0 à 2 alertes courtes si nécessaire (déshydratation, stagnation >2 semaines, valeur cardio anormale). Si rien d'alarmant, écris "Rien à signaler."
+0 à 3 alertes courtes si nécessaire (déshydratation, stagnation >2 semaines, anomalie cardio, récup dégradée, sommeil insuffisant, surmenage). Si rien d'alarmant, écris "Rien à signaler."
 [ACTIONS]
-2-3 recommandations concrètes et actionnables pour les prochains jours.`;
+2-3 recommandations concrètes et actionnables couvrant si possible nutrition, sport/activité ET récupération.`;
+
+    const sportSection = sport ? `
+
+SPORT & ENTRAÎNEMENT (7j | 30j) :
+Séances cardio (Strava) : ${sport.cardio7} | ${sport.cardio30}${sport.cardioTypes ? ` (${sport.cardioTypes})` : ''}
+Volume cardio 7j : ${sport.cardioKm7} km, ${sport.cardioMin7} min
+Séances muscu (Hevy) : ${sport.muscu7} | ${sport.muscu30}` : '';
+
+    const activitySection = act ? `
+
+ACTIVITÉ & DÉPENSE (moyennes 7j | 30j) :
+Pas : ${f(act.steps7)} | ${f(act.steps30)} /jour
+Énergie active : ${f(act.active7)} kcal/jour
+Apport calorique : ${f(act.intake7)} kcal/jour
+Balance énergétique : ${act.balance7 != null ? fDelta(act.balance7) : '—'} kcal/jour (apport − dépense BMR+actif ; négatif = déficit)
+
+SOMMEIL & RÉCUPÉRATION (moyennes 7j) :
+Durée de sommeil : ${f(act.sleep7)}
+VFC nocturne : ${f(act.hrv7)} ms (30j : ${f(act.hrv30)})
+FC repos (montre) : ${f(act.rhr7)} bpm
+
+MÉTABOLIQUE :
+Glycémie : ${f(act.glucose7)} mg/dL (30j : ${f(act.glucose30)})
+SpO2 nocturne : ${f(act.spo2)}%` : '';
 
     const userMessage = `Bilan du ${new Date().toLocaleDateString('fr-FR')}
 
@@ -918,7 +1000,7 @@ Vitesse onde de pouls : ${f(ind.cardio.pwv)} m/s
 Âge vasculaire : ${f(ind.cardio.vascAge)} ans
 
 MÉTABOLISME :
-BMR : ${f(ind.bmr)} kcal`;
+BMR : ${f(ind.bmr)} kcal${sportSection}${activitySection}`;
 
     try {
       const response = await fetch('/claude_proxy.php', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ system: systemPrompt, messages: [{ role: 'user', content: userMessage }] }) });
@@ -1172,9 +1254,17 @@ BMR : ${f(ind.bmr)} kcal`;
             const match = aiBilan.match(regex);
             return match ? match[1].split('\n').map(l => clean(l)).filter(Boolean) : [];
           };
-          const bilanLines = extractSection('BILAN');
+          let bilanLines = extractSection('BILAN');
           const alertLines = extractSection('ALERTES');
           const actionLines = extractSection('ACTIONS').length > 0 ? extractSection('ACTIONS') : extractSection('CONSEILS');
+          // Robustesse : si le modèle n'a pas respecté le format [BILAN]/[ALERTES]/[ACTIONS]
+          // (Claude ajoute parfois ses propres titres), on affiche le texte brut nettoyé
+          // dans la carte principale plutôt qu'une carte vide.
+          if (bilanLines.length === 0 && alertLines.length === 0 && actionLines.length === 0) {
+            bilanLines = aiBilan
+              .replace(/\[(?:BILAN|ALERTES|ACTIONS|CONSEILS|SYNTH[ÈE]SE)\]/gi, '\n')
+              .split('\n').map((l) => clean(l)).filter(Boolean);
+          }
 
           return (
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">

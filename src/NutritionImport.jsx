@@ -551,26 +551,34 @@ export default function NutritionImport({ user, db, isDemo, demoNutritionDocs, g
     setCoachError('');
     try {
       const todayMacros = {
+        calories: Math.round(todayData?.calories || 0),
         glucides: Math.round(carbs),
         lipides: Math.round(fat),
         proteines: Math.round(protein),
         objectifs: { glucides: targets.carbs, lipides: targets.fat, proteines: targets.protein, calories: targets.calories },
       };
+      const repas = {
+        petitDej: Math.round(todayData?.petitDej || 0),
+        dejeuner: Math.round(todayData?.dejeuner || 0),
+        diner: Math.round(todayData?.diner || 0),
+        encas: Math.round(todayData?.encas || 0),
+      };
       const weekly = weeklyData.map(d => ({ jour: d.day, date: d.date, calories: d.calories, glucides: d.carbs, lipides: d.fat, proteines: d.protein }));
-      const keto = { glucose: latestGlucose, cetones: latestKetones, gki: latestGKI };
+      const glycemie = { glucose: latestGlucose, cetones: latestKetones, gki: latestGKI };
 
-      const systemPrompt = "Tu es un coach nutrition expert en régime cétogène. Tu donnes des avis personnalisés, directs, motivants et concrets. Tu réponds toujours en français.";
-      const userMessage = `Analyse ces données nutritionnelles et donne un avis personnalisé en exactement 4 phrases courtes et percutantes.
+      const systemPrompt = "Tu es un coach nutrition expert en alimentation LOW-CARB (glucides modérés et maîtrisés, PAS de cétose stricte recherchée). Tu donnes des avis personnalisés, directs, motivants et concrets, toujours en français. Tu analyses finement la RÉPARTITION des repas (petit-déjeuner, déjeuner, dîner, encas), l'équilibre des macros et leur évolution sur la semaine.";
+      const userMessage = `Analyse ces données nutritionnelles et donne un avis personnalisé, concret et actionnable.
 
-Données du jour : ${JSON.stringify(todayMacros)}
-Données de la semaine : ${JSON.stringify(weekly)}
-Données cétogène : ${JSON.stringify(keto)}
+Macros du jour : ${JSON.stringify(todayMacros)}
+Répartition par repas (kcal) : ${JSON.stringify(repas)}
+Évolution de la semaine : ${JSON.stringify(weekly)}
+Glycémie / cétones : ${JSON.stringify(glycemie)}
 
 Règles :
-- Exactement 4 phrases, pas plus, pas moins
-- Sois direct, motivant et concret
-- Mentionne les points positifs ET les axes d'amélioration
-- Adapte tes conseils au régime cétogène`;
+- Régime LOW-CARB : objectif glucides modérés et glycémie stable, PAS de recherche de cétose profonde ni de GKI.
+- Analyse la RÉPARTITION des repas : équilibre petit-déj / déjeuner / dîner, place des encas, et timing si pertinent.
+- Mentionne les points positifs ET des axes d'amélioration concrets (ex : déplacer des glucides vers le midi, renforcer les protéines au petit-déj, alléger le dîner…).
+- 4 à 6 phrases courtes et percutantes, va à l'essentiel.`;
 
       const res = await fetch('/claude_proxy.php', {
         method: 'POST',
