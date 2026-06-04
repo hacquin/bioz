@@ -522,28 +522,6 @@ function FcReposCard({ daily, timeFrame, anchorDate, setAnchorDate }) {
         step={mode === 'day' ? 1 : mode === 'week' ? 7 : 30}
       />
 
-      {/* Stat header */}
-      <div className="mt-4">
-        <div className="flex items-baseline gap-2">
-          <span className="text-3xl font-bold text-slate-100 tabular-nums">
-            {displayValue != null ? displayValue : '—'}
-          </span>
-          <span className="text-xs font-semibold text-slate-400">bpm</span>
-          <SourceChip src={valueSrc} />
-          {qualif && (
-            <span
-              className="ml-1 px-2 py-0.5 text-[10px] font-bold rounded text-white"
-              style={{ backgroundColor: qualif.color }}
-            >
-              {qualif.emoji} {qualif.label}
-            </span>
-          )}
-        </div>
-        <div className="text-xs text-slate-500 mt-0.5">
-          {mode === 'day' ? 'Dernière mesure' : mode === 'week' ? 'Moyenne semaine' : 'Moyenne mois'}
-        </div>
-      </div>
-
       {/* Charte : aire+tendance en jour/sem, barres en mois */}
       <div className="mt-4 h-56">
         <ResponsiveContainer width="100%" height="100%">
@@ -573,8 +551,22 @@ function FcReposCard({ daily, timeFrame, anchorDate, setAnchorDate }) {
         </ResponsiveContainer>
       </div>
 
-      {periodValues.length === 0 && (
-        <div className="text-center text-xs text-slate-500 mt-2">Pas de mesure sur cette période</div>
+      {displayValue != null ? (
+        <div className="mt-3 flex items-center justify-between text-xs flex-wrap gap-2">
+          <span className="text-slate-400">
+            {mode === 'day' ? 'Dernière valeur' : mode === 'week' ? 'Moyenne semaine' : 'Moyenne mois'} : <span className="font-bold" style={{ color: BAR_COLOR }}>{displayValue} bpm</span>
+          </span>
+          <div className="flex items-center gap-1.5">
+            <SourceChip src={valueSrc} />
+            {qualif && (
+              <span className="font-semibold px-2 py-0.5 rounded-full" style={{ backgroundColor: `${qualif.color}22`, color: qualif.color }}>
+                {qualif.emoji} {qualif.label}
+              </span>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="text-center text-xs text-slate-500 mt-3">Pas de mesure sur cette période</div>
       )}
     </div>
   );
@@ -1117,7 +1109,6 @@ function VfcView({ daily, baseline, anchorDate, setAnchorDate, mode }) {
   }, [mode, anchorDate, daily, days]);
   const rangeMin = baseline?.hrvRangeMinMs ?? null;
   const rangeMax = baseline?.hrvRangeMaxMs ?? null;
-  const baselineVal = baseline?.hrvBaselineMs ?? null;
 
   const zoneLabel = (() => {
     if (focusValue == null || rangeMin == null || rangeMax == null) return null;
@@ -1130,12 +1121,6 @@ function VfcView({ daily, baseline, anchorDate, setAnchorDate, mode }) {
     day: 'Moy. der. nuit',
     week: 'Moyenne semaine',
     month: 'Moyenne mois',
-  };
-
-  const phraseByZone = {
-    normal: 'La VFC se situe dans la fourchette normale. Continue comme prévu.',
-    below_normal: 'VFC sous la fourchette normale — prends du repos.',
-    above_normal: 'VFC au-dessus de la fourchette — excellente récup.',
   };
 
   const navLabel = (() => {
@@ -1154,34 +1139,6 @@ function VfcView({ daily, baseline, anchorDate, setAnchorDate, mode }) {
         title="VFC nocturne"
         step={mode === 'day' ? 1 : mode === 'week' ? 7 : 30}
       />
-
-      {/* Header gauge */}
-      <div className="grid grid-cols-3 gap-3 mt-4 items-start">
-        <div>
-          <div className="text-[10px] uppercase tracking-wide text-slate-400">Plage</div>
-          <div className="text-base font-bold" style={{ color: evalColor(zoneLabel) }}>
-            {zoneLabel ? evalLabelFr(zoneLabel) : '—'}
-          </div>
-        </div>
-        <div>
-          <div className="text-[10px] uppercase tracking-wide text-slate-400">{labelByMode[mode]}</div>
-          <div className="text-base font-bold text-slate-100 flex items-center gap-1.5">
-            {focusValue != null ? `${Math.round(focusValue)} ms` : '—'}
-            <SourceChip src={valueSrc} />
-          </div>
-          <HrvGauge value={focusValue} min={rangeMin} max={rangeMax} />
-        </div>
-        <div>
-          <div className="text-[10px] uppercase tracking-wide text-slate-400">Plage normale</div>
-          <div className="text-base font-bold text-slate-100">
-            {rangeMin != null && rangeMax != null ? `${rangeMin}-${rangeMax} ms` : '—'}
-          </div>
-        </div>
-      </div>
-
-      {zoneLabel && (
-        <p className="mt-3 text-sm text-slate-300">{phraseByZone[zoneLabel]}</p>
-      )}
 
       {/* Charte : aire en jour/sem, barres en mois — avec la zone normale en fond */}
       <div className="mt-4 h-56">
@@ -1214,45 +1171,23 @@ function VfcView({ daily, baseline, anchorDate, setAnchorDate, mode }) {
         </ResponsiveContainer>
       </div>
 
-      {baselineVal != null && (
-        <div className="mt-2 text-[11px] text-slate-500 text-center">
-          Zone grise = fourchette normale · Baseline {baselineVal} ms
+      {focusValue != null ? (
+        <div className="mt-3 flex items-center justify-between text-xs flex-wrap gap-2">
+          <span className="text-slate-400">
+            {labelByMode[mode]} : <span className="font-bold" style={{ color: '#22d3ee' }}>{Math.round(focusValue)} ms</span>
+          </span>
+          <div className="flex items-center gap-1.5">
+            <SourceChip src={valueSrc} />
+            {zoneLabel && (
+              <span className="font-semibold px-2 py-0.5 rounded-full" style={{ backgroundColor: `${evalColor(zoneLabel)}22`, color: evalColor(zoneLabel) }}>
+                {evalLabelFr(zoneLabel)}
+              </span>
+            )}
+          </div>
         </div>
+      ) : (
+        <div className="text-center text-xs text-slate-500 mt-3">Pas de mesure sur cette période</div>
       )}
-    </div>
-  );
-}
-
-// Gauge mini : barre orange-vert-orange + curseur sur la position de `value`
-function HrvGauge({ value, min, max }) {
-  if (value == null || min == null || max == null) return null;
-  const padding = (max - min) * 0.5;
-  const total = max - min + 2 * padding;
-  const pct = Math.max(0, Math.min(1, (value - (min - padding)) / total));
-
-  return (
-    <div className="mt-1 relative h-2">
-      <div
-        className="absolute inset-0 rounded-full"
-        style={{
-          background: `linear-gradient(to right,
-            ${COLORS.hrvBelow} 0%,
-            ${COLORS.hrvBelow} ${(padding / total) * 100}%,
-            ${COLORS.hrvNormal} ${(padding / total) * 100}%,
-            ${COLORS.hrvNormal} ${((padding + (max - min)) / total) * 100}%,
-            ${COLORS.hrvBelow} ${((padding + (max - min)) / total) * 100}%,
-            ${COLORS.hrvBelow} 100%)`,
-        }}
-      />
-      <div
-        className="absolute -top-1 w-0 h-0"
-        style={{
-          left: `calc(${pct * 100}% - 4px)`,
-          borderLeft: '4px solid transparent',
-          borderRight: '4px solid transparent',
-          borderTop: '5px solid #f8fafc',
-        }}
-      />
     </div>
   );
 }
