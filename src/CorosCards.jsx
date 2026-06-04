@@ -9,13 +9,14 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   collection,
   doc,
+  getDoc,
   onSnapshot,
   query,
   orderBy,
   limit,
 } from 'firebase/firestore';
 import {
-  Moon, Heart, Info, ChevronLeft, ChevronRight, RefreshCw, AlertCircle,
+  Moon, Heart, Info, ChevronLeft, ChevronRight, RefreshCw, AlertCircle, Scale,
 } from 'lucide-react';
 import {
   LineChart, Line, BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -327,6 +328,153 @@ const qualifyRhr = (bpm) => {
 };
 
 // =============================================================================
+//  Carte Balance énergétique — absorbé (nutrition) vs dépensé (BMR + actif)
+// =============================================================================
+
+// Intake "Cronometer" (collection nutrition) par date — prioritaire sur le
+// kcalIntake Google Health déjà présent dans `daily`. Fetch borné à la plage.
+function useIntakeData(user, db, days) {
+  const [intake, setIntake] = useState({});
+  const daysKey = days.join('|');
+  useEffect(() => {
+    if (!user || !db || days.length === 0) { setIntake({}); return; }
+    let cancelled = false;
+    (async () => {
+      const map = {};
+      for (const key of days) {
+        try {
+          const snap = await getDoc(doc(db, 'users', user.uid, 'nutrition', key));
+          if (snap.exists() && snap.data().calories != null) map[key] = snap.data().calories;
+        } catch { /* ignore */ }
+      }
+      if (!cancelled) setIntake(map);
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, db, daysKey]);
+  return intake;
+}
+
+// Fléau de balance en SVG : penche du côté le plus "lourd".
+// diff = dépensé − absorbé : >0 → déficit (le plateau Dépensé descend).
+function BalanceScale({ inKcal, outKcal }) {
+  const diff = (outKcal || 0) - (inKcal || 0);
+  const MAX_DEG = 15;
+  const angle = Math.max(-MAX_DEG, Math.min(MAX_DEG, (diff / 800) * MAX_DEG));
+  const rad = (angle * Math.PI) / 180;
+  const cx = 150, cy = 58, L = 110, S = 18, baseY = 170;
+  const cos = Math.cos(rad), sin = Math.sin(rad);
+  const lx = cx - L * cos, ly = cy - L * sin;   // gauche : Absorbé
+  const rx = cx + L * cos, ry = cy + L * sin;   // droite : Dépensé
+  const IN_COLOR = '#34d399', OUT_COLOR = '#fb923c';
+  const pan = (x, y, color, value, label) => (
+    <g key={label}>
+      <line x1={x} y1={y} x2={x} y2={y + S} stroke="#64748b" strokeWidth={1.5} />
+      <path d={`M ${x - 32} ${y + S} Q ${x} ${y + S + 24} ${x + 32} ${y + S}`}
+        fill={`${color}22`} stroke={color} strokeWidth={3} strokeLinecap="round" />
+      <text x={x} y={y + S + 44} textAnchor="middle" fill={color} fontSize={16} fontWeight="700">{value}</text>
+      <text x={x} y={y + S + 58} textAnchor="middle" fill="#94a3b8" fontSize={9}>{label}</text>
+    </g>
+  );
+  return (
+    <svg viewBox="0 0 300 200" className="w-full" style={{ maxHeight: 200 }} role="img" aria-label="Balance énergétique">
+      <line x1={122} y1={baseY} x2={178} y2={baseY} stroke="#475569" strokeWidth={3} strokeLinecap="round" />
+      <path d={`M 138 ${baseY} L ${cx} ${cy} L 162 ${baseY} Z`} fill="#334155" />
+      <line x1={lx} y1={ly} x2={rx} y2={ry} stroke="#cbd5e1" strokeWidth={4} strokeLinecap="round" />
+      <circle cx={cx} cy={cy} r={5} fill="#94a3b8" />
+      {pan(lx, ly, IN_COLOR, inKcal != null ? Math.round(inKcal) : '—', 'ABSORBÉ')}
+      {pan(rx, ry, OUT_COLOR, outKcal != null ? Math.round(outKcal) : '—', 'DÉPENSÉ')}
+    </svg>
+  );
+}
+
+function BalanceCard({ daily, healthLogs, user, db, timeFrame, anchorDate, setAnchorDate }) {
+  const mode = timeFrame;
+  const range = useMemo(() => getPeriodRange(mode, anchorDate), [mode, anchorDate]);
+  const days = useMemo(() => daysInRange(range.start, range.end), [range]);
+  const cronoIntake = useIntakeData(user, db, days);
+
+  // BMR : dernière valeur connue (balance Withings), ~constante sur la période.
+  const bmr = useMemo(() => {
+    const logs = (healthLogs || []).filter((l) => l.bmr != null);
+    if (!logs.length) return null;
+    logs.sort((a, b) => (a.date < b.date ? 1 : -1));
+    return logs[0].bmr;
+  }, [healthLogs]);
+
+  // Par jour : intake (Cronometer prioritaire, sinon Google Health) + dépense (BMR + actif).
+  const perDay = useMemo(() => days.map((k) => {
+    const intake = cronoIntake[k] ?? daily[k]?.kcalIntake ?? null;
+    const active = daily[k]?.activeKcal ?? null;
+    return { date: k, intake, expend: bmr != null ? bmr + (active || 0) : null };
+  }), [days, cronoIntake, daily, bmr]);
+
+  let inKcal, outKcal;
+  if (mode === 'day') {
+    const d = perDay.find((p) => p.date === localDateKey(anchorDate));
+    inKcal = d?.intake ?? null;
+    outKcal = d?.expend ?? null;
+  } else {
+    inKcal = avg(perDay.map((p) => p.intake));
+    outKcal = avg(perDay.filter((p) => p.intake != null).map((p) => p.expend));
+  }
+
+  const net = (inKcal != null && outKcal != null) ? inKcal - outKcal : null; // >0 surplus
+  let status = null;
+  if (net != null) {
+    if (net <= -150) status = { txt: `Déficit ${Math.round(-net)} kcal`, color: '#34d399' };
+    else if (net >= 150) status = { txt: `Surplus ${Math.round(net)} kcal`, color: '#fb923c' };
+    else status = { txt: 'Équilibre', color: '#94a3b8' };
+  }
+
+  const navLabel = (() => {
+    if (mode === 'day') return fmtDateFr(anchorDate, { weekday: 'long', day: 'numeric', month: 'long' });
+    if (mode === 'week') return `${fmtDateFr(range.start, { day: 'numeric', month: 'short' })} – ${fmtDateFr(range.end, { day: 'numeric', month: 'short' })}`;
+    return fmtYearMonth(anchorDate);
+  })();
+  const footerLabel = mode === 'day' ? 'Bilan du jour' : mode === 'week' ? 'Moy./jour (semaine)' : 'Moy./jour (mois)';
+
+  return (
+    <div className="bg-slate-800 rounded-xl p-4 border border-slate-700 h-full flex flex-col">
+      <DayNavigator
+        anchorDate={anchorDate}
+        setAnchorDate={setAnchorDate}
+        label={navLabel}
+        icon={<Scale size={18} className="text-emerald-400" />}
+        title="Balance énergétique"
+        step={mode === 'day' ? 1 : mode === 'week' ? 7 : 30}
+      />
+
+      {bmr == null ? (
+        <div className="flex-1 flex items-center justify-center text-center text-sm text-slate-500 mt-4 px-2">
+          BMR manquant — ajoute une mesure de composition (balance Withings) pour calculer la dépense totale.
+        </div>
+      ) : inKcal == null ? (
+        <div className="flex-1 flex items-center justify-center text-center text-sm text-slate-500 mt-4 px-2">
+          Pas de données nutrition sur cette période.
+        </div>
+      ) : (
+        <>
+          <div className="flex-1 flex items-center justify-center mt-1">
+            <BalanceScale inKcal={inKcal} outKcal={outKcal} />
+          </div>
+          <div className="mt-1 flex items-center justify-between text-xs flex-wrap gap-2">
+            <span className="text-slate-400">
+              {footerLabel} · dépense {Math.round(bmr)} BMR + {Math.round((outKcal || 0) - bmr)} actif
+            </span>
+            {status && (
+              <span className="font-semibold px-2 py-0.5 rounded-full" style={{ backgroundColor: `${status.color}22`, color: status.color }}>
+                {status.txt}
+              </span>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// =============================================================================
 //  Composant racine : section "Récupération & Sommeil"
 // =============================================================================
 
@@ -338,7 +486,7 @@ const qualifyRhr = (bpm) => {
 // Les états loading / error / empty sont aussi col-span-full pour rester lisibles.
 // Ordre par défaut du groupe "wearables" (Coros + Fitbit), réordonnable par drag.
 const WEARABLE_DEFAULT_ORDER = [
-  'h_corosBilan', 'h_corosSommeil', 'h_corosVfc', 'h_corosFcRepos', ...FITBIT_CARD_IDS,
+  'h_corosBilan', 'h_corosSommeil', 'h_corosVfc', 'h_corosFcRepos', 'h_energyBalance', ...FITBIT_CARD_IDS,
 ];
 const WEARABLE_ORDER_KEY = 'bioz_wearableCardOrder';
 
@@ -430,6 +578,7 @@ export function CorosSection({ user, db, timeFrame, healthLogs, hiddenCards = []
     h_corosSommeil: <SommeilCard daily={daily} baseline={baseline} timeFrame={timeFrame} anchorDate={anchorDate} setAnchorDate={setAnchorDate} />,
     h_corosVfc: <VfcCard daily={daily} baseline={baseline} timeFrame={timeFrame} anchorDate={anchorDate} setAnchorDate={setAnchorDate} />,
     h_corosFcRepos: <FcReposCard daily={daily} timeFrame={timeFrame} anchorDate={anchorDate} setAnchorDate={setAnchorDate} />,
+    h_energyBalance: <BalanceCard daily={daily} healthLogs={healthLogs} user={user} db={db} timeFrame={timeFrame} anchorDate={anchorDate} setAnchorDate={setAnchorDate} />,
   };
   for (const id of FITBIT_CARD_IDS) {
     content[id] = <FitbitCard id={id} fitbitDaily={fitbitDaily} timeFrame={timeFrame} anchorDate={anchorDate} setAnchorDate={setAnchorDate} />;
