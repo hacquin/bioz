@@ -104,6 +104,38 @@ function buildGaugeOption(value, min, max, splitNumber, color, formatter, revers
   };
 }
 
+// --- TREND BUILDER (courbe d'évolution hebdo d'un macro, façon mini-carte Google) ---
+function buildTrendOption(days, values, color, fade, unit) {
+  return {
+    backgroundColor: 'transparent',
+    tooltip: {
+      trigger: 'axis',
+      backgroundColor: '#1e293b', borderColor: '#334155',
+      textStyle: { color: '#f1f5f9', fontSize: 12 },
+      formatter: (ps) => `<b>${days[ps[0].dataIndex]}</b><br/>${Math.round(ps[0].value)} ${unit}`,
+    },
+    grid: { top: 24, right: 14, bottom: 26, left: 38 },
+    xAxis: {
+      type: 'category', data: days, boundaryGap: false,
+      axisLine: { lineStyle: { color: '#475569' } }, axisTick: { show: false },
+      axisLabel: { color: '#94a3b8', fontSize: 13, fontWeight: 600 },
+    },
+    yAxis: {
+      type: 'value', min: 0,
+      axisLabel: { color: '#64748b', fontSize: 11 },
+      splitLine: { lineStyle: { color: '#334155', type: 'dashed' } },
+      axisLine: { show: false }, axisTick: { show: false },
+    },
+    series: [{
+      type: 'line', data: values, smooth: true, symbol: 'circle', symbolSize: 7,
+      lineStyle: { color, width: 3 },
+      itemStyle: { color, borderColor: '#0f172a', borderWidth: 2 },
+      areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: color + '55' }, { offset: 1, color: fade }] } },
+      label: { show: true, position: 'top', color: '#f1f5f9', fontSize: 10, fontWeight: 600, formatter: (p) => Math.round(p.value) },
+    }],
+  };
+}
+
 // --- SECTION HEADER ---
 function SectionHeader({ title }) {
   return (
@@ -163,7 +195,7 @@ export default function NutritionImport({ user, db, isDemo, demoNutritionDocs, g
   const [ketoDragId, setKetoDragId] = useState(null);
   const [ketoDropTargetId, setKetoDropTargetId] = useState(null);
 
-  const MACRO_DEFAULT = ['n_carbs', 'n_fat', 'n_protein', 'n_weeklyMacros', 'n_weeklyCalories'];
+  const MACRO_DEFAULT = ['n_carbs', 'n_fat', 'n_protein', 'n_trendCarbs', 'n_trendFat', 'n_trendProtein', 'n_weeklyMacros', 'n_weeklyCalories'];
   const KETO_DEFAULT = ['n_ketones', 'n_glucose', 'n_gki', 'n_ketoChart'];
 
   const [macroCardOrder, setMacroCardOrder] = useState(() => {
@@ -333,6 +365,34 @@ export default function NutritionImport({ user, db, isDemo, demoNutritionDocs, g
         <p className={`text-xs font-semibold text-center ${protStatus.cls}`}>{protStatus.text}</p>
       </>
     ),
+
+    // TENDANCES HEBDO PAR MACRO (courbes d'évolution, façon mini-carte Google)
+    ...(() => {
+      const days = weeklyData.map(d => d.day);
+      const mk = (title, key, unit, color, fade) => {
+        const values = weeklyData.map(d => Math.round(d[key] || 0));
+        const today = values[values.length - 1] || 0;
+        return (
+          <>
+            <div className="flex items-baseline gap-2 mb-0">
+              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">{title}</h3>
+              <span className="text-[10px] text-slate-500">— évolution 7 j</span>
+            </div>
+            <p className="text-2xl font-bold text-slate-100 leading-none mt-1">
+              {today} <span className="text-sm font-normal text-slate-400">{unit}</span>
+            </p>
+            <div className="flex-1" style={{ minHeight: 200 }}>
+              <ReactECharts option={buildTrendOption(days, values, color, fade, unit)} notMerge={true} style={{ width: '100%', height: '100%', minHeight: 200 }} opts={{ renderer: 'svg' }} />
+            </div>
+          </>
+        );
+      };
+      return {
+        n_trendCarbs: mk('Glucides', 'carbs', 'g', '#f18701', 'rgba(241,135,1,0)'),
+        n_trendFat: mk('Lipides', 'fat', 'g', '#7678ed', 'rgba(118,120,237,0)'),
+        n_trendProtein: mk('Protéines', 'protein', 'g', '#f7b801', 'rgba(247,184,1,0)'),
+      };
+    })(),
 
     // WEEKLY MACROS % OF TARGET CHART (ECharts custom series for overlapping bars)
     n_weeklyMacros: (() => {

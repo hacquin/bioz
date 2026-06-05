@@ -82,6 +82,14 @@ const addDays = (d, n) => {
   return out;
 };
 
+// Fraction du jour écoulée (0 à minuit → 1 en fin de journée), heure locale.
+// Sert à proratiser le BMR pour coller à la dépense « accumulée » de Google Health.
+const dayElapsedFraction = () => {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.min(1, Math.max(0, (now - start) / 86400000));
+};
+
 const fmtMin = (min) => {
   if (min == null || min < 0) return '—';
   const h = Math.floor(min / 60);
@@ -403,20 +411,29 @@ function BalanceCard({ daily, healthLogs, user, db, timeFrame, anchorDate, setAn
   }, [healthLogs]);
 
   // Par jour : intake (Cronometer prioritaire, sinon Google Health) + dépense (BMR + actif).
+  // AUJOURD'HUI : BMR proraté au temps écoulé pour coller à la dépense « Énergie
+  // dépensée » de Google Health (total base+actif accumulé en temps réel). Les jours
+  // passés gardent le BMR plein (journée complète).
+  const todayKey = localDateKey(new Date());
+  const elapsed = dayElapsedFraction();
   const perDay = useMemo(() => days.map((k) => {
     const intake = cronoIntake[k] ?? daily[k]?.kcalIntake ?? null;
     const active = daily[k]?.activeKcal ?? null;
-    return { date: k, intake, expend: bmr != null ? bmr + (active || 0) : null };
-  }), [days, cronoIntake, daily, bmr]);
+    const bmrPart = bmr == null ? null : (k === todayKey ? bmr * elapsed : bmr);
+    const expend = bmrPart == null ? null : bmrPart + (active || 0);
+    return { date: k, intake, expend, bmrPart };
+  }), [days, cronoIntake, daily, bmr, todayKey, elapsed]);
 
-  let inKcal, outKcal;
+  let inKcal, outKcal, bmrShown;
   if (mode === 'day') {
     const d = perDay.find((p) => p.date === localDateKey(anchorDate));
     inKcal = d?.intake ?? null;
     outKcal = d?.expend ?? null;
+    bmrShown = d?.bmrPart ?? null;
   } else {
     inKcal = avg(perDay.map((p) => p.intake));
     outKcal = avg(perDay.filter((p) => p.intake != null).map((p) => p.expend));
+    bmrShown = avg(perDay.filter((p) => p.intake != null).map((p) => p.bmrPart));
   }
 
   const net = (inKcal != null && outKcal != null) ? inKcal - outKcal : null; // >0 surplus
@@ -460,7 +477,7 @@ function BalanceCard({ daily, healthLogs, user, db, timeFrame, anchorDate, setAn
           </div>
           <div className="mt-1 flex items-center justify-between text-xs flex-wrap gap-2">
             <span className="text-slate-400">
-              {footerLabel} · dépense {Math.round(bmr)} BMR + {Math.round((outKcal || 0) - bmr)} actif
+              {footerLabel} · dépense {Math.round(bmrShown || 0)} base + {Math.round((outKcal || 0) - (bmrShown || 0))} actif
             </span>
             {status && (
               <span className="font-semibold px-2 py-0.5 rounded-full" style={{ backgroundColor: `${status.color}22`, color: status.color }}>
