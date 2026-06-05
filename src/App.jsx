@@ -687,6 +687,21 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings,
   const handleFitbitSync = () => triggerSync('https://bioz.app/fitbit-trigger.php', 'Google Health', setFitbitSyncing);
   const handleCorosSync = () => triggerSync('https://bioz.app/coros-trigger.php', 'Coros', setCorosSyncing);
 
+  // Hydratation Google Health (fitbitDaily.waterMl du jour) — alimente la jauge "Eau du jour".
+  const [googleWaterMl, setGoogleWaterMl] = useState(null);
+  useEffect(() => {
+    if (isDemo || !user || !db) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const todayKey = getLocalDateKey(new Date());
+        const snap = await getDoc(doc(db, 'users', user.uid, 'fitbitDaily', todayKey));
+        if (!cancelled) setGoogleWaterMl(snap.exists() ? (snap.data().waterMl ?? null) : null);
+      } catch { /* silencieux */ }
+    })();
+    return () => { cancelled = true; };
+  }, [user, db, isDemo, fitbitSyncing]);
+
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [weight, setWeight] = useState('');
   const [bodyFat, setBodyFat] = useState('');
@@ -1380,7 +1395,9 @@ BMR : ${f(ind.bmr)} kcal${sportSection}${activitySection}`;
       {(() => {
         const todayKey = getLocalDateKey(new Date());
         const todayLog = healthLogs.find(l => l.date && getLocalDateKey(l.date) === todayKey);
-        const waterMl = todayLog?.waterIntake || 0;
+        // Hydratation : valeur Google Health (waterMl) prioritaire, repli sur la saisie
+        // manuelle ; on prend le max pour ne perdre aucun apport loggé d'un côté ou l'autre.
+        const waterMl = Math.max(googleWaterMl || 0, todayLog?.waterIntake || 0);
         const waterGoal = 2500;
         const waterPct = Math.min(100, Math.round((waterMl / waterGoal) * 100));
         return (

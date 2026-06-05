@@ -25,6 +25,7 @@ import {
   parseSteps,
   parseSleep,
   parseNutrition,
+  parseHydration,
   mergeDaily,
   type ParsedStreams,
 } from './parsers.js';
@@ -50,6 +51,7 @@ const PAGE_BUDGET: Record<string, number> = {
   steps: 40,
   sleep: 3,
   'nutrition-log': 30,
+  'hydration-log': 30,
 };
 
 async function main(): Promise<void> {
@@ -62,7 +64,7 @@ async function main(): Promise<void> {
 
   console.log('📥 Récupération des données Google Health…');
   const fetchType = (id: string) => client.listDataPoints(id, { pageSize: 1000, maxPages: PAGE_BUDGET[id] });
-  const [rhrPts, hrvPts, spo2Pts, gluPts, energyPts, stepsPts, sleepPts, nutriPts] = await Promise.all([
+  const [rhrPts, hrvPts, spo2Pts, gluPts, energyPts, stepsPts, sleepPts, nutriPts, hydrPts] = await Promise.all([
     fetchType('daily-resting-heart-rate'),
     fetchType('heart-rate-variability'),
     fetchType('oxygen-saturation'),
@@ -71,10 +73,11 @@ async function main(): Promise<void> {
     fetchType('steps'),
     fetchType('sleep'),
     fetchType('nutrition-log'),
+    fetchType('hydration-log'),
   ]);
   console.log(
     `   ↳ points: rhr=${rhrPts.length} hrv=${hrvPts.length} spo2=${spo2Pts.length} ` +
-      `glucose=${gluPts.length} energy=${energyPts.length} steps=${stepsPts.length} sleep=${sleepPts.length} nutrition=${nutriPts.length}`,
+      `glucose=${gluPts.length} energy=${energyPts.length} steps=${stepsPts.length} sleep=${sleepPts.length} nutrition=${nutriPts.length} hydration=${hydrPts.length}`,
   );
 
   console.log('🔍 Parsing…');
@@ -87,6 +90,7 @@ async function main(): Promise<void> {
     steps: parseSteps(stepsPts),
     sleep: parseSleep(sleepPts),
     nutrition: parseNutrition(nutriPts),
+    hydration: parseHydration(hydrPts),
   };
   const daily = mergeDaily(streams, since);
   console.log(`   ↳ ${daily.length} jours dans la fenêtre`);
@@ -107,7 +111,8 @@ async function main(): Promise<void> {
       d.glucoseAvgMgDl !== null ||
       d.activeKcal !== null ||
       d.steps !== null ||
-      d.kcalIntake !== null;
+      d.kcalIntake !== null ||
+      d.waterMl !== null;
     if (hasAny) withData++;
   }
 

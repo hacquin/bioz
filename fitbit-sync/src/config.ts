@@ -46,6 +46,7 @@ export const DATA_TYPES = [
   { id: 'blood-glucose', label: 'Glycémie', kind: 'sample' },
   { id: 'sleep', label: 'Sommeil', kind: 'session' },
   { id: 'nutrition-log', label: 'Apport calorique', kind: 'log' },
+  { id: 'hydration-log', label: 'Hydratation', kind: 'log' },
 ] as const;
 
 export type DataTypeDef = (typeof DATA_TYPES)[number];

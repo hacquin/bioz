@@ -52,6 +52,9 @@ export interface FitbitDailyMetrics {
   kcalLunch: number | null;
   kcalDinner: number | null;
   kcalSnack: number | null;
+
+  // --- hydratation (Google Health, eau loggée) ---
+  waterMl: number | null;
 }
 
 type CivilDate = { year: number; month: number; day: number };
@@ -316,6 +319,31 @@ export function parseNutrition(points: AnyPoint[]): Map<string, NutritionDay> {
 }
 
 // ============================================================================
+// Hydratation (hydration-log) — somme des ml d'eau loggés par jour civil.
+// Chaque point = une prise d'eau (`amountConsumed.milliliters`). Source FITBIT.
+// ============================================================================
+
+export function parseHydration(points: AnyPoint[]): Map<string, number> {
+  const acc = new Map<string, number>();
+  for (const p of points) {
+    if (p?.dataSource?.platform !== 'FITBIT') continue;
+    const hl = p?.hydrationLog;
+    const interval = hl?.interval;
+    const date = interval?.civilStartTime?.date
+      ? ymd(interval.civilStartTime.date)
+      : interval?.startTime
+        ? localYmd(interval.startTime, interval.startUtcOffset)
+        : null;
+    if (!date) continue;
+    const ml = typeof hl.amountConsumed?.milliliters === 'number' ? hl.amountConsumed.milliliters : 0;
+    acc.set(date, (acc.get(date) ?? 0) + ml);
+  }
+  const out = new Map<string, number>();
+  for (const [k, v] of acc) out.set(k, Math.round(v));
+  return out;
+}
+
+// ============================================================================
 // Sommeil (sleep, type=STAGES) — durée + composition par jour de réveil
 // ============================================================================
 
@@ -407,6 +435,7 @@ export interface ParsedStreams {
   steps: Map<string, number>;
   sleep: Map<string, SleepDay>;
   nutrition: Map<string, NutritionDay>;
+  hydration: Map<string, number>;
 }
 
 export function mergeDaily(s: ParsedStreams, sinceDate: string): FitbitDailyMetrics[] {
@@ -419,6 +448,7 @@ export function mergeDaily(s: ParsedStreams, sinceDate: string): FitbitDailyMetr
     ...s.steps.keys(),
     ...s.sleep.keys(),
     ...s.nutrition.keys(),
+    ...s.hydration.keys(),
   ]);
 
   const out: FitbitDailyMetrics[] = [];
@@ -457,6 +487,7 @@ export function mergeDaily(s: ParsedStreams, sinceDate: string): FitbitDailyMetr
       kcalLunch: nut?.lunch ?? null,
       kcalDinner: nut?.dinner ?? null,
       kcalSnack: nut?.snack ?? null,
+      waterMl: s.hydration.get(date) ?? null,
     });
   }
   out.sort((a, b) => a.date.localeCompare(b.date));
