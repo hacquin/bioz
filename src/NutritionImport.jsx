@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, getDocs, collection, query, orderBy, limit } from 'firebase/firestore';
 import ReactECharts from 'echarts-for-react';
 import {
   ComposedChart, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
@@ -610,35 +610,131 @@ export default function NutritionImport({ user, db, isDemo, demoNutritionDocs, g
     setCoachLoading(true);
     setCoachError('');
     try {
-      const todayMacros = {
-        calories: Math.round(todayData?.calories || 0),
-        glucides: Math.round(carbs),
-        lipides: Math.round(fat),
-        proteines: Math.round(protein),
-        objectifs: { glucides: targets.carbs, lipides: targets.fat, proteines: targets.protein, calories: targets.calories },
+      const now = new Date();
+      const fmtKey = (d) => d.toISOString().split('T')[0];
+      const todayKey = fmtKey(now);
+      const cutoff30 = fmtKey(new Date(now.getTime() - 30 * 86400000));
+
+      // --- Fenêtre nutrition : Google Health (fitbitDaily) + Cronometer (nutrition), Cronometer prioritaire ---
+      const byDate = {};
+      if (isDemo && Array.isArray(demoNutritionDocs)) {
+        demoNutritionDocs.forEach((d) => { if (d.date) byDate[d.date] = { ...d }; });
+      } else if (user && db) {
+        try {
+          const fsnap = await getDocs(query(collection(db, 'users', user.uid, 'fitbitDaily'), orderBy('date', 'desc'), limit(40)));
+          fsnap.docs.forEach((s) => {
+            const f = s.data(); if (!f.date) return;
+            const base = { date: f.date, activeKcal: f.activeKcal ?? null };
+            if (f.kcalIntake != null || f.carbsG != null) {
+              Object.assign(base, { calories: f.kcalIntake ?? 0, carbs: f.carbsG ?? 0, fat: f.fatG ?? 0, protein: f.proteinG ?? 0, petitDej: f.kcalBreakfast ?? 0, dejeuner: f.kcalLunch ?? 0, diner: f.kcalDinner ?? 0, encas: f.kcalSnack ?? 0 });
+            }
+            byDate[f.date] = base;
+          });
+        } catch {}
+        try {
+          const nsnap = await getDocs(query(collection(db, 'users', user.uid, 'nutrition'), orderBy('date', 'desc'), limit(40)));
+          nsnap.docs.forEach((s) => {
+            const n = s.data(); if (!n.date) return;
+            byDate[n.date] = { ...(byDate[n.date] || {}), ...n, date: n.date, activeKcal: byDate[n.date]?.activeKcal ?? null };
+          });
+        } catch {}
+      }
+
+      const hasNut = (d) => d && (d.calories != null || d.carbs != null);
+      // On EXCLUT le jour en cours (bilan du matin → journée incomplète) et on borne à 30 jours.
+      const nutDays = Object.keys(byDate)
+        .filter((k) => k < todayKey && k >= cutoff30 && hasNut(byDate[k]))
+        .sort();
+      const yKey = nutDays.length ? nutDays[nutDays.length - 1] : null;
+      const yesterday = yKey ? byDate[yKey] : null;
+
+      // Métabolisme de base (dernière mesure de composition connue)
+      const bmrLogs = (healthLogs || []).filter((l) => l.bmr != null).sort((a, b) => (a.date < b.date ? 1 : -1));
+      const bmr = bmrLogs.length ? bmrLogs[0].bmr : null;
+      const deficitOf = (d) => (hasNut(d) && bmr != null) ? Math.round((d.calories || 0) - (bmr + (d.activeKcal || 0))) : null;
+
+      // Moyennes nutrition : mois (30j dispo) vs semaine (7 derniers jours avec données)
+      const avgOf = (keys, key) => { const v = keys.map((k) => byDate[k]).filter(hasNut).map((d) => d[key]).filter((x) => x != null); return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) : null; };
+      const last7keys = nutDays.slice(-7);
+      const monthAvg = { calories: avgOf(nutDays, 'calories'), carbs: avgOf(nutDays, 'carbs'), fat: avgOf(nutDays, 'fat'), protein: avgOf(nutDays, 'protein'), jours: nutDays.length };
+      const weekAvg = { calories: avgOf(last7keys, 'calories'), carbs: avgOf(last7keys, 'carbs'), fat: avgOf(last7keys, 'fat'), protein: avgOf(last7keys, 'protein'), jours: last7keys.length };
+      const deficitVals = nutDays.map((k) => deficitOf(byDate[k])).filter((x) => x != null);
+      const monthDeficit = deficitVals.length ? Math.round(deficitVals.reduce((a, b) => a + b, 0) / deficitVals.length) : null;
+
+      // Composition corporelle (pour la corrélation avec la nutrition)
+      const sortedH = [...(healthLogs || [])].sort((a, b) => new Date(b.date) - new Date(a.date));
+      const inDaysH = (n) => sortedH.filter((l) => (now - new Date(l.date)) / 86400000 <= n);
+      const prevDaysH = (a, b) => sortedH.filter((l) => { const d = (now - new Date(l.date)) / 86400000; return d > a && d <= b; });
+      const avgH = (logs, key) => { const v = logs.filter((l) => l[key] != null).map((l) => l[key]); return v.length ? parseFloat((v.reduce((x, y) => x + y, 0) / v.length).toFixed(1)) : null; };
+      const last30H = inDaysH(30), prev30H = prevDaysH(30, 60), last7H = inDaysH(7);
+      const dlt = (a, b) => (a != null && b != null) ? parseFloat((a - b).toFixed(1)) : null;
+      const compo = {
+        poids: avgH(last7H, 'weight'), poidsDelta30: dlt(avgH(last30H, 'weight'), avgH(prev30H, 'weight')),
+        graisse: avgH(last7H, 'bodyFat'), graisseDelta30: dlt(avgH(last30H, 'bodyFat'), avgH(prev30H, 'bodyFat')),
+        muscle: avgH(last7H, 'muscleMass'), muscleDelta30: dlt(avgH(last30H, 'muscleMass'), avgH(prev30H, 'muscleMass')),
+        tourTaille: avgH(last7H, 'waist'), tourTailleDelta30: dlt(avgH(last30H, 'waist'), avgH(prev30H, 'waist')),
       };
-      const repas = {
-        petitDej: Math.round(todayData?.petitDej || 0),
-        dejeuner: Math.round(todayData?.dejeuner || 0),
-        diner: Math.round(todayData?.diner || 0),
-        encas: Math.round(todayData?.encas || 0),
-      };
-      const weekly = weeklyData.map(d => ({ jour: d.day, date: d.date, calories: d.calories, glucides: d.carbs, lipides: d.fat, proteines: d.protein }));
-      const glycemie = { glucose: latestGlucose, cetones: latestKetones, gki: latestGKI };
 
-      const systemPrompt = "Tu es un coach nutrition expert en alimentation LOW-CARB (glucides modérés et maîtrisés, PAS de cétose stricte recherchée). Tu donnes des avis personnalisés, directs, motivants et concrets, toujours en français. Tu analyses finement la RÉPARTITION des repas (petit-déjeuner, déjeuner, dîner, encas), l'équilibre des macros et leur évolution sur la semaine.";
-      const userMessage = `Analyse ces données nutritionnelles et donne un avis personnalisé, concret et actionnable.
+      const f = (v) => (v != null ? v : '—');
+      const fD = (v) => (v != null ? (v > 0 ? `+${v}` : `${v}`) : '—');
+      const yb = yesterday ? {
+        date: yKey,
+        calories: Math.round(yesterday.calories || 0),
+        glucides: Math.round(yesterday.carbs || 0),
+        lipides: Math.round(yesterday.fat || 0),
+        proteines: Math.round(yesterday.protein || 0),
+        repas: { petitDej: Math.round(yesterday.petitDej || 0), dejeuner: Math.round(yesterday.dejeuner || 0), diner: Math.round(yesterday.diner || 0), encas: Math.round(yesterday.encas || 0) },
+        deficit: deficitOf(yesterday),
+      } : null;
 
-Macros du jour : ${JSON.stringify(todayMacros)}
-Répartition par repas (kcal) : ${JSON.stringify(repas)}
-Évolution de la semaine : ${JSON.stringify(weekly)}
-Glycémie / cétones : ${JSON.stringify(glycemie)}
+      const systemPrompt = `Tu es le même coach santé que pour le bilan global, version NUTRITION. Interlocuteur : homme de 55 ans, 1m74, régime LOW-CARB (glucides modérés et maîtrisés, PAS de cétose stricte recherchée).
 
-Règles :
-- Régime LOW-CARB : objectif glucides modérés et glycémie stable, PAS de recherche de cétose profonde ni de GKI.
-- Analyse la RÉPARTITION des repas : équilibre petit-déj / déjeuner / dîner, place des encas, et timing si pertinent.
-- Mentionne les points positifs ET des axes d'amélioration concrets (ex : déplacer des glucides vers le midi, renforcer les protéines au petit-déj, alléger le dîner…).
-- 4 à 6 phrases courtes et percutantes, va à l'essentiel.`;
+TON : direct, pince-sans-rire, une seule vanne max. Tu salues les vrais progrès et tu dis franchement quand ça dérape.
+
+LANGAGE — ZÉRO JARGON : mots simples, pas de sigle obscur (pas de "GKI" ; dis "métabolisme de base" plutôt que "BMR"). Explique tout simplement.
+
+RÈGLES :
+- Tu n'analyses QUE des données ANTÉRIEURES à aujourd'hui (le bilan est fait le matin, la journée en cours est incomplète). Le "jour analysé" est HIER.
+- Analyse l'évolution sur le MOIS (ou la semaine à défaut), pas seulement un jour isolé.
+- Cherche les CORRÉLATIONS entre la nutrition (déficit calorique, glucides, protéines) et la composition corporelle (poids, graisse, muscle, tour de taille) : le déficit explique-t-il la perte de poids ? les protéines suffisent-elles à préserver le muscle ?
+- Low-carb : vise des glucides modérés et une glycémie stable ; ne parle PAS de cétose profonde ni de GKI.
+- Analyse UNIQUEMENT les chiffres fournis, ne refais pas les calculs.
+
+FORMAT STRICT — prose uniquement, zéro markdown, zéro tiret, zéro étoile. Réponds en EXACTEMENT cinq sections, chacune introduite par son marqueur entre crochets seul sur sa ligne, dans cet ordre. N'invente aucun autre titre.
+[HIER]
+2-3 phrases sur la journée d'hier : total calorique, répartition des repas, macros vs objectifs.
+[MACROS]
+2-3 phrases sur l'évolution des glucides, lipides et protéines sur le mois (et la semaine) : tendance et écarts aux objectifs.
+[DEFICIT]
+2-3 phrases sur le déficit calorique (apport vs dépense métabolisme+activité) et sa cohérence avec l'objectif de perte.
+[COMPOSITION]
+2-3 phrases reliant la nutrition à l'évolution du poids, de la graisse et du muscle (corrélation concrète).
+[CONSEILS]
+2-3 recommandations concrètes et actionnables.`;
+
+      const userMessage = `Bilan nutrition du ${now.toLocaleDateString('fr-FR')} (analyse jusqu'à HIER inclus, jour en cours ignoré).
+
+OBJECTIFS MACROS/JOUR : glucides ${targets.carbs} g, lipides ${targets.fat} g, protéines ${targets.protein} g, calories ${targets.calories} kcal.
+
+JOURNÉE D'HIER ${yb ? `(${yb.date})` : ''} :
+${yb ? `Calories : ${yb.calories} kcal | Glucides ${yb.glucides} g | Lipides ${yb.lipides} g | Protéines ${yb.proteines} g
+Répartition repas (kcal) : petit-déj ${yb.repas.petitDej}, déjeuner ${yb.repas.dejeuner}, dîner ${yb.repas.diner}, en-cas ${yb.repas.encas}
+Déficit du jour : ${fD(yb.deficit)} kcal (négatif = déficit)` : 'Aucune donnée nutritionnelle pour hier.'}
+
+ÉVOLUTION NUTRITION (moyenne/jour — mois sur ${monthAvg.jours} j | semaine sur ${weekAvg.jours} j) :
+Calories : ${f(monthAvg.calories)} | ${f(weekAvg.calories)} kcal
+Glucides : ${f(monthAvg.carbs)} | ${f(weekAvg.carbs)} g
+Lipides : ${f(monthAvg.fat)} | ${f(weekAvg.fat)} g
+Protéines : ${f(monthAvg.protein)} | ${f(weekAvg.protein)} g
+Déficit calorique moyen (mois) : ${f(monthDeficit)} kcal/jour ${bmr != null ? `(métabolisme de base ${bmr} kcal + activité)` : '(métabolisme de base inconnu)'}
+
+COMPOSITION CORPORELLE (valeur récente | évolution sur 30 j) :
+Poids : ${f(compo.poids)} kg | ${fD(compo.poidsDelta30)}
+Graisse : ${f(compo.graisse)} % | ${fD(compo.graisseDelta30)}
+Muscle : ${f(compo.muscle)} % | ${fD(compo.muscleDelta30)}
+Tour de taille : ${f(compo.tourTaille)} cm | ${fD(compo.tourTailleDelta30)}
+
+GLYCÉMIE / CÉTONES : glucose ${f(latestGlucose)} mg/dL, cétones ${f(latestKetones)} mmol/L.`;
 
       const res = await fetch('/claude_proxy.php', {
         method: 'POST',
@@ -677,10 +773,51 @@ Règles :
           </button>
         </div>
         {coachError && <p className="text-xs text-red-400 mb-2">{coachError}</p>}
-        {coachAdvice ? (
-          <p className="text-sm text-slate-200 leading-relaxed whitespace-pre-line">{coachAdvice}</p>
-        ) : !coachLoading && !coachError ? (
-          <p className="text-xs text-slate-500 italic">Cliquez sur "Analyser" pour obtenir l'avis personnalisé de votre coach IA basé sur vos données nutritionnelles.</p>
+        {coachAdvice ? (() => {
+          const clean = (t) => t.replace(/\*\*/g, '').replace(/^\*\s*/, '').replace(/^#+\s*/, '').replace(/^[-•]\s*/, '').trim();
+          // Normalise les titres : "HIER", "**Hier**", "[HIER] :" → "[HIER]" (DEFICIT accentué ou non).
+          const normalized = coachAdvice.replace(
+            /^[ \t]*\**\[?\s*(HIER|MACROS|D[ÉE]FICIT|COMPOSITION|CONSEILS)\s*\]?\**[ \t]*:?[ \t]*$/gim,
+            (_m, g) => `[${g.toUpperCase().replace('É','E').replace('È','E')}]`
+          );
+          const extract = (tag) => {
+            const re = new RegExp(`\\[${tag}\\]([\\s\\S]*?)(?=\\[(?:HIER|MACROS|DEFICIT|COMPOSITION|CONSEILS)\\]|$)`, 'i');
+            const m = normalized.match(re);
+            return m ? m[1].split('\n').map(clean).filter(Boolean) : [];
+          };
+          const SECTIONS = [
+            { tag: 'HIER', icon: '🌅', title: "Votre journée d'hier", card: 'border-violet-500/30', head: 'bg-violet-500/10 border-violet-500/20', text: 'text-violet-300' },
+            { tag: 'MACROS', icon: '📊', title: 'Évolution des macros', card: 'border-sky-500/30', head: 'bg-sky-500/10 border-sky-500/20', text: 'text-sky-300' },
+            { tag: 'DEFICIT', icon: '⚖️', title: 'Analyse du déficit', card: 'border-amber-500/30', head: 'bg-amber-500/10 border-amber-500/20', text: 'text-amber-300' },
+            { tag: 'COMPOSITION', icon: '💪', title: 'Impact sur votre composition corporelle', card: 'border-emerald-500/30', head: 'bg-emerald-500/10 border-emerald-500/20', text: 'text-emerald-300' },
+            { tag: 'CONSEILS', icon: '💡', title: 'Conseils', card: 'border-pink-500/30', head: 'bg-pink-500/10 border-pink-500/20', text: 'text-pink-300' },
+          ];
+          const parsed = SECTIONS.map((s) => ({ ...s, lines: extract(s.tag) }));
+          const anyParsed = parsed.some((s) => s.lines.length > 0);
+          if (!anyParsed) {
+            return <p className="text-sm text-slate-200 leading-relaxed whitespace-pre-line">{coachAdvice.replace(/\[(?:HIER|MACROS|D[ÉE]FICIT|COMPOSITION|CONSEILS)\]/gi, '\n').trim()}</p>;
+          }
+          return (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {parsed.filter((s) => s.lines.length > 0).map((s) => (
+                <div key={s.tag} className={`bg-slate-800 border rounded-xl overflow-hidden ${s.card}`}>
+                  <div className={`px-4 py-2.5 border-b flex items-center gap-2 ${s.head}`}>
+                    <span className="text-base">{s.icon}</span>
+                    <span className={`text-sm font-bold ${s.text}`}>{s.title}</span>
+                  </div>
+                  <div className="px-4 py-3 space-y-2">
+                    {s.lines.map((l, i) => (
+                      s.tag === 'CONSEILS'
+                        ? <div key={i} className="flex items-start gap-2"><span className="text-pink-400 font-bold text-sm mt-0.5 shrink-0">→</span><p className="text-slate-300 text-sm leading-relaxed">{l}</p></div>
+                        : <p key={i} className="text-slate-300 text-sm leading-relaxed">{l}</p>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          );
+        })() : !coachLoading && !coachError ? (
+          <p className="text-xs text-slate-500 italic">Cliquez sur "Analyser" pour obtenir l'avis personnalisé de votre coach IA : votre journée d'hier, l'évolution des macros, le déficit, l'impact sur votre composition et des conseils.</p>
         ) : null}
       </div>
       <CardSection title="Macronutrition du jour" cardIds={macroCardOrder} cardContent={allCards} wideCards={MACRO_WIDE} dragState={macroDrag} isMobile={isMobile} />

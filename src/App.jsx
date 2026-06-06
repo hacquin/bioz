@@ -896,46 +896,67 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings,
     try {
       const wSnap = await getDocs(query(collection(db, 'users', user.uid, 'fitbitDaily'), orderBy('date', 'desc'), limit(35)));
       const wDocs = wSnap.docs.map((d) => d.data()).filter((d) => d.date);
-      // Moyennes en excluant le jour en cours (bilan généré le matin)
-      const wIn = (n) => wDocs.filter((l) => { const age = (now - new Date(l.date)) / 86400000; return age >= 1 && age <= n; });
+      // Bilan généré le matin : on INCLUT le jour en cours (sommeil de la nuit, premiers pas, etc.).
+      const wIn = (n) => wDocs.filter((l) => { const age = (now - new Date(l.date)) / 86400000; return age >= 0 && age <= n; });
       const w7 = wIn(7), w30 = wIn(30);
       const wAvg = (logs, key) => { const v = logs.filter((l) => l[key] != null).map((l) => l[key]); return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) : null; };
       const sleepMin = wAvg(w7, 'sleepMainMin');
+      const fmtSleep = (m) => m != null ? `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}` : null;
+      // Instantané du JOUR (données déjà disponibles ce matin)
+      const wToday = wDocs.find((l) => getLocalDateKey(l.date) === getLocalDateKey(now)) || null;
       act = {
         steps7: wAvg(w7, 'steps'), steps30: wAvg(w30, 'steps'),
         active7: wAvg(w7, 'activeKcal'),
         intake7: wAvg(w7, 'kcalIntake'),
-        sleep7: sleepMin != null ? `${Math.floor(sleepMin / 60)}h${String(sleepMin % 60).padStart(2, '0')}` : null,
+        sleep7: fmtSleep(sleepMin),
         hrv7: wAvg(w7, 'hrvAvgMs'), hrv30: wAvg(w30, 'hrvAvgMs'),
         rhr7: wAvg(w7, 'rhrBpm'),
         spo2: wAvg(w7, 'spo2AvgPct'),
         glucose7: wAvg(w7, 'glucoseAvgMgDl'), glucose30: wAvg(w30, 'glucoseAvgMgDl'),
+        todaySleep: wToday ? fmtSleep(wToday.sleepMainMin) : null,
+        todaySteps: wToday?.steps ?? null,
+        todayHrv: wToday?.hrvAvgMs ?? null,
+        todayRhr: wToday?.rhrBpm ?? null,
+        todayActive: wToday?.activeKcal ?? null,
       };
       if (act.intake7 != null && ind.bmr != null && act.active7 != null) {
         act.balance7 = act.intake7 - (ind.bmr + act.active7);
       }
     } catch (e) { console.error('Erreur lecture wearables pour bilan IA', e); }
 
-    // --- Données sport : séances cardio (Strava) + muscu (Hevy), depuis le doc utilisateur ---
+    // --- Données sport : cardio (Strava) + muscu (Hevy ET Strava type musculation, souvent loggée via Fitbit) ---
     let sport = null;
     try {
       const uSnap = await getDoc(doc(db, 'users', user.uid));
       const udata = uSnap.exists() ? uSnap.data() : {};
       const strava = Array.isArray(udata.stravaLogs) ? udata.stravaLogs : [];
       const hevy = Array.isArray(udata.hevyWorkouts) ? udata.hevyWorkouts : [];
+      // Une séance de musculation peut venir de Hevy OU de Strava (type WeightTraining/Workout, ex. enregistrée via Fitbit).
+      const MUSCU_TYPES = ['WeightTraining', 'Workout', 'Crossfit', 'HIIT', 'Hiit'];
+      const isMuscu = (t) => MUSCU_TYPES.includes(t);
       const inDays = (dateStr, n) => { if (!dateStr) return false; const age = (now - new Date(dateStr)) / 86400000; return age >= 0 && age <= n; };
+      const dayKey = (d) => getLocalDateKey(new Date(d));
       const s7 = strava.filter((a) => inDays(a.start_date, 7));
       const s30 = strava.filter((a) => inDays(a.start_date, 30));
       const h7 = hevy.filter((w) => inDays(w.start_time, 7));
       const h30 = hevy.filter((w) => inDays(w.start_time, 30));
+      // Cardio = Strava hors types musculation
+      const cardio7 = s7.filter((a) => !isMuscu(a.type));
+      const cardio30 = s30.filter((a) => !isMuscu(a.type));
+      // Muscu = jours distincts avec une séance Hevy OU une séance Strava type musculation (dédup anti double-comptage)
+      const muscuStrava7 = s7.filter((a) => isMuscu(a.type));
+      const muscuStrava30 = s30.filter((a) => isMuscu(a.type));
+      const muscuDays7 = new Set([...h7.map((w) => dayKey(w.start_time)), ...muscuStrava7.map((a) => dayKey(a.start_date))]);
+      const muscuDays30 = new Set([...h30.map((w) => dayKey(w.start_time)), ...muscuStrava30.map((a) => dayKey(a.start_date))]);
       const byType = {};
-      s7.forEach((a) => { const t = a.type || 'Autre'; byType[t] = (byType[t] || 0) + 1; });
+      cardio7.forEach((a) => { const t = a.type || 'Autre'; byType[t] = (byType[t] || 0) + 1; });
       sport = {
-        cardio7: s7.length, cardio30: s30.length,
-        cardioKm7: Math.round(s7.reduce((t, a) => t + (a.distance || 0), 0) / 1000),
-        cardioMin7: Math.round(s7.reduce((t, a) => t + (a.moving_time || 0), 0) / 60),
+        cardio7: cardio7.length, cardio30: cardio30.length,
+        cardioKm7: Math.round(cardio7.reduce((t, a) => t + (a.distance || 0), 0) / 1000),
+        cardioMin7: Math.round(cardio7.reduce((t, a) => t + (a.moving_time || 0), 0) / 60),
         cardioTypes: Object.entries(byType).map(([t, n]) => `${n}×${t}`).join(', ') || null,
-        muscu7: h7.length, muscu30: h30.length,
+        muscu7: muscuDays7.size, muscu30: muscuDays30.size,
+        muscuDetail: `${h7.length} via Hevy + ${muscuStrava7.length} via Strava/Fitbit`,
       };
     } catch (e) { console.error('Erreur lecture sport pour bilan IA', e); }
 
@@ -957,12 +978,14 @@ RÈGLES D'ANALYSE :
 - Un delta 7j = tendance court terme, un delta 30j = tendance de fond. Priorise le 30j.
 - Impédancemétrie : si hydratation < 55%, les mesures de graisse et muscle sont FAUSSÉES (graisse surestimée, muscle sous-estimé). Mentionne-le.
 - Régime LOW-CARB : vise des glucides modérés et une glycémie stable ; ne parle PAS de cétose profonde ni de GKI.
-- Sport : valorise la régularité et le volume ; signale une charge en forte hausse couplée à une VFC en baisse (surmenage) ou au contraire un manque d'entraînement qui peut expliquer une stagnation.
+- Sport : valorise la régularité et le volume ; signale une charge en forte hausse couplée à une variabilité cardiaque en baisse (surmenage) ou au contraire un manque d'entraînement qui peut expliquer une stagnation. La MUSCULATION est comptée à la fois depuis Hevy ET depuis Strava (séances de type musculation, souvent enregistrées via Fitbit) : ne conclus JAMAIS à une absence de muscu sans tenir compte des deux sources.
 - Composition : priorité 1) tour de taille (graisse viscérale), 2) poids, 3) graisse/muscle. La perte de muscle n'est PAS alarmante si la graisse baisse aussi.
-- Signale ce qui sort de l'ordinaire : PWV > 9 m/s, FC repos > 80 bpm, VFC en baisse marquée vs 30j, SpO2 < 90%, sommeil < 6h, balance énergétique fortement positive. Ne commente pas un paramètre normal et stable.
-- Ignore les données du jour en cours (bilan généré le matin).
+- Signale ce qui sort de l'ordinaire : rigidité des artères élevée (> 9 m/s), FC repos > 80 bpm, variabilité cardiaque en baisse marquée vs 30j, SpO2 < 90%, sommeil < 6h, balance énergétique fortement positive. Ne commente pas un paramètre normal et stable.
+- Ce bilan est généré le MATIN : prends en compte les données DU JOUR (sommeil de la nuit, poids du matin, première activité) en plus des moyennes 7j et 30j.
 
-FORMAT STRICT (zéro markdown, zéro tiret, zéro étoile, prose uniquement) :
+LANGAGE — ZÉRO JARGON : écris pour quelqu'un qui n'est pas médecin. N'utilise JAMAIS de sigle obscur : pas de "PWV" (dis "rigidité des artères"), pas de "VFC" ni "HRV" seuls (dis "variabilité cardiaque", marqueur de récupération), pas de "BMR" (dis "métabolisme de base"). Si un terme technique est inévitable, explique-le en trois mots entre parenthèses.
+
+FORMAT STRICT — prose uniquement, zéro markdown, zéro tiret, zéro étoile. Réponds en EXACTEMENT trois sections, chacune introduite par son marqueur entre crochets seul sur sa ligne, dans cet ordre. N'invente aucun autre titre.
 [BILAN]
 4-5 phrases factuelles couvrant les dimensions pertinentes (composition, sport/activité, sommeil-récup, métabolique). Cite les chiffres clés.
 [ALERTES]
@@ -973,9 +996,9 @@ FORMAT STRICT (zéro markdown, zéro tiret, zéro étoile, prose uniquement) :
     const sportSection = sport ? `
 
 SPORT & ENTRAÎNEMENT (7j | 30j) :
-Séances cardio (Strava) : ${sport.cardio7} | ${sport.cardio30}${sport.cardioTypes ? ` (${sport.cardioTypes})` : ''}
+Séances cardio : ${sport.cardio7} | ${sport.cardio30}${sport.cardioTypes ? ` (${sport.cardioTypes})` : ''}
 Volume cardio 7j : ${sport.cardioKm7} km, ${sport.cardioMin7} min
-Séances muscu (Hevy) : ${sport.muscu7} | ${sport.muscu30}` : '';
+Séances muscu (Hevy + Strava/Fitbit) : ${sport.muscu7} | ${sport.muscu30} (7j : ${sport.muscuDetail})` : '';
 
     const activitySection = act ? `
 
@@ -987,12 +1010,18 @@ Balance énergétique : ${act.balance7 != null ? fDelta(act.balance7) : '—'} k
 
 SOMMEIL & RÉCUPÉRATION (moyennes 7j) :
 Durée de sommeil : ${f(act.sleep7)}
-VFC nocturne : ${f(act.hrv7)} ms (30j : ${f(act.hrv30)})
+Variabilité cardiaque nocturne (récupération) : ${f(act.hrv7)} ms (30j : ${f(act.hrv30)})
 FC repos (montre) : ${f(act.rhr7)} bpm
 
 MÉTABOLIQUE :
 Glycémie : ${f(act.glucose7)} mg/dL (30j : ${f(act.glucose30)})
-SpO2 nocturne : ${f(act.spo2)}%` : '';
+SpO2 nocturne : ${f(act.spo2)}%
+
+AUJOURD'HUI (données déjà disponibles ce matin) :
+Sommeil de la nuit : ${f(act.todaySleep)}
+Variabilité cardiaque cette nuit : ${f(act.todayHrv)} ms
+FC repos ce matin : ${f(act.todayRhr)} bpm
+Pas / énergie active du jour : ${f(act.todaySteps)} pas, ${f(act.todayActive)} kcal` : '';
 
     const userMessage = `Bilan du ${new Date().toLocaleDateString('fr-FR')}
 
@@ -1103,11 +1132,11 @@ BMR : ${f(ind.bmr)} kcal${sportSection}${activitySection}`;
       logs.forEach(log => {
           const key = getGroupKey(log.date, timeFrame);
           const sortKey = getSortKey(log.date, timeFrame);
-          if (!groups[key]) groups[key] = { date: key, sortKey, weightSum: 0, fatSum: 0, musSum: 0, hydraSum: 0, stepSum:0, waistSum: 0, distSum: 0, sysSum: 0, diaSum: 0, countW: 0, countS: 0, countWaist: 0, countSys: 0, countDia: 0, pwvSum: 0, countPwv: 0, visceralSum: 0, countVisc: 0, bmrSum: 0, countBmr: 0, hrSum: 0, countHr: 0, glucoseSum: 0, countGlucose: 0, ketonesSum: 0, countKetones: 0 };
+          if (!groups[key]) groups[key] = { date: key, sortKey, weightSum: 0, fatSum: 0, musSum: 0, hydraSum: 0, stepSum:0, waistSum: 0, distSum: 0, sysSum: 0, diaSum: 0, countW: 0, countFat: 0, countMus: 0, countHydra: 0, countS: 0, countWaist: 0, countSys: 0, countDia: 0, pwvSum: 0, countPwv: 0, visceralSum: 0, countVisc: 0, bmrSum: 0, countBmr: 0, hrSum: 0, countHr: 0, glucoseSum: 0, countGlucose: 0, ketonesSum: 0, countKetones: 0 };
           if (log.weight) { groups[key].weightSum += log.weight; groups[key].countW += 1; }
-          if (log.bodyFat) groups[key].fatSum += log.bodyFat;
-          if (log.muscleMass) groups[key].musSum += log.muscleMass;
-          if (log.hydration) groups[key].hydraSum += log.hydration;
+          if (log.bodyFat) { groups[key].fatSum += log.bodyFat; groups[key].countFat += 1; }
+          if (log.muscleMass) { groups[key].musSum += log.muscleMass; groups[key].countMus += 1; }
+          if (log.hydration) { groups[key].hydraSum += log.hydration; groups[key].countHydra += 1; }
           if (log.steps) { groups[key].stepSum += log.steps; groups[key].countS += 1; }
           if (log.distance) { groups[key].distSum += log.distance; }
           if (log.waist) { groups[key].waistSum += log.waist; groups[key].countWaist += 1; }
@@ -1123,9 +1152,9 @@ BMR : ${f(ind.bmr)} kcal${sportSection}${activitySection}`;
       return Object.values(groups).sort((a, b) => a.sortKey - b.sortKey).map(g => ({
             date: g.date,
             weight: g.countW > 0 ? parseFloat((g.weightSum / g.countW).toFixed(1)) : null,
-            bodyFat: g.countW > 0 ? parseFloat((g.fatSum / g.countW).toFixed(1)) : null,
-            muscleMass: g.countW > 0 ? parseFloat((g.musSum / g.countW).toFixed(1)) : null,
-            hydration: g.countW > 0 ? parseFloat((g.hydraSum / g.countW).toFixed(1)) : null,
+            bodyFat: g.countFat > 0 ? parseFloat((g.fatSum / g.countFat).toFixed(1)) : null,
+            muscleMass: g.countMus > 0 ? parseFloat((g.musSum / g.countMus).toFixed(1)) : null,
+            hydration: g.countHydra > 0 ? parseFloat((g.hydraSum / g.countHydra).toFixed(1)) : null,
             waist: g.countWaist > 0 ? parseFloat((g.waistSum / g.countWaist).toFixed(1)) : null,
             steps: timeFrame === 'day' ? g.stepSum : (g.countS > 0 ? Math.round(g.stepSum / g.countS) : null),
             distance: g.countS > 0 ? parseFloat(g.distSum.toFixed(2)) : null,
@@ -1263,20 +1292,22 @@ BMR : ${f(ind.bmr)} kcal${sportSection}${activitySection}`;
         {/* Contenu en 3 cartes */}
         {aiBilan && !aiLoading && (() => {
           const clean = (text) => text.replace(/\*\*/g, '').replace(/^\*\s*/,'').replace(/^#+\s*/,'').replace(/^[-•]\s*/, '').trim();
+          // Normalise les titres de section : Claude écrit parfois "BILAN", "**BILAN**" ou "BILAN :"
+          // au lieu de "[BILAN]" — on les ramène tous à la forme à crochets pour fiabiliser le parsing.
+          const normalized = aiBilan.replace(/^[ \t]*\**\[?\s*(BILAN|ALERTES|ACTIONS|CONSEILS)\s*\]?\**[ \t]*:?[ \t]*$/gim, '[$1]');
           // Parse les 3 sections [BILAN], [ALERTES], [ACTIONS] — fallback sur l'ancien format [CONSEILS]
           const extractSection = (tag) => {
             const regex = new RegExp(`\\[${tag}\\]([\\s\\S]*?)(?=\\[(?:BILAN|ALERTES|ACTIONS|CONSEILS)\\]|$)`, 'i');
-            const match = aiBilan.match(regex);
+            const match = normalized.match(regex);
             return match ? match[1].split('\n').map(l => clean(l)).filter(Boolean) : [];
           };
           let bilanLines = extractSection('BILAN');
           const alertLines = extractSection('ALERTES');
           const actionLines = extractSection('ACTIONS').length > 0 ? extractSection('ACTIONS') : extractSection('CONSEILS');
-          // Robustesse : si le modèle n'a pas respecté le format [BILAN]/[ALERTES]/[ACTIONS]
-          // (Claude ajoute parfois ses propres titres), on affiche le texte brut nettoyé
-          // dans la carte principale plutôt qu'une carte vide.
+          // Robustesse : si le modèle n'a vraiment respecté aucun format, on affiche le texte brut
+          // nettoyé dans la carte principale plutôt qu'une carte vide.
           if (bilanLines.length === 0 && alertLines.length === 0 && actionLines.length === 0) {
-            bilanLines = aiBilan
+            bilanLines = normalized
               .replace(/\[(?:BILAN|ALERTES|ACTIONS|CONSEILS|SYNTH[ÈE]SE)\]/gi, '\n')
               .split('\n').map((l) => clean(l)).filter(Boolean);
           }
