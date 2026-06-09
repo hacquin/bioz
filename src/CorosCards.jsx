@@ -30,13 +30,19 @@ import {
 //  Hook : abonnement Firestore
 // =============================================================================
 
-export function useCorosData(user, db) {
+export function useCorosData(user, db, demo) {
   const [daily, setDaily] = useState(null);
   const [baseline, setBaseline] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   useEffect(() => {
+    if (demo) {
+      setDaily(demo.corosDaily || {});
+      setBaseline(demo.corosBaseline || null);
+      setLoading(false);
+      return undefined;
+    }
     if (!user || !db) { setLoading(false); return undefined; }
 
     const dailyRef = collection(db, 'users', user.uid, 'corosDaily');
@@ -59,7 +65,7 @@ export function useCorosData(user, db) {
     );
 
     return () => { unsubDaily(); unsubBase(); };
-  }, [user, db]);
+  }, [user, db, demo]);
 
   return { daily, baseline, loading, error };
 }
@@ -341,10 +347,16 @@ const qualifyRhr = (bpm) => {
 
 // Intake "Cronometer" (collection nutrition) par date — prioritaire sur le
 // kcalIntake Google Health déjà présent dans `daily`. Fetch borné à la plage.
-function useIntakeData(user, db, days) {
+function useIntakeData(user, db, days, demoIntake) {
   const [intake, setIntake] = useState({});
   const daysKey = days.join('|');
   useEffect(() => {
+    if (demoIntake) {
+      const map = {};
+      for (const k of days) { if (demoIntake[k] != null) map[k] = demoIntake[k]; }
+      setIntake(map);
+      return;
+    }
     if (!user || !db || days.length === 0) { setIntake({}); return; }
     let cancelled = false;
     (async () => {
@@ -359,7 +371,7 @@ function useIntakeData(user, db, days) {
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, db, daysKey]);
+  }, [user, db, daysKey, demoIntake]);
   return intake;
 }
 
@@ -396,11 +408,11 @@ function BalanceScale({ inKcal, outKcal }) {
   );
 }
 
-function BalanceCard({ daily, healthLogs, user, db, timeFrame, anchorDate, setAnchorDate }) {
+function BalanceCard({ daily, healthLogs, user, db, timeFrame, anchorDate, setAnchorDate, demoIntake }) {
   const mode = timeFrame;
   const range = useMemo(() => getPeriodRange(mode, anchorDate), [mode, anchorDate]);
   const days = useMemo(() => daysInRange(range.start, range.end), [range]);
-  const cronoIntake = useIntakeData(user, db, days);
+  const cronoIntake = useIntakeData(user, db, days, demoIntake);
 
   // BMR : dernière valeur connue (balance Withings), ~constante sur la période.
   const bmr = useMemo(() => {
@@ -507,9 +519,9 @@ const WEARABLE_DEFAULT_ORDER = [
 ];
 const WEARABLE_ORDER_KEY = 'bioz_wearableCardOrder';
 
-export function CorosSection({ user, db, timeFrame, healthLogs, hiddenCards = [] }) {
-  const { daily: corosDaily, baseline, loading, error } = useCorosData(user, db);
-  const fitbitDaily = useFitbitData(user, db);
+export function CorosSection({ user, db, timeFrame, healthLogs, hiddenCards = [], demo = null }) {
+  const { daily: corosDaily, baseline, loading, error } = useCorosData(user, db, demo);
+  const fitbitDaily = useFitbitData(user, db, demo ? demo.fitbitDaily : undefined);
   const [anchorDate, setAnchorDate] = useState(new Date());
 
   // Fusion "Google prioritaire" : Fitbit prime, Coros en repli (cf. mergeHealthDaily).
@@ -595,7 +607,7 @@ export function CorosSection({ user, db, timeFrame, healthLogs, hiddenCards = []
     h_corosSommeil: <SommeilCard daily={daily} baseline={baseline} timeFrame={timeFrame} anchorDate={anchorDate} setAnchorDate={setAnchorDate} />,
     h_corosVfc: <VfcCard daily={daily} baseline={baseline} timeFrame={timeFrame} anchorDate={anchorDate} setAnchorDate={setAnchorDate} />,
     h_corosFcRepos: <FcReposCard daily={daily} timeFrame={timeFrame} anchorDate={anchorDate} setAnchorDate={setAnchorDate} />,
-    h_energyBalance: <BalanceCard daily={daily} healthLogs={healthLogs} user={user} db={db} timeFrame={timeFrame} anchorDate={anchorDate} setAnchorDate={setAnchorDate} />,
+    h_energyBalance: <BalanceCard daily={daily} healthLogs={healthLogs} user={user} db={db} timeFrame={timeFrame} anchorDate={anchorDate} setAnchorDate={setAnchorDate} demoIntake={demo ? demo.intake : undefined} />,
   };
   for (const id of FITBIT_CARD_IDS) {
     content[id] = <FitbitCard id={id} fitbitDaily={fitbitDaily} timeFrame={timeFrame} anchorDate={anchorDate} setAnchorDate={setAnchorDate} />;

@@ -26,10 +26,11 @@ import { DayNavigator } from './CorosCards';
 //  Hook Firestore
 // =============================================================================
 
-export function useFitbitData(user, db) {
+export function useFitbitData(user, db, demoDaily) {
   const [daily, setDaily] = useState(null);
 
   useEffect(() => {
+    if (demoDaily) { setDaily(demoDaily); return undefined; }
     if (!user || !db) return undefined;
     const ref = collection(db, 'users', user.uid, 'fitbitDaily');
     const unsub = onSnapshot(
@@ -42,7 +43,7 @@ export function useFitbitData(user, db) {
       () => setDaily({}),
     );
     return () => unsub();
-  }, [user, db]);
+  }, [user, db, demoDaily]);
 
   return daily;
 }

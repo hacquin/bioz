@@ -44,6 +44,7 @@ const generateDemoHealthLogs = () => {
       waist: parseFloat(waist.toFixed(1)),
       steps,
       distance,
+      waterIntake: Math.round(1100 + Math.random() * 1300), // ml (saisie manuelle, repli hydratation)
       systolic: Math.floor(125 + Math.random() * 15),
       diastolic: Math.floor(78 + Math.random() * 10),
       restingHR: Math.floor(58 + Math.random() * 8),
@@ -255,10 +256,133 @@ const generateDemoNutritionDocs = () => {
   return docs;
 };
 
+// Clé de date locale "YYYY-MM-DD"
+const localKey = (d) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
+const pad2 = (n) => String(n).padStart(2, '0');
+
+// --- Wearables : Coros (sommeil/VFC/FC repos/stress) + Fitbit/Google Health ---
+// Valeurs ancrées sur le profil réel : FC repos ~54 bpm, VFC baseline 42 ms
+// (plage 39-57), stress moyen 30-50, profil keto (glucose bas, peu de glucides).
+// Génère deux maps {date: {...}} sur les ~120 derniers jours, et un map d'apport
+// calorique (intake) repris de la nutrition pour la balance énergétique.
+const generateDemoWearables = (nutritionDocs) => {
+  const corosDaily = {};
+  const fitbitDaily = {};
+  const intake = {};
+
+  const nutByDate = {};
+  for (const n of nutritionDocs) nutByDate[n.date] = n;
+
+  const today = new Date();
+  const DAYS = 120;
+
+  for (let i = DAYS; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const key = localKey(d);
+    const dow = d.getDay();
+    const isToday = i === 0;
+    const elapsed = isToday ? Math.min(1, Math.max(0.2, (new Date() - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 86400000)) : 1;
+
+    // --- Coros : nuit + récup ---
+    // Sommeil (synthétisé : la montre n'enregistre pas toujours la nuit)
+    const wearsWatchTonight = Math.random() > 0.12;
+    if (wearsWatchTonight) {
+      const mainMin = Math.round(390 + Math.random() * 90); // 6h30 → 8h
+      const deepPct = Math.round(13 + Math.random() * 7);   // 13-20%
+      const remPct = Math.round(18 + Math.random() * 6);    // 18-24%
+      const awakePct = Math.round(8 + Math.random() * 8);   // 8-16%
+      const lightPct = Math.max(0, 100 - deepPct - remPct - awakePct);
+      const awakeMin = Math.round(mainMin * awakePct / 100);
+      const startH = 22, startMin = 30 + Math.floor(Math.random() * 70); // 22h30 → 23h40
+      const start = new Date(d);
+      start.setHours(startH, 0, 0, 0);
+      start.setMinutes(startMin);
+      const end = new Date(start.getTime() + (mainMin + awakeMin) * 60000);
+
+      // VFC : baseline 42 ms, plage 39-57 → 38-52 au quotidien
+      const hrv = Math.round(40 + Math.random() * 12);
+      const hrvEvaluation = hrv < 39 ? 'below_normal' : hrv > 53 ? 'above_normal' : 'normal';
+      // FC repos : ~54 bpm (52-58)
+      const rhr = Math.round(52 + Math.random() * 6);
+
+      corosDaily[key] = {
+        date: key,
+        sleepMainMin: mainMin,
+        sleepDeepPct: deepPct,
+        sleepLightPct: lightPct,
+        sleepRemPct: remPct,
+        sleepAwakePct: awakePct,
+        sleepAwakeMin: awakeMin,
+        sleepAwakeCount: 2 + Math.floor(Math.random() * 4),
+        sleepStart: `${pad2(start.getHours())}:${pad2(start.getMinutes())}`,
+        sleepEnd: `${pad2(end.getHours())}:${pad2(end.getMinutes())}`,
+        sleepScore: Math.round(66 + Math.random() * 26), // 66-92
+        hrvAvgMs: hrv,
+        hrvEvaluation,
+        rhrBpm: rhr,
+        napsTotalMin: Math.random() > 0.85 ? 15 + Math.floor(Math.random() * 30) : 0,
+      };
+    }
+
+    // Stress moyen (présent même sans sommeil enregistré) : 28-52
+    const stressAvg = Math.round(28 + Math.random() * 24);
+    const stressLevel = stressAvg < 33 ? 'relaxed' : stressAvg < 45 ? 'low' : stressAvg < 60 ? 'medium' : 'high';
+    if (!corosDaily[key]) corosDaily[key] = { date: key };
+    corosDaily[key].stressAvg = stressAvg;
+    corosDaily[key].stressLevel = stressLevel;
+
+    // --- Fitbit / Google Health : pas, énergie active, SpO2, glycémie, eau, apport ---
+    const restDay = dow === 0; // dimanche plus calme
+    const baseSteps = restDay ? 3500 : 6500;
+    const steps = Math.round((baseSteps + Math.random() * 6000) * elapsed);
+    const activeKcal = Math.round((180 + steps * 0.045 + Math.random() * 150) * 1); // dépense active
+    // Profil keto : glycémie basse et stable
+    const gAvg = Math.round(82 + Math.random() * 16); // 82-98
+    const nut = nutByDate[key];
+    const kcalIntake = nut ? nut.calories : Math.round((1500 + Math.random() * 600) * elapsed);
+
+    fitbitDaily[key] = {
+      date: key,
+      steps,
+      activeKcal,
+      spo2AvgPct: parseFloat((94 + Math.random() * 3.5).toFixed(1)), // 94-97.5
+      spo2MinPct: Math.round(90 + Math.random() * 4),
+      glucoseAvgMgDl: gAvg,
+      glucoseMinMgDl: gAvg - Math.round(6 + Math.random() * 8),
+      glucoseMaxMgDl: gAvg + Math.round(12 + Math.random() * 18),
+      glucoseCount: 24,
+      waterMl: Math.round((1200 + Math.random() * 1300) * (isToday ? elapsed : 1)),
+      kcalIntake,
+      carbsG: nut ? nut.carbs : Math.round(10 + Math.random() * 16),
+      fatG: nut ? nut.fat : Math.round(95 + Math.random() * 60),
+      proteinG: nut ? nut.protein : Math.round(80 + Math.random() * 50),
+    };
+
+    // Apport calorique (prioritaire dans la balance) repris de la nutrition.
+    if (nut) intake[key] = nut.calories;
+  }
+
+  return { corosDaily, fitbitDaily, intake };
+};
+
+const _demoNutritionDocs = generateDemoNutritionDocs();
+const _demoWearables = generateDemoWearables(_demoNutritionDocs);
+
 export const DEMO_DATA = {
   healthLogs: generateDemoHealthLogs(),
   stravaLogs: generateDemoStravaLogs(),
   hevyWorkouts: generateDemoHevyWorkouts(),
+  corosDaily: _demoWearables.corosDaily,
+  fitbitDaily: _demoWearables.fitbitDaily,
+  corosBaseline: { rhrBpm: 54, hrvAvgMs: 42, hrvLow: 39, hrvHigh: 57 },
+  intake: _demoWearables.intake,
   goals: {
     startWeight: 106,
     targetWeight: 95,
@@ -267,7 +391,7 @@ export const DEMO_DATA = {
     startWaist: 107,
     targetWaist: 95,
   },
-  nutritionDocs: generateDemoNutritionDocs(),
+  nutritionDocs: _demoNutritionDocs,
   aiBilan: {
     text: "La tendance sur cinq jours confirme une descente régulière : le poids moyen passe sous les 99 kg et le tour de taille flirte avec les 99 cm, ce qui est plutôt encourageant pour quelqu'un qui a démarré à 107. La graisse corporelle suit le mouvement autour de 20%, dans le bon sens. L'hydratation est correcte, pas de signal d'alerte de ce côté.\n\n[CONSEILS]\nContinue sur cette lancée cétogène sans changer une virgule, la machine tourne.\nPense à mesurer ta tension plus régulièrement, deux points de données par semaine c'est le minimum pour repérer une tendance.\nUn petit rameur ou une marche rapide les jours off musculation ferait du bien au cardio sans taper dans la récup.",
     date: new Date().toISOString().split('T')[0],

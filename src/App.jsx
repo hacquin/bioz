@@ -2074,7 +2074,7 @@ BMR : ${f(ind.bmr)} kcal${sportSection}${activitySection}`;
       })}
 
       {/* Section Coros : Sommeil + VFC nocturne — rendues comme des health cards dans la grille */}
-      <CorosSection user={user} db={db} timeFrame={timeFrame} healthLogs={healthLogs} hiddenCards={healthHiddenCards} />
+      <CorosSection user={user} db={db} timeFrame={timeFrame} healthLogs={healthLogs} hiddenCards={healthHiddenCards} demo={isDemo ? { corosDaily: DEMO_DATA.corosDaily, fitbitDaily: DEMO_DATA.fitbitDaily, corosBaseline: DEMO_DATA.corosBaseline, intake: DEMO_DATA.intake } : null} />
       </div>
 
       <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-lg">
