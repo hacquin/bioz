@@ -515,7 +515,7 @@ function BalanceCard({ daily, healthLogs, user, db, timeFrame, anchorDate, setAn
 const RING_COLORS = ['#EF4444', '#F97316', '#3B82F6', '#EC4899'];
 
 // Anneaux concentriques : 1 anneau par métrique, rempli au prorata de l'objectif.
-function GoalRings({ metrics, size = 236, centerTop, centerBottom }) {
+function GoalRings({ metrics, size = 200, centerTop, centerBottom }) {
   const cx = size / 2, cy = size / 2;
   const sw = 14, gap = 8;
   const outerR = size / 2 - sw / 2 - 2;
@@ -548,7 +548,7 @@ function GoalRingCard({ navProps, metrics }) {
   return (
     <div className="bg-slate-800 rounded-xl p-4 border border-slate-700 h-full flex flex-col">
       <DayNavigator {...navProps} />
-      <div className="flex-1 flex items-center justify-center mt-2 mb-1">
+      <div className="flex-1 flex items-center justify-center px-8 py-3">
         <GoalRings metrics={metrics} centerTop={`${reached}/${metrics.length}`} centerBottom="OBJECTIFS" />
       </div>
       <div className="grid grid-cols-2 gap-1.5 mt-auto">
