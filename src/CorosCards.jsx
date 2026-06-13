@@ -548,8 +548,8 @@ function GoalRingCard({ navProps, metrics }) {
   return (
     <div className="bg-slate-800 rounded-xl p-4 border border-slate-700 h-full flex flex-col">
       <DayNavigator {...navProps} />
-      <div className="flex-1 flex items-center gap-3 mt-3">
-        <div className="flex flex-col gap-2 w-64 flex-shrink-0">
+      <div className="flex-1 flex flex-col md:flex-row items-stretch md:items-center gap-3 mt-3">
+        <div className="flex flex-col gap-2 w-full md:w-64 flex-shrink-0">
           {metrics.map((m, i) => {
             const pct = m.pct ?? 0;
             const done = pct >= 1;
@@ -570,7 +570,7 @@ function GoalRingCard({ navProps, metrics }) {
             );
           })}
         </div>
-        <div className="flex-1 flex items-center justify-end min-w-0">
+        <div className="flex-1 flex items-center justify-center md:justify-end min-w-0">
           <GoalRings metrics={metrics} centerTop={`${reached}/${metrics.length}`} centerBottom="OBJECTIFS" />
         </div>
       </div>
