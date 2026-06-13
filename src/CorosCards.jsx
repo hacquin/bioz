@@ -548,29 +548,31 @@ function GoalRingCard({ navProps, metrics }) {
   return (
     <div className="bg-slate-800 rounded-xl p-4 border border-slate-700 h-full flex flex-col">
       <DayNavigator {...navProps} />
-      <div className="flex-1 flex items-center justify-center px-8 py-3">
-        <GoalRings metrics={metrics} centerTop={`${reached}/${metrics.length}`} centerBottom="OBJECTIFS" />
-      </div>
-      <div className="grid grid-cols-2 gap-1.5 mt-auto">
-        {metrics.map((m, i) => {
-          const pct = m.pct ?? 0;
-          const done = pct >= 1;
-          return (
-            <div key={i} className="flex items-center gap-1.5 bg-slate-900/50 rounded-lg px-2 py-1">
-              <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: m.color }} />
-              <div className="min-w-0">
-                <div className="text-[9px] text-slate-400 uppercase tracking-wide truncate leading-tight">{m.label}</div>
-                <div className="text-xs font-bold text-slate-100 leading-tight">
-                  {m.valueText}
-                  <span className="text-[9px] text-slate-500 font-normal"> / {m.goalText}</span>
+      <div className="flex-1 flex items-center gap-3 mt-3">
+        <div className="flex flex-col gap-1.5 w-40 flex-shrink-0">
+          {metrics.map((m, i) => {
+            const pct = m.pct ?? 0;
+            const done = pct >= 1;
+            return (
+              <div key={i} className="flex items-center gap-1.5 bg-slate-900/50 rounded-lg px-2 py-1.5">
+                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: m.color }} />
+                <div className="min-w-0">
+                  <div className="text-[9px] text-slate-400 uppercase tracking-wide truncate leading-tight">{m.label}</div>
+                  <div className="text-xs font-bold text-slate-100 leading-tight">
+                    {m.valueText}
+                    <span className="text-[9px] text-slate-500 font-normal"> / {m.goalText}</span>
+                  </div>
                 </div>
+                <span className="ml-auto text-[11px] font-extrabold flex-shrink-0" style={{ color: done ? '#34d399' : m.color }}>
+                  {m.pctText}
+                </span>
               </div>
-              <span className="ml-auto text-[11px] font-extrabold flex-shrink-0" style={{ color: done ? '#34d399' : m.color }}>
-                {m.pctText}
-              </span>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
+        <div className="flex-1 flex items-center justify-center min-w-0">
+          <GoalRings metrics={metrics} centerTop={`${reached}/${metrics.length}`} centerBottom="OBJECTIFS" />
+        </div>
       </div>
     </div>
   );
