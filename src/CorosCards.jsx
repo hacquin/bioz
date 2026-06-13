@@ -543,7 +543,7 @@ function GoalRings({ metrics, size = 236, centerTop, centerBottom }) {
 }
 
 // Carte générique : navigateur + anneaux + légende 2×2 (valeur / objectif / %).
-function GoalRingCard({ navProps, metrics, footer }) {
+function GoalRingCard({ navProps, metrics }) {
   const reached = metrics.filter((m) => (m.pct ?? 0) >= 1).length;
   return (
     <div className="bg-slate-800 rounded-xl p-4 border border-slate-700 h-full flex flex-col">
@@ -551,7 +551,7 @@ function GoalRingCard({ navProps, metrics, footer }) {
       <div className="flex-1 flex items-center justify-center mt-2 mb-1">
         <GoalRings metrics={metrics} centerTop={`${reached}/${metrics.length}`} centerBottom="OBJECTIFS" />
       </div>
-      <div className="grid grid-cols-2 gap-1.5">
+      <div className="grid grid-cols-2 gap-1.5 mt-auto">
         {metrics.map((m, i) => {
           const pct = m.pct ?? 0;
           const done = pct >= 1;
@@ -572,7 +572,6 @@ function GoalRingCard({ navProps, metrics, footer }) {
           );
         })}
       </div>
-      {footer && <div className="text-[10px] text-slate-500 mt-2 text-center">{footer}</div>}
     </div>
   );
 }
@@ -629,7 +628,6 @@ function DailyGoalsCard({ daily, healthLogs, user, db, anchorDate, setAnchorDate
         label: fmtDateFr(anchorDate, { weekday: 'long', day: 'numeric', month: 'long' }),
       }}
       metrics={metrics}
-      footer={isToday ? 'Dépense du jour proratisée (BMR + actif accumulé)' : null}
     />
   );
 }
@@ -712,7 +710,6 @@ function WeeklyGoalsCard({ daily, healthLogs, stravaLogs, hevyWorkouts, user, db
         label: `${fmtDateFr(range.start, { day: 'numeric', month: 'short' })} – ${fmtDateFr(range.end, { day: 'numeric', month: 'short' })}`,
       }}
       metrics={metrics}
-      footer="Sport : Strava + Hevy · déficit & poids sur la semaine ISO"
     />
   );
 }
