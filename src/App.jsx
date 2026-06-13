@@ -664,7 +664,7 @@ function HevyView({ hevyWorkouts, loadingHevy, hevyError, hevySyncStatus, fetchH
   );
 }
 
-function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings, onWithingsSync, goals, isDemo, onAddWater, onOpenWaterModal }) {
+function HealthTracker({ user, db, healthLogs, setHealthLogs, stravaLogs, hevyWorkouts, isSyncingWithings, onWithingsSync, goals, isDemo, onAddWater, onOpenWaterModal }) {
   // Sync manuel des wearables via les gateways PHP sur le VPS.
   const [fitbitSyncing, setFitbitSyncing] = useState(false);
   const [corosSyncing, setCorosSyncing] = useState(false);
@@ -732,8 +732,8 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings,
   };
   const isHealthCardVisible = (cardId) => !healthHiddenCards.includes(cardId);
 
-  const HEALTH_DEFAULT_ORDER = ['h_bodySilhouette', 'h_radar', 'h_weightFat', 'h_composition', 'h_muscleFatBar', 'h_weight', 'h_waist', 'h_bp', 'h_restingHR', 'h_pwv', 'h_bodyFat', 'h_muscleMass', 'h_hydration', 'h_visceralFat', 'h_corosBilan', 'h_corosSommeil', 'h_corosVfc', 'h_corosFcRepos', 'h_energyBalance', 'h_fitbitPas', 'h_fitbitEnergie', 'h_fitbitSpo2', 'h_fitbitGlycemie'];
-  const HEALTH_CARD_LABELS = { h_bodySilhouette: 'Silhouette Corporelle', h_radar: 'Radar — Départ vs Aujourd\'hui', h_weightFat: 'Poids & Graisse', h_composition: 'Composition Corporelle', h_muscleFatBar: 'Répartition Muscle / Graisse', h_weight: 'Poids', h_waist: 'Tour de taille', h_bp: 'Tension Artérielle', h_restingHR: 'FC Repos', h_pwv: "Vitesse d'Onde de Pouls", h_bodyFat: 'Graisse Corporelle', h_muscleMass: 'Masse Musculaire', h_hydration: 'Hydratation', h_visceralFat: 'Graisse Viscérale', h_corosBilan: 'Bilan Santé', h_corosSommeil: 'Sommeil', h_corosVfc: 'VFC nocturne', h_corosFcRepos: 'FC Repos', h_energyBalance: 'Balance énergétique', h_fitbitPas: 'Pas — Fitbit', h_fitbitEnergie: 'Énergie — Fitbit', h_fitbitSpo2: 'SpO2 — Fitbit', h_fitbitGlycemie: 'Glycémie — Fitbit' };
+  const HEALTH_DEFAULT_ORDER = ['h_bodySilhouette', 'h_radar', 'h_weightFat', 'h_composition', 'h_muscleFatBar', 'h_weight', 'h_waist', 'h_bp', 'h_restingHR', 'h_pwv', 'h_bodyFat', 'h_muscleMass', 'h_hydration', 'h_visceralFat', 'h_goalsDaily', 'h_goalsWeekly', 'h_corosBilan', 'h_corosSommeil', 'h_corosVfc', 'h_corosFcRepos', 'h_energyBalance', 'h_fitbitPas', 'h_fitbitEnergie', 'h_fitbitSpo2', 'h_fitbitGlycemie'];
+  const HEALTH_CARD_LABELS = { h_bodySilhouette: 'Silhouette Corporelle', h_radar: 'Radar — Départ vs Aujourd\'hui', h_weightFat: 'Poids & Graisse', h_composition: 'Composition Corporelle', h_muscleFatBar: 'Répartition Muscle / Graisse', h_weight: 'Poids', h_waist: 'Tour de taille', h_bp: 'Tension Artérielle', h_restingHR: 'FC Repos', h_pwv: "Vitesse d'Onde de Pouls", h_bodyFat: 'Graisse Corporelle', h_muscleMass: 'Masse Musculaire', h_hydration: 'Hydratation', h_visceralFat: 'Graisse Viscérale', h_goalsDaily: 'Objectifs du jour', h_goalsWeekly: 'Objectifs de la semaine', h_corosBilan: 'Bilan Santé', h_corosSommeil: 'Sommeil', h_corosVfc: 'VFC nocturne', h_corosFcRepos: 'FC Repos', h_energyBalance: 'Balance énergétique', h_fitbitPas: 'Pas — Fitbit', h_fitbitEnergie: 'Énergie — Fitbit', h_fitbitSpo2: 'SpO2 — Fitbit', h_fitbitGlycemie: 'Glycémie — Fitbit' };
   const [bodySilhouetteGender, setBodySilhouetteGender] = useState(() => localStorage.getItem('bioz_bodySilhouetteGender') || 'homme');
   const [radarTraces, setRadarTraces] = useState(() => {
     try {
@@ -2210,7 +2210,7 @@ BMR : ${f(ind.bmr)} kcal${sportSection}${activitySection}`;
       })}
 
       {/* Section Coros : Sommeil + VFC nocturne — rendues comme des health cards dans la grille */}
-      <CorosSection user={user} db={db} timeFrame={timeFrame} healthLogs={healthLogs} hiddenCards={healthHiddenCards} demo={isDemo ? { corosDaily: DEMO_DATA.corosDaily, fitbitDaily: DEMO_DATA.fitbitDaily, corosBaseline: DEMO_DATA.corosBaseline, intake: DEMO_DATA.intake } : null} />
+      <CorosSection user={user} db={db} timeFrame={timeFrame} healthLogs={healthLogs} stravaLogs={stravaLogs} hevyWorkouts={hevyWorkouts} hiddenCards={healthHiddenCards} demo={isDemo ? { corosDaily: DEMO_DATA.corosDaily, fitbitDaily: DEMO_DATA.fitbitDaily, corosBaseline: DEMO_DATA.corosBaseline, intake: DEMO_DATA.intake, stravaLogs: DEMO_DATA.stravaLogs, hevyWorkouts: DEMO_DATA.hevyWorkouts } : null} />
       </div>
 
       <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-lg">
@@ -3730,7 +3730,7 @@ function App() {
     switch(activeTab) {
       case 'dashboard': return dataLoaded ? <Dashboard healthLogs={healthLogs} stravaLogs={stravaLogs} /> : <div className="flex items-center justify-center h-64 text-slate-500">Chargement...</div>;
       case 'workout': return <HevyView hevyWorkouts={hevyWorkouts} loadingHevy={loadingHevy} fetchHevyWorkouts={demoFetchHevy} hevyError={hevyError} hevySyncStatus={hevySyncStatus} onDeleteWorkout={demoDeleteHevy} isDemo={isDemo} />;
-      case 'health': return <HealthTracker user={user} db={db} healthLogs={healthLogs} setHealthLogs={demoSetHealthLogs} isSyncingWithings={isSyncingWithings} onWithingsSync={demoWithingsSync} goals={goals} isDemo={isDemo} onAddWater={(amount) => { handleAddWater(amount); }} onOpenWaterModal={() => setShowWaterModal(true)} />;
+      case 'health': return <HealthTracker user={user} db={db} healthLogs={healthLogs} setHealthLogs={demoSetHealthLogs} stravaLogs={stravaLogs} hevyWorkouts={hevyWorkouts} isSyncingWithings={isSyncingWithings} onWithingsSync={demoWithingsSync} goals={goals} isDemo={isDemo} onAddWater={(amount) => { handleAddWater(amount); }} onOpenWaterModal={() => setShowWaterModal(true)} />;
       case 'endurance': return <EnduranceView stravaLogs={stravaLogs} onSync={demoStravaSync} isSyncing={isSyncingStrava} isDemo={isDemo} />;
       case 'nutrition': return <NutritionImport user={user} db={db} isDemo={isDemo} demoNutritionDocs={isDemo ? DEMO_DATA.nutritionDocs : null} goals={goals} healthLogs={healthLogs} nutritionVersion={nutritionVersion} />;
       case 'settings': return <SettingsView user={user} db={db} isWithingsEnabled={isDemo || isWithingsEnabled} handleWithingsAuth={isDemo ? demoNoOp : handleStartWithingsAuth} isStravaEnabled={isDemo || isStravaEnabled} handleStravaAuth={isDemo ? demoNoOp : handleStartStravaAuth} withingsNeedsReconnect={false} hevyApiKey={hevyApiKey} onSaveHevyApiKey={isDemo ? demoNoOp : saveHevyApiKey} goals={goals} setGoals={demoSetGoals} dataSourcePrefs={dataSourcePrefs} setDataSourcePrefs={setDataSourcePrefs} connectedSources={connectedSources} isDemo={isDemo} setNutritionVersion={setNutritionVersion} />;

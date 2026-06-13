@@ -17,6 +17,7 @@ import {
 } from 'firebase/firestore';
 import {
   Moon, Heart, Info, ChevronLeft, ChevronRight, RefreshCw, AlertCircle, Scale,
+  Target, Footprints, Flame, Utensils, Dumbbell, TrendingDown,
 } from 'lucide-react';
 import {
   LineChart, Line, BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -504,6 +505,214 @@ function BalanceCard({ daily, healthLogs, user, db, timeFrame, anchorDate, setAn
 }
 
 // =============================================================================
+//  Cartes OBJECTIFS — anneaux concentriques (style WHOOP)
+//  Une carte quotidienne + une carte hebdomadaire. Chaque objectif = un anneau.
+// =============================================================================
+
+// Anneaux concentriques : 1 anneau par métrique, rempli au prorata de l'objectif.
+function GoalRings({ metrics, size = 240, centerTop, centerBottom }) {
+  const cx = size / 2, cy = size / 2;
+  const sw = 14, gap = 7;
+  const outerR = size / 2 - sw / 2 - 2;
+  return (
+    <svg viewBox={`0 0 ${size} ${size}`} className="w-full" style={{ maxWidth: size }} role="img" aria-label="Progression des objectifs">
+      {metrics.map((m, i) => {
+        const r = outerR - i * (sw + gap);
+        const c = 2 * Math.PI * r;
+        const pct = Math.max(0, Math.min(1, m.pct ?? 0));
+        return (
+          <g key={i} transform={`rotate(-90 ${cx} ${cy})`}>
+            <circle cx={cx} cy={cy} r={r} fill="none" stroke="#1e293b" strokeWidth={sw} />
+            <circle
+              cx={cx} cy={cy} r={r} fill="none" stroke={m.color} strokeWidth={sw}
+              strokeLinecap="round" strokeDasharray={c} strokeDashoffset={c * (1 - pct)}
+              style={{ transition: 'stroke-dashoffset 0.6s ease' }}
+            />
+          </g>
+        );
+      })}
+      <text x={cx} y={cy - 2} textAnchor="middle" fill="#f1f5f9" fontSize={32} fontWeight="800">{centerTop}</text>
+      <text x={cx} y={cy + 18} textAnchor="middle" fill="#94a3b8" fontSize={10} fontWeight="700" letterSpacing="1.5">{centerBottom}</text>
+    </svg>
+  );
+}
+
+// Carte générique : navigateur + anneaux + légende 2×2 (valeur / objectif / %).
+function GoalRingCard({ navProps, metrics, footer }) {
+  const reached = metrics.filter((m) => (m.pct ?? 0) >= 1).length;
+  return (
+    <div className="bg-slate-800 rounded-xl p-4 border border-slate-700 h-full flex flex-col">
+      <DayNavigator {...navProps} />
+      <div className="flex-1 flex items-center justify-center mt-2 mb-1">
+        <GoalRings metrics={metrics} centerTop={`${reached}/${metrics.length}`} centerBottom="OBJECTIFS" />
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        {metrics.map((m, i) => {
+          const pct = m.pct ?? 0;
+          const done = pct >= 1;
+          return (
+            <div key={i} className="flex items-center gap-2 bg-slate-900/50 rounded-lg px-2.5 py-2">
+              <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: m.color }} />
+              <div className="min-w-0">
+                <div className="text-[10px] text-slate-400 uppercase tracking-wide truncate">{m.label}</div>
+                <div className="text-sm font-bold text-slate-100 leading-tight">
+                  {m.valueText}
+                  <span className="text-[10px] text-slate-500 font-normal"> / {m.goalText}</span>
+                </div>
+              </div>
+              <span className="ml-auto text-xs font-extrabold flex-shrink-0" style={{ color: done ? '#34d399' : m.color }}>
+                {m.pctText}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      {footer && <div className="text-[10px] text-slate-500 mt-2 text-center">{footer}</div>}
+    </div>
+  );
+}
+
+const fmtInt = (n) => (n == null ? '—' : Math.round(n).toLocaleString('fr-FR'));
+const pctStr = (v, g) => (v == null ? '—' : `${Math.round((v / g) * 100)}%`);
+
+// Dernière valeur BMR connue (balance Withings) — ~constante sur la période.
+function useLastBmr(healthLogs) {
+  return useMemo(() => {
+    const logs = (healthLogs || []).filter((l) => l.bmr != null);
+    if (!logs.length) return null;
+    logs.sort((a, b) => (a.date < b.date ? 1 : -1));
+    return logs[0].bmr;
+  }, [healthLogs]);
+}
+
+// --- Objectifs QUOTIDIENS : pas 8000 · dépense 3000 · apport 2300 · sommeil 7h ---
+const DAILY_GOALS = { steps: 8000, expend: 3000, intake: 2300, sleep: 420 };
+
+function DailyGoalsCard({ daily, healthLogs, user, db, anchorDate, setAnchorDate, demoIntake }) {
+  const key = localDateKey(anchorDate);
+  const todayKey = localDateKey(new Date());
+  const isToday = key === todayKey;
+  const cronoIntake = useIntakeData(user, db, [key], demoIntake);
+  const bmr = useLastBmr(healthLogs);
+
+  const d = daily[key] || {};
+  const steps = d.steps ?? null;
+  const active = d.activeKcal ?? null;
+  const bmrPart = bmr == null ? null : (isToday ? bmr * dayElapsedFraction() : bmr);
+  const expend = bmrPart == null ? null : bmrPart + (active || 0);
+  const intake = cronoIntake[key] ?? d.kcalIntake ?? null;
+  const sleep = d.sleepMainMin ?? null;
+  const G = DAILY_GOALS;
+
+  const metrics = [
+    { label: 'Pas', color: '#22d3ee', pct: steps == null ? 0 : steps / G.steps,
+      valueText: fmtInt(steps), goalText: fmtInt(G.steps), pctText: pctStr(steps, G.steps) },
+    { label: 'Dépense', color: '#fb923c', pct: expend == null ? 0 : expend / G.expend,
+      valueText: expend == null ? '—' : `${fmtInt(expend)} kcal`, goalText: `${fmtInt(G.expend)} kcal`, pctText: pctStr(expend, G.expend) },
+    { label: 'Apport', color: '#a78bfa', pct: intake == null ? 0 : intake / G.intake,
+      valueText: intake == null ? '—' : `${fmtInt(intake)} kcal`, goalText: `${fmtInt(G.intake)} kcal`, pctText: pctStr(intake, G.intake) },
+    { label: 'Sommeil', color: '#60a5fa', pct: sleep == null ? 0 : sleep / G.sleep,
+      valueText: fmtMin(sleep), goalText: '7h', pctText: pctStr(sleep, G.sleep) },
+  ];
+
+  return (
+    <GoalRingCard
+      navProps={{
+        anchorDate, setAnchorDate, step: 1,
+        icon: <Target size={18} className="text-emerald-400" />,
+        title: 'Objectifs du jour',
+        label: fmtDateFr(anchorDate, { weekday: 'long', day: 'numeric', month: 'long' }),
+      }}
+      metrics={metrics}
+      footer={isToday ? 'Dépense du jour proratisée (BMR + actif accumulé)' : null}
+    />
+  );
+}
+
+// --- Objectifs HEBDOMADAIRES : sport 300 mn · 60 000 pas · -500 g · déficit 4900 kcal ---
+const WEEKLY_GOALS = { training: 300, steps: 60000, loss: 500, deficit: 4900 };
+const MUSCU_TYPES = ['WeightTraining', 'Workout', 'Crossfit', 'HIIT', 'Hiit'];
+
+function WeeklyGoalsCard({ daily, healthLogs, stravaLogs, hevyWorkouts, user, db, anchorDate, setAnchorDate, demoIntake }) {
+  const range = useMemo(() => getPeriodRange('week', anchorDate), [anchorDate]);
+  const days = useMemo(() => daysInRange(range.start, range.end), [range]);
+  const cronoIntake = useIntakeData(user, db, days, demoIntake);
+  const bmr = useLastBmr(healthLogs);
+  const todayKey = localDateKey(new Date());
+
+  // Borne fin de semaine inclusive (fin de journée).
+  const endBoundary = useMemo(() => new Date(range.end.getTime() + 86399999), [range]);
+  const inWk = (ds) => { if (!ds) return false; const t = new Date(ds); return t >= range.start && t <= endBoundary; };
+
+  // Pas cumulés sur la semaine.
+  const stepsWeek = days.reduce((t, k) => t + (daily[k]?.steps || 0), 0);
+
+  // Minutes d'entraînement : cardio Strava + séances Hevy (durée) + muscu Strava hors jours Hevy (anti-doublon).
+  const trainingMin = useMemo(() => {
+    const sWk = (stravaLogs || []).filter((a) => inWk(a.start_date));
+    const hWk = (hevyWorkouts || []).filter((w) => inWk(w.start_time));
+    const hevyDays = new Set(hWk.map((w) => localDateKey(w.start_time)));
+    const cardioMin = sWk.filter((a) => !MUSCU_TYPES.includes(a.type)).reduce((t, a) => t + (a.moving_time || 0) / 60, 0);
+    const hevyMin = hWk.reduce((t, w) => t + (w.start_time && w.end_time ? Math.max(0, (new Date(w.end_time) - new Date(w.start_time)) / 60000) : 0), 0);
+    const stravaMuscuMin = sWk.filter((a) => MUSCU_TYPES.includes(a.type) && !hevyDays.has(localDateKey(a.start_date)))
+      .reduce((t, a) => t + (a.moving_time || 0) / 60, 0);
+    return Math.round(cardioMin + hevyMin + stravaMuscuMin);
+  }, [stravaLogs, hevyWorkouts, range, endBoundary]);
+
+  // Perte de poids : poids d'entrée de semaine (dernier connu avant, sinon 1er de la semaine) vs dernier de la semaine.
+  const lossG = useMemo(() => {
+    const ws = (healthLogs || []).filter((l) => l.weight != null)
+      .map((l) => ({ d: new Date(l.date), w: l.weight })).sort((a, b) => a.d - b.d);
+    if (!ws.length) return null;
+    const before = [...ws].reverse().find((x) => x.d < range.start);
+    const inWeek = ws.filter((x) => x.d >= range.start && x.d <= endBoundary);
+    const startW = before?.w ?? inWeek[0]?.w ?? null;
+    const endW = inWeek.length ? inWeek[inWeek.length - 1].w : null;
+    return (startW != null && endW != null) ? Math.round((startW - endW) * 1000) : null;
+  }, [healthLogs, range, endBoundary]);
+
+  // Déficit calorique cumulé : Σ(dépense) − Σ(apport) sur les jours renseignés.
+  const deficit = useMemo(() => {
+    let sumExpend = 0, sumIntake = 0, has = false;
+    days.forEach((k) => {
+      const intake = cronoIntake[k] ?? daily[k]?.kcalIntake ?? null;
+      const active = daily[k]?.activeKcal ?? null;
+      const bmrPart = bmr == null ? null : (k === todayKey ? bmr * dayElapsedFraction() : bmr);
+      const expend = bmrPart == null ? null : bmrPart + (active || 0);
+      if (intake != null && expend != null) { sumExpend += expend; sumIntake += intake; has = true; }
+    });
+    return has ? Math.round(sumExpend - sumIntake) : null;
+  }, [days, cronoIntake, daily, bmr, todayKey]);
+
+  const G = WEEKLY_GOALS;
+  const lossText = lossG == null ? '—' : (lossG >= 0 ? `${fmtInt(lossG)} g` : `+${fmtInt(-lossG)} g`);
+
+  const metrics = [
+    { label: 'Entraînement', color: '#f472b6', pct: trainingMin / G.training,
+      valueText: `${fmtInt(trainingMin)} min`, goalText: `${G.training} min`, pctText: pctStr(trainingMin, G.training) },
+    { label: 'Pas', color: '#22d3ee', pct: stepsWeek / G.steps,
+      valueText: fmtInt(stepsWeek), goalText: fmtInt(G.steps), pctText: pctStr(stepsWeek, G.steps) },
+    { label: 'Perte de poids', color: '#34d399', pct: lossG == null ? 0 : lossG / G.loss,
+      valueText: lossText, goalText: `-${G.loss} g`, pctText: lossG == null ? '—' : `${Math.round((lossG / G.loss) * 100)}%` },
+    { label: 'Déficit', color: '#fbbf24', pct: deficit == null ? 0 : deficit / G.deficit,
+      valueText: deficit == null ? '—' : `${fmtInt(deficit)} kcal`, goalText: `${fmtInt(G.deficit)} kcal`, pctText: pctStr(deficit, G.deficit) },
+  ];
+
+  return (
+    <GoalRingCard
+      navProps={{
+        anchorDate, setAnchorDate, step: 7,
+        icon: <Target size={18} className="text-violet-400" />,
+        title: 'Objectifs de la semaine',
+        label: `${fmtDateFr(range.start, { day: 'numeric', month: 'short' })} – ${fmtDateFr(range.end, { day: 'numeric', month: 'short' })}`,
+      }}
+      metrics={metrics}
+      footer="Sport : Strava + Hevy · déficit & poids sur la semaine ISO"
+    />
+  );
+}
+
+// =============================================================================
 //  Composant racine : section "Récupération & Sommeil"
 // =============================================================================
 
@@ -515,11 +724,11 @@ function BalanceCard({ daily, healthLogs, user, db, timeFrame, anchorDate, setAn
 // Les états loading / error / empty sont aussi col-span-full pour rester lisibles.
 // Ordre par défaut du groupe "wearables" (Coros + Fitbit), réordonnable par drag.
 const WEARABLE_DEFAULT_ORDER = [
-  'h_corosBilan', 'h_corosSommeil', 'h_corosVfc', 'h_corosFcRepos', 'h_energyBalance', ...FITBIT_CARD_IDS,
+  'h_goalsDaily', 'h_goalsWeekly', 'h_corosBilan', 'h_corosSommeil', 'h_corosVfc', 'h_corosFcRepos', 'h_energyBalance', ...FITBIT_CARD_IDS,
 ];
 const WEARABLE_ORDER_KEY = 'bioz_wearableCardOrder';
 
-export function CorosSection({ user, db, timeFrame, healthLogs, hiddenCards = [], demo = null }) {
+export function CorosSection({ user, db, timeFrame, healthLogs, stravaLogs = [], hevyWorkouts = [], hiddenCards = [], demo = null }) {
   const { daily: corosDaily, baseline, loading, error } = useCorosData(user, db, demo);
   const fitbitDaily = useFitbitData(user, db, demo ? demo.fitbitDaily : undefined);
   const [anchorDate, setAnchorDate] = useState(new Date());
@@ -602,7 +811,12 @@ export function CorosSection({ user, db, timeFrame, healthLogs, hiddenCards = []
     );
   }
 
+  const sLogs = demo ? (demo.stravaLogs || []) : (stravaLogs || []);
+  const hLogs = demo ? (demo.hevyWorkouts || []) : (hevyWorkouts || []);
+
   const content = {
+    h_goalsDaily: <DailyGoalsCard daily={daily} healthLogs={healthLogs} user={user} db={db} anchorDate={anchorDate} setAnchorDate={setAnchorDate} demoIntake={demo ? demo.intake : undefined} />,
+    h_goalsWeekly: <WeeklyGoalsCard daily={daily} healthLogs={healthLogs} stravaLogs={sLogs} hevyWorkouts={hLogs} user={user} db={db} anchorDate={anchorDate} setAnchorDate={setAnchorDate} demoIntake={demo ? demo.intake : undefined} />,
     h_corosBilan: <BilanSanteCard daily={daily} healthLogs={healthLogs} user={user} />,
     h_corosSommeil: <SommeilCard daily={daily} baseline={baseline} timeFrame={timeFrame} anchorDate={anchorDate} setAnchorDate={setAnchorDate} />,
     h_corosVfc: <VfcCard daily={daily} baseline={baseline} timeFrame={timeFrame} anchorDate={anchorDate} setAnchorDate={setAnchorDate} />,
