@@ -512,12 +512,12 @@ function BalanceCard({ daily, healthLogs, user, db, timeFrame, anchorDate, setAn
 // Palette à fort contraste, sûre pour le daltonisme (rouge-vert) :
 // séparation par luminance (jaune clair → bleu foncé) ET par teinte chaud/froid.
 // Ordre = de l'anneau extérieur vers l'intérieur.
-const RING_COLORS = ['#FFD500', '#FF7A00', '#5BC8FF', '#1E6FFF'];
+const RING_COLORS = ['#EF4444', '#F97316', '#3B82F6', '#EC4899'];
 
 // Anneaux concentriques : 1 anneau par métrique, rempli au prorata de l'objectif.
-function GoalRings({ metrics, size = 300, centerTop, centerBottom }) {
+function GoalRings({ metrics, size = 264, centerTop, centerBottom }) {
   const cx = size / 2, cy = size / 2;
-  const sw = 20, gap = 7;
+  const sw = 18, gap = 7;
   const outerR = size / 2 - sw / 2 - 2;
   return (
     <svg viewBox={`0 0 ${size} ${size}`} className="w-full" style={{ maxWidth: size }} role="img" aria-label="Progression des objectifs" shapeRendering="geometricPrecision">
