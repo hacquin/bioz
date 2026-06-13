@@ -1790,17 +1790,28 @@ BMR : ${f(ind.bmr)} kcal${sportSection}${activitySection}`;
             );
           })(),
           h_radar: (() => {
+            const num = (v) => (v === null || v === undefined || v === '' || isNaN(parseFloat(v))) ? null : parseFloat(v);
             const indicators = [
-              { key: 'weight',      name: 'Poids',          max: 120, start: getFirstKnownValue('weight'),      now: latestWeight,    unit: ' kg' },
-              { key: 'bodyFat',     name: 'Graisse',        max: 40,  start: getFirstKnownValue('bodyFat'),     now: latestFat,       unit: ' %'  },
-              { key: 'muscleMass',  name: 'Muscle',         max: 60,  start: getFirstKnownValue('muscleMass'),  now: latestMuscle,    unit: ' %'  },
-              { key: 'hydration',   name: 'Hydratation',    max: 70,  start: getFirstKnownValue('hydration'),   now: latestHydration, unit: ' %'  },
-              { key: 'waist',       name: 'Tour de taille', max: 120, start: getFirstKnownValue('waist'),       now: latestWaist,     unit: ' cm' },
-              { key: 'visceralFat', name: 'Graisse visc.',  max: 20,  start: getFirstKnownValue('visceralFat'), now: latestVisceral,  unit: ''    },
+              { key: 'weight',      name: 'Poids',          start: num(getFirstKnownValue('weight')),      now: num(latestWeight),    unit: ' kg' },
+              { key: 'bodyFat',     name: 'Graisse',        start: num(getFirstKnownValue('bodyFat')),     now: num(latestFat),       unit: ' %'  },
+              { key: 'muscleMass',  name: 'Muscle',         start: num(getFirstKnownValue('muscleMass')),  now: num(latestMuscle),    unit: ' %'  },
+              { key: 'hydration',   name: 'Hydratation',    start: num(getFirstKnownValue('hydration')),   now: num(latestHydration), unit: ' %'  },
+              { key: 'waist',       name: 'Tour de taille', start: num(getFirstKnownValue('waist')),       now: num(latestWaist),     unit: ' cm' },
+              { key: 'visceralFat', name: 'Graisse visc.',  start: num(getFirstKnownValue('visceralFat')), now: num(latestVisceral),  unit: ''    },
             ];
+            // Échelle dynamique par axe : fenêtre serrée autour des 2 valeurs pour amplifier visuellement l'écart
+            indicators.forEach(i => {
+              const vals = [i.start, i.now].filter(v => v !== null);
+              if (vals.length === 0) { i.min = 0; i.max = 1; return; }
+              const lo = Math.min(...vals), hi = Math.max(...vals);
+              const span = hi - lo;
+              const pad = span > 0 ? span * 0.8 : Math.max(hi * 0.08, 1);
+              i.min = Math.max(0, Math.floor(lo - pad));
+              i.max = Math.ceil(hi + pad);
+            });
             const fmt = (v, u) => (v === null || v === undefined || v === '') ? '—' : `${v}${u}`;
-            const startData = indicators.map(i => (i.start ?? null));
-            const nowData   = indicators.map(i => (i.now ?? null));
+            const startData = indicators.map(i => i.start);
+            const nowData   = indicators.map(i => i.now);
             const option = {
               backgroundColor: 'transparent',
               tooltip: {
@@ -1819,12 +1830,12 @@ BMR : ${f(ind.bmr)} kcal${sportSection}${activitySection}`;
                 data: ['Départ (1er janv.)', "Aujourd'hui"]
               },
               radar: {
-                center: ['50%', '52%'],
-                radius: '62%',
-                indicator: indicators.map(i => ({ name: i.name, max: i.max })),
+                center: ['50%', '54%'],
+                radius: '60%',
+                indicator: indicators.map(i => ({ name: i.name, min: i.min, max: i.max })),
                 shape: 'polygon',
                 splitNumber: 4,
-                axisName: { color: '#cbd5e1', fontSize: 11, fontWeight: 600 },
+                axisName: { color: '#cbd5e1', fontSize: 10, fontWeight: 600 },
                 splitLine: { lineStyle: { color: '#334155' } },
                 splitArea: { areaStyle: { color: ['rgba(30,41,59,0.35)', 'rgba(15,23,42,0.35)'] } },
                 axisLine: { lineStyle: { color: '#334155' } },
@@ -1858,9 +1869,9 @@ BMR : ${f(ind.bmr)} kcal${sportSection}${activitySection}`;
                   <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2"><Activity size={14} className="text-violet-400"/> RADAR SANTÉ</h3>
                   <span className="text-[10px] text-slate-500">— Départ vs Aujourd'hui</span>
                 </div>
-                <p className="text-[10px] text-slate-500 mb-2">6 indicateurs clés · tracé gris = 1ᵉʳ janvier, tracé vert = dernières mesures</p>
-                <div className="flex-1 flex items-center justify-center" style={{ minHeight: 320 }}>
-                  <ReactECharts option={option} style={{ width: '100%', height: '100%', minHeight: 320 }} opts={{ renderer: 'svg' }} />
+                <p className="text-[10px] text-slate-500 mb-2">Gris = 1ᵉʳ janvier · vert = dernières mesures · échelle zoomée par axe</p>
+                <div className="flex-1 flex items-center justify-center" style={{ minHeight: 340 }}>
+                  <ReactECharts option={option} style={{ width: '100%', height: '100%', minHeight: 340 }} opts={{ renderer: 'svg' }} />
                 </div>
               </>
             );
@@ -2143,7 +2154,7 @@ BMR : ${f(ind.bmr)} kcal${sportSection}${activitySection}`;
         const isDropTarget = healthDropTargetId === id && healthDragId !== id;
         return (
           <div key={id}
-            className={`bg-slate-800 p-4 rounded-xl border-2 shadow-lg transition-all duration-150 flex flex-col ${id === 'h_glucoseKetoneChart' ? 'col-span-full xl:col-span-3' : id === 'h_weightFat' || id === 'h_composition' || id === 'h_muscleFatBar' || id === 'h_bodySilhouette' || id === 'h_radar' ? 'col-span-full xl:col-span-2' : 'min-h-[300px]'} ${isDragging ? 'border-violet-500 opacity-40 scale-95' : isDropTarget ? 'border-violet-400 ring-2 ring-violet-400/30 scale-[1.02]' : 'border-slate-700'}`}
+            className={`bg-slate-800 p-4 rounded-xl border-2 shadow-lg transition-all duration-150 flex flex-col ${id === 'h_glucoseKetoneChart' ? 'col-span-full xl:col-span-3' : id === 'h_weightFat' || id === 'h_composition' || id === 'h_muscleFatBar' || id === 'h_bodySilhouette' ? 'col-span-full xl:col-span-2' : 'min-h-[300px]'} ${isDragging ? 'border-violet-500 opacity-40 scale-95' : isDropTarget ? 'border-violet-400 ring-2 ring-violet-400/30 scale-[1.02]' : 'border-slate-700'}`}
             draggable={!isMobile}
             onDragStart={(e) => handleHealthDragStart(e, id)}
             onDragOver={(e) => handleHealthDragOver(e, id)}
