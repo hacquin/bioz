@@ -1855,7 +1855,7 @@ BMR : ${f(ind.bmr)} kcal${sportSection}${activitySection}`;
               },
               radar: {
                 center: ['50%', '54%'],
-                radius: '60%',
+                radius: '72%',
                 indicator: indicators.map(i => ({ name: i.name, min: i.min, max: i.max })),
                 shape: 'polygon',
                 splitNumber: 4,
@@ -1896,8 +1896,8 @@ BMR : ${f(ind.bmr)} kcal${sportSection}${activitySection}`;
                     );
                   })}
                 </div>
-                <div className="flex-1 flex items-center justify-center" style={{ minHeight: 340 }}>
-                  <ReactECharts option={option} style={{ width: '100%', height: '100%', minHeight: 340 }} opts={{ renderer: 'svg' }} notMerge={true} />
+                <div className="flex-1 flex items-center justify-center" style={{ minHeight: 440 }}>
+                  <ReactECharts option={option} style={{ width: '100%', height: '100%', minHeight: 440 }} opts={{ renderer: 'svg' }} notMerge={true} />
                 </div>
               </>
             );
