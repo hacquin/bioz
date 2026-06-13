@@ -1855,7 +1855,7 @@ BMR : ${f(ind.bmr)} kcal${sportSection}${activitySection}`;
               },
               radar: {
                 center: ['50%', '54%'],
-                radius: '72%',
+                radius: '75%',
                 indicator: indicators.map(i => ({ name: i.name, min: i.min, max: i.max })),
                 shape: 'polygon',
                 splitNumber: 4,
@@ -1874,6 +1874,19 @@ BMR : ${f(ind.bmr)} kcal${sportSection}${activitySection}`;
                   lineStyle: { color: t.color, width: t.width, type: t.dashed ? 'dashed' : 'solid' },
                   itemStyle: { color: t.color },
                   areaStyle: { color: hexToRgba(t.color, t.area) },
+                  label: {
+                    show: true,
+                    fontSize: 10,
+                    fontWeight: 700,
+                    color: t.color,
+                    backgroundColor: 'rgba(15,23,42,0.75)',
+                    padding: [1, 3],
+                    borderRadius: 3,
+                    formatter: (p) => {
+                      const v = Array.isArray(p.value) ? p.value[p.dimensionIndex] : p.value;
+                      return (v === null || v === undefined) ? '' : `${v}`;
+                    },
+                  },
                 })),
               }]
             };
