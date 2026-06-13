@@ -732,8 +732,8 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings,
   };
   const isHealthCardVisible = (cardId) => !healthHiddenCards.includes(cardId);
 
-  const HEALTH_DEFAULT_ORDER = ['h_bodySilhouette', 'h_weightFat', 'h_composition', 'h_muscleFatBar', 'h_weight', 'h_waist', 'h_bp', 'h_restingHR', 'h_pwv', 'h_bodyFat', 'h_muscleMass', 'h_hydration', 'h_visceralFat', 'h_corosBilan', 'h_corosSommeil', 'h_corosVfc', 'h_corosFcRepos', 'h_energyBalance', 'h_fitbitPas', 'h_fitbitEnergie', 'h_fitbitSpo2', 'h_fitbitGlycemie'];
-  const HEALTH_CARD_LABELS = { h_bodySilhouette: 'Silhouette Corporelle', h_weightFat: 'Poids & Graisse', h_composition: 'Composition Corporelle', h_muscleFatBar: 'Répartition Muscle / Graisse', h_weight: 'Poids', h_waist: 'Tour de taille', h_bp: 'Tension Artérielle', h_restingHR: 'FC Repos', h_pwv: "Vitesse d'Onde de Pouls", h_bodyFat: 'Graisse Corporelle', h_muscleMass: 'Masse Musculaire', h_hydration: 'Hydratation', h_visceralFat: 'Graisse Viscérale', h_corosBilan: 'Bilan Santé', h_corosSommeil: 'Sommeil', h_corosVfc: 'VFC nocturne', h_corosFcRepos: 'FC Repos', h_energyBalance: 'Balance énergétique', h_fitbitPas: 'Pas — Fitbit', h_fitbitEnergie: 'Énergie — Fitbit', h_fitbitSpo2: 'SpO2 — Fitbit', h_fitbitGlycemie: 'Glycémie — Fitbit' };
+  const HEALTH_DEFAULT_ORDER = ['h_bodySilhouette', 'h_radar', 'h_weightFat', 'h_composition', 'h_muscleFatBar', 'h_weight', 'h_waist', 'h_bp', 'h_restingHR', 'h_pwv', 'h_bodyFat', 'h_muscleMass', 'h_hydration', 'h_visceralFat', 'h_corosBilan', 'h_corosSommeil', 'h_corosVfc', 'h_corosFcRepos', 'h_energyBalance', 'h_fitbitPas', 'h_fitbitEnergie', 'h_fitbitSpo2', 'h_fitbitGlycemie'];
+  const HEALTH_CARD_LABELS = { h_bodySilhouette: 'Silhouette Corporelle', h_radar: 'Radar — Départ vs Aujourd\'hui', h_weightFat: 'Poids & Graisse', h_composition: 'Composition Corporelle', h_muscleFatBar: 'Répartition Muscle / Graisse', h_weight: 'Poids', h_waist: 'Tour de taille', h_bp: 'Tension Artérielle', h_restingHR: 'FC Repos', h_pwv: "Vitesse d'Onde de Pouls", h_bodyFat: 'Graisse Corporelle', h_muscleMass: 'Masse Musculaire', h_hydration: 'Hydratation', h_visceralFat: 'Graisse Viscérale', h_corosBilan: 'Bilan Santé', h_corosSommeil: 'Sommeil', h_corosVfc: 'VFC nocturne', h_corosFcRepos: 'FC Repos', h_energyBalance: 'Balance énergétique', h_fitbitPas: 'Pas — Fitbit', h_fitbitEnergie: 'Énergie — Fitbit', h_fitbitSpo2: 'SpO2 — Fitbit', h_fitbitGlycemie: 'Glycémie — Fitbit' };
   const [bodySilhouetteGender, setBodySilhouetteGender] = useState(() => localStorage.getItem('bioz_bodySilhouetteGender') || 'homme');
 
   const [healthCardOrder, setHealthCardOrder] = useState(() => {
@@ -790,6 +790,16 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings,
       if (!healthLogs || healthLogs.length === 0) return null;
       const sortedLogs = [...healthLogs].sort((a, b) => new Date(a.date) - new Date(b.date));
       for (let i = sortedLogs.length - 1; i >= 0; i--) {
+          const val = sortedLogs[i][key];
+          if (val !== null && val !== undefined && val !== '') return val;
+      }
+      return null;
+  };
+
+  const getFirstKnownValue = (key) => {
+      if (!healthLogs || healthLogs.length === 0) return null;
+      const sortedLogs = [...healthLogs].sort((a, b) => new Date(a.date) - new Date(b.date));
+      for (let i = 0; i < sortedLogs.length; i++) {
           const val = sortedLogs[i][key];
           if (val !== null && val !== undefined && val !== '') return val;
       }
@@ -1779,6 +1789,82 @@ BMR : ${f(ind.bmr)} kcal${sportSection}${activitySection}`;
               </>
             );
           })(),
+          h_radar: (() => {
+            const indicators = [
+              { key: 'weight',      name: 'Poids',          max: 120, start: getFirstKnownValue('weight'),      now: latestWeight,    unit: ' kg' },
+              { key: 'bodyFat',     name: 'Graisse',        max: 40,  start: getFirstKnownValue('bodyFat'),     now: latestFat,       unit: ' %'  },
+              { key: 'muscleMass',  name: 'Muscle',         max: 60,  start: getFirstKnownValue('muscleMass'),  now: latestMuscle,    unit: ' %'  },
+              { key: 'hydration',   name: 'Hydratation',    max: 70,  start: getFirstKnownValue('hydration'),   now: latestHydration, unit: ' %'  },
+              { key: 'waist',       name: 'Tour de taille', max: 120, start: getFirstKnownValue('waist'),       now: latestWaist,     unit: ' cm' },
+              { key: 'visceralFat', name: 'Graisse visc.',  max: 20,  start: getFirstKnownValue('visceralFat'), now: latestVisceral,  unit: ''    },
+            ];
+            const fmt = (v, u) => (v === null || v === undefined || v === '') ? '—' : `${v}${u}`;
+            const startData = indicators.map(i => (i.start ?? null));
+            const nowData   = indicators.map(i => (i.now ?? null));
+            const option = {
+              backgroundColor: 'transparent',
+              tooltip: {
+                trigger: 'item',
+                backgroundColor: '#0f172a',
+                borderColor: '#334155',
+                textStyle: { color: '#e2e8f0', fontSize: 12 },
+                formatter: (p) => {
+                  const rows = indicators.map((ind, i) => `<div style="display:flex;justify-content:space-between;gap:16px"><span style="color:#94a3b8">${ind.name}</span><b>${fmt(p.value[i], ind.unit)}</b></div>`).join('');
+                  return `<div style="font-weight:700;margin-bottom:4px;color:${p.color}">${p.name}</div>${rows}`;
+                }
+              },
+              legend: {
+                bottom: 0,
+                textStyle: { color: '#cbd5e1', fontSize: 12 },
+                data: ['Départ (1er janv.)', "Aujourd'hui"]
+              },
+              radar: {
+                center: ['50%', '52%'],
+                radius: '62%',
+                indicator: indicators.map(i => ({ name: i.name, max: i.max })),
+                shape: 'polygon',
+                splitNumber: 4,
+                axisName: { color: '#cbd5e1', fontSize: 11, fontWeight: 600 },
+                splitLine: { lineStyle: { color: '#334155' } },
+                splitArea: { areaStyle: { color: ['rgba(30,41,59,0.35)', 'rgba(15,23,42,0.35)'] } },
+                axisLine: { lineStyle: { color: '#334155' } },
+              },
+              series: [{
+                type: 'radar',
+                emphasis: { focus: 'series' },
+                data: [
+                  {
+                    value: startData,
+                    name: 'Départ (1er janv.)',
+                    symbol: 'circle', symbolSize: 5,
+                    lineStyle: { color: '#94a3b8', width: 2, type: 'dashed' },
+                    itemStyle: { color: '#94a3b8' },
+                    areaStyle: { color: 'rgba(148,163,184,0.12)' },
+                  },
+                  {
+                    value: nowData,
+                    name: "Aujourd'hui",
+                    symbol: 'circle', symbolSize: 6,
+                    lineStyle: { color: '#10b981', width: 2.5 },
+                    itemStyle: { color: '#10b981' },
+                    areaStyle: { color: 'rgba(16,185,129,0.22)' },
+                  },
+                ]
+              }]
+            };
+            return (
+              <>
+                <div className="flex items-baseline gap-2 mb-1">
+                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2"><Activity size={14} className="text-violet-400"/> RADAR SANTÉ</h3>
+                  <span className="text-[10px] text-slate-500">— Départ vs Aujourd'hui</span>
+                </div>
+                <p className="text-[10px] text-slate-500 mb-2">6 indicateurs clés · tracé gris = 1ᵉʳ janvier, tracé vert = dernières mesures</p>
+                <div className="flex-1 flex items-center justify-center" style={{ minHeight: 320 }}>
+                  <ReactECharts option={option} style={{ width: '100%', height: '100%', minHeight: 320 }} opts={{ renderer: 'svg' }} />
+                </div>
+              </>
+            );
+          })(),
           h_weightFat: (() => {
             const wfData = weeklyChartData.filter(d => d.weight !== null || d.bodyFat !== null);
             const weights = wfData.map(d => d.weight).filter(Boolean);
@@ -2057,7 +2143,7 @@ BMR : ${f(ind.bmr)} kcal${sportSection}${activitySection}`;
         const isDropTarget = healthDropTargetId === id && healthDragId !== id;
         return (
           <div key={id}
-            className={`bg-slate-800 p-4 rounded-xl border-2 shadow-lg transition-all duration-150 flex flex-col ${id === 'h_glucoseKetoneChart' ? 'col-span-full xl:col-span-3' : id === 'h_weightFat' || id === 'h_composition' || id === 'h_muscleFatBar' || id === 'h_bodySilhouette' ? 'col-span-full xl:col-span-2' : 'min-h-[300px]'} ${isDragging ? 'border-violet-500 opacity-40 scale-95' : isDropTarget ? 'border-violet-400 ring-2 ring-violet-400/30 scale-[1.02]' : 'border-slate-700'}`}
+            className={`bg-slate-800 p-4 rounded-xl border-2 shadow-lg transition-all duration-150 flex flex-col ${id === 'h_glucoseKetoneChart' ? 'col-span-full xl:col-span-3' : id === 'h_weightFat' || id === 'h_composition' || id === 'h_muscleFatBar' || id === 'h_bodySilhouette' || id === 'h_radar' ? 'col-span-full xl:col-span-2' : 'min-h-[300px]'} ${isDragging ? 'border-violet-500 opacity-40 scale-95' : isDropTarget ? 'border-violet-400 ring-2 ring-violet-400/30 scale-[1.02]' : 'border-slate-700'}`}
             draggable={!isMobile}
             onDragStart={(e) => handleHealthDragStart(e, id)}
             onDragOver={(e) => handleHealthDragOver(e, id)}
