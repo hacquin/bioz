@@ -735,6 +735,20 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, isSyncingWithings,
   const HEALTH_DEFAULT_ORDER = ['h_bodySilhouette', 'h_radar', 'h_weightFat', 'h_composition', 'h_muscleFatBar', 'h_weight', 'h_waist', 'h_bp', 'h_restingHR', 'h_pwv', 'h_bodyFat', 'h_muscleMass', 'h_hydration', 'h_visceralFat', 'h_corosBilan', 'h_corosSommeil', 'h_corosVfc', 'h_corosFcRepos', 'h_energyBalance', 'h_fitbitPas', 'h_fitbitEnergie', 'h_fitbitSpo2', 'h_fitbitGlycemie'];
   const HEALTH_CARD_LABELS = { h_bodySilhouette: 'Silhouette Corporelle', h_radar: 'Radar — Départ vs Aujourd\'hui', h_weightFat: 'Poids & Graisse', h_composition: 'Composition Corporelle', h_muscleFatBar: 'Répartition Muscle / Graisse', h_weight: 'Poids', h_waist: 'Tour de taille', h_bp: 'Tension Artérielle', h_restingHR: 'FC Repos', h_pwv: "Vitesse d'Onde de Pouls", h_bodyFat: 'Graisse Corporelle', h_muscleMass: 'Masse Musculaire', h_hydration: 'Hydratation', h_visceralFat: 'Graisse Viscérale', h_corosBilan: 'Bilan Santé', h_corosSommeil: 'Sommeil', h_corosVfc: 'VFC nocturne', h_corosFcRepos: 'FC Repos', h_energyBalance: 'Balance énergétique', h_fitbitPas: 'Pas — Fitbit', h_fitbitEnergie: 'Énergie — Fitbit', h_fitbitSpo2: 'SpO2 — Fitbit', h_fitbitGlycemie: 'Glycémie — Fitbit' };
   const [bodySilhouetteGender, setBodySilhouetteGender] = useState(() => localStorage.getItem('bioz_bodySilhouetteGender') || 'homme');
+  const [radarTraces, setRadarTraces] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('bioz_radarTraces') || 'null');
+      if (saved && typeof saved === 'object') return { start: true, now: true, oms: true, target: true, ...saved };
+    } catch {}
+    return { start: true, now: true, oms: true, target: true };
+  });
+  const toggleRadarTrace = (key) => {
+    setRadarTraces(prev => {
+      const next = { ...prev, [key]: !prev[key] };
+      localStorage.setItem('bioz_radarTraces', JSON.stringify(next));
+      return next;
+    });
+  };
 
   const [healthCardOrder, setHealthCardOrder] = useState(() => {
     try {
@@ -1791,27 +1805,41 @@ BMR : ${f(ind.bmr)} kcal${sportSection}${activitySection}`;
           })(),
           h_radar: (() => {
             const num = (v) => (v === null || v === undefined || v === '' || isNaN(parseFloat(v))) ? null : parseFloat(v);
+            const isHomme = bodySilhouetteGender === 'homme';
+            // Références OMS (gender-based) : graisse / muscle / hydratation / visc. + tour de taille seuil OMS
+            const oms = isHomme
+              ? { bodyFat: 20, muscleMass: 40, hydration: 60, waist: 94, visceralFat: 9 }
+              : { bodyFat: 28, muscleMass: 33, hydration: 55, waist: 80, visceralFat: 9 };
+            // Poids recommandé OMS = milieu de l'IMC sain (18,5–24,9) selon la taille
+            const h = num(goals.heightCm);
+            const omsWeight = h ? Math.round(21.7 * (h / 100) * (h / 100)) : null;
             const indicators = [
-              { key: 'weight',      name: 'Poids',          start: num(getFirstKnownValue('weight')),      now: num(latestWeight),    unit: ' kg' },
-              { key: 'bodyFat',     name: 'Graisse',        start: num(getFirstKnownValue('bodyFat')),     now: num(latestFat),       unit: ' %'  },
-              { key: 'muscleMass',  name: 'Muscle',         start: num(getFirstKnownValue('muscleMass')),  now: num(latestMuscle),    unit: ' %'  },
-              { key: 'hydration',   name: 'Hydratation',    start: num(getFirstKnownValue('hydration')),   now: num(latestHydration), unit: ' %'  },
-              { key: 'waist',       name: 'Tour de taille', start: num(getFirstKnownValue('waist')),       now: num(latestWaist),     unit: ' cm' },
-              { key: 'visceralFat', name: 'Graisse visc.',  start: num(getFirstKnownValue('visceralFat')), now: num(latestVisceral),  unit: ''    },
+              { key: 'weight',      name: 'Poids',          unit: ' kg', start: num(getFirstKnownValue('weight')),      now: num(latestWeight),    oms: omsWeight,        target: num(goals.targetWeight) },
+              { key: 'bodyFat',     name: 'Graisse',        unit: ' %',  start: num(getFirstKnownValue('bodyFat')),     now: num(latestFat),       oms: oms.bodyFat,      target: num(goals.targetFat) },
+              { key: 'muscleMass',  name: 'Muscle',         unit: ' %',  start: num(getFirstKnownValue('muscleMass')),  now: num(latestMuscle),    oms: oms.muscleMass,   target: num(goals.targetMuscle) },
+              { key: 'hydration',   name: 'Hydratation',    unit: ' %',  start: num(getFirstKnownValue('hydration')),   now: num(latestHydration), oms: oms.hydration,    target: num(goals.targetHydration) },
+              { key: 'waist',       name: 'Tour de taille', unit: ' cm', start: num(getFirstKnownValue('waist')),       now: num(latestWaist),     oms: oms.waist,        target: num(goals.targetWaist) },
+              { key: 'visceralFat', name: 'Graisse visc.',  unit: '',    start: num(getFirstKnownValue('visceralFat')), now: num(latestVisceral),  oms: oms.visceralFat,  target: num(goals.targetVisceral) },
             ];
-            // Échelle dynamique par axe : fenêtre serrée autour des 2 valeurs pour amplifier visuellement l'écart
+            const TRACES = [
+              { key: 'start',  name: 'Départ (1er janv.)', color: '#94a3b8', dashed: true,  width: 2,   area: 0.10 },
+              { key: 'now',    name: "Aujourd'hui",        color: '#10b981', dashed: false, width: 2.5, area: 0.22 },
+              { key: 'oms',    name: 'Recommandé OMS',     color: '#f59e0b', dashed: true,  width: 2,   area: 0.06 },
+              { key: 'target', name: 'Cible',              color: '#8b5cf6', dashed: true,  width: 2,   area: 0.06 },
+            ];
+            // Échelle dynamique par axe : fenêtre serrée autour de TOUTES les valeurs (axes stables au toggle)
             indicators.forEach(i => {
-              const vals = [i.start, i.now].filter(v => v !== null);
+              const vals = TRACES.map(t => i[t.key]).filter(v => v !== null && v !== undefined);
               if (vals.length === 0) { i.min = 0; i.max = 1; return; }
               const lo = Math.min(...vals), hi = Math.max(...vals);
               const span = hi - lo;
-              const pad = span > 0 ? span * 0.8 : Math.max(hi * 0.08, 1);
+              const pad = span > 0 ? span * 0.45 : Math.max(hi * 0.08, 1);
               i.min = Math.max(0, Math.floor(lo - pad));
               i.max = Math.ceil(hi + pad);
             });
             const fmt = (v, u) => (v === null || v === undefined || v === '') ? '—' : `${v}${u}`;
-            const startData = indicators.map(i => i.start);
-            const nowData   = indicators.map(i => i.now);
+            const visibleTraces = TRACES.filter(t => radarTraces[t.key]);
+            const hexToRgba = (hex, a) => { const n = parseInt(hex.slice(1), 16); return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`; };
             const option = {
               backgroundColor: 'transparent',
               tooltip: {
@@ -1823,11 +1851,6 @@ BMR : ${f(ind.bmr)} kcal${sportSection}${activitySection}`;
                   const rows = indicators.map((ind, i) => `<div style="display:flex;justify-content:space-between;gap:16px"><span style="color:#94a3b8">${ind.name}</span><b>${fmt(p.value[i], ind.unit)}</b></div>`).join('');
                   return `<div style="font-weight:700;margin-bottom:4px;color:${p.color}">${p.name}</div>${rows}`;
                 }
-              },
-              legend: {
-                bottom: 0,
-                textStyle: { color: '#cbd5e1', fontSize: 12 },
-                data: ['Départ (1er janv.)', "Aujourd'hui"]
               },
               radar: {
                 center: ['50%', '54%'],
@@ -1843,35 +1866,37 @@ BMR : ${f(ind.bmr)} kcal${sportSection}${activitySection}`;
               series: [{
                 type: 'radar',
                 emphasis: { focus: 'series' },
-                data: [
-                  {
-                    value: startData,
-                    name: 'Départ (1er janv.)',
-                    symbol: 'circle', symbolSize: 5,
-                    lineStyle: { color: '#94a3b8', width: 2, type: 'dashed' },
-                    itemStyle: { color: '#94a3b8' },
-                    areaStyle: { color: 'rgba(148,163,184,0.12)' },
-                  },
-                  {
-                    value: nowData,
-                    name: "Aujourd'hui",
-                    symbol: 'circle', symbolSize: 6,
-                    lineStyle: { color: '#10b981', width: 2.5 },
-                    itemStyle: { color: '#10b981' },
-                    areaStyle: { color: 'rgba(16,185,129,0.22)' },
-                  },
-                ]
+                data: visibleTraces.map(t => ({
+                  value: indicators.map(i => i[t.key]),
+                  name: t.name,
+                  symbol: 'circle', symbolSize: t.key === 'now' ? 6 : 5,
+                  lineStyle: { color: t.color, width: t.width, type: t.dashed ? 'dashed' : 'solid' },
+                  itemStyle: { color: t.color },
+                  areaStyle: { color: hexToRgba(t.color, t.area) },
+                })),
               }]
             };
             return (
               <>
                 <div className="flex items-baseline gap-2 mb-1">
                   <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2"><Activity size={14} className="text-violet-400"/> RADAR SANTÉ</h3>
-                  <span className="text-[10px] text-slate-500">— Départ vs Aujourd'hui</span>
+                  <span className="text-[10px] text-slate-500">— 6 indicateurs</span>
                 </div>
-                <p className="text-[10px] text-slate-500 mb-2">Gris = 1ᵉʳ janvier · vert = dernières mesures · échelle zoomée par axe</p>
+                <p className="text-[10px] text-slate-500 mb-2">Échelle zoomée par axe · {isHomme ? 'réf. OMS homme' : 'réf. OMS femme'}{omsWeight ? ` · poids OMS ${omsWeight} kg (${h} cm)` : ''}</p>
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {TRACES.map(t => {
+                    const on = !!radarTraces[t.key];
+                    return (
+                      <button key={t.key} onClick={() => toggleRadarTrace(t.key)}
+                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-all ${on ? 'bg-slate-700/60 border-slate-600 text-slate-200' : 'bg-slate-900/60 border-slate-700 text-slate-500'}`}>
+                        <span className="w-2.5 h-2.5 rounded-full" style={{ background: on ? t.color : 'transparent', border: `2px solid ${t.color}`, opacity: on ? 1 : 0.5 }} />
+                        {t.name}
+                      </button>
+                    );
+                  })}
+                </div>
                 <div className="flex-1 flex items-center justify-center" style={{ minHeight: 340 }}>
-                  <ReactECharts option={option} style={{ width: '100%', height: '100%', minHeight: 340 }} opts={{ renderer: 'svg' }} />
+                  <ReactECharts option={option} style={{ width: '100%', height: '100%', minHeight: 340 }} opts={{ renderer: 'svg' }} notMerge={true} />
                 </div>
               </>
             );
@@ -2462,6 +2487,24 @@ function SettingsView({ user, db, isWithingsEnabled, handleWithingsAuth, isStrav
                 </div>
               </div>
             ))}
+            {/* Taille (pour le poids recommandé OMS) + cibles Radar santé */}
+            <div className="bg-slate-900/50 p-3 rounded-lg border border-slate-600/50">
+              <div className="text-sm font-bold text-emerald-400 mb-2">Radar santé — taille & cibles</div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {[
+                  { label: 'Taille', unit: 'cm', key: 'heightCm', ph: '175' },
+                  { label: 'Cible muscle', unit: '%', key: 'targetMuscle', ph: '42' },
+                  { label: 'Cible hydratation', unit: '%', key: 'targetHydration', ph: '60' },
+                  { label: 'Cible graisse visc.', unit: '', key: 'targetVisceral', ph: '6' },
+                ].map(({ label, unit, key, ph }) => (
+                  <div key={key}>
+                    <label className="text-[10px] text-slate-500 uppercase tracking-wider">{label}{unit && ` (${unit})`}</label>
+                    <input type="number" value={goals[key] ?? ''} placeholder={ph} onChange={e => updateGoal(key, e.target.value)} disabled={isDemo} className={`w-full bg-slate-800 border border-slate-600 rounded p-2 text-white text-sm mt-1 ${isDemo ? 'opacity-50 cursor-not-allowed' : ''}`} />
+                  </div>
+                ))}
+              </div>
+              <p className="text-[10px] text-slate-500 mt-2">La taille sert à calculer le poids recommandé OMS (IMC sain 18,5–24,9).</p>
+            </div>
           </div>
           {/* NUTRITION KETO */}
           <div className="bg-slate-900/50 p-3 rounded-lg border border-slate-600/50 mt-4">
@@ -2981,6 +3024,7 @@ function App() {
     startWeight: 106, targetWeight: 95,
     startFat: 26, targetFat: 15,
     startWaist: 107, targetWaist: 95,
+    heightCm: 175, targetMuscle: 42, targetHydration: 60, targetVisceral: 6,
     targetCalories: 2200, pctCarbs: 8, pctProtein: 25, pctFat: 67,
   });
 
@@ -3033,7 +3077,7 @@ function App() {
       setIsWithingsEnabled(false);
       setIsStravaEnabled(false);
       setDataSourcePrefs({});
-      setGoals({ startWeight: 106, targetWeight: 95, startFat: 26, targetFat: 15, startWaist: 107, targetWaist: 95 });
+      setGoals({ startWeight: 106, targetWeight: 95, startFat: 26, targetFat: 15, startWaist: 107, targetWaist: 95, heightCm: 175, targetMuscle: 42, targetHydration: 60, targetVisceral: 6 });
       setDataLoaded(false);
       setSyncStatus('idle');
     }
@@ -3484,7 +3528,7 @@ function App() {
     setHealthLogs([]);
     setStravaLogs([]);
     setHevyWorkouts([]);
-    setGoals({ startWeight: 106, targetWeight: 95, startFat: 26, targetFat: 15, startWaist: 107, targetWaist: 95 });
+    setGoals({ startWeight: 106, targetWeight: 95, startFat: 26, targetFat: 15, startWaist: 107, targetWaist: 95, heightCm: 175, targetMuscle: 42, targetHydration: 60, targetVisceral: 6 });
     setDataLoaded(false);
     isDataLoaded.current = false;
   };
