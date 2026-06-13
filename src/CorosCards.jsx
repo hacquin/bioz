@@ -517,7 +517,7 @@ const RING_COLORS = ['#EF4444', '#F97316', '#3B82F6', '#EC4899'];
 // Anneaux concentriques : 1 anneau par métrique, rempli au prorata de l'objectif.
 function GoalRings({ metrics, size = 200, centerTop, centerBottom }) {
   const cx = size / 2, cy = size / 2;
-  const sw = 14, gap = 8;
+  const sw = 10, gap = 9;
   const outerR = size / 2 - sw / 2 - 2;
   return (
     <svg viewBox={`0 0 ${size} ${size}`} className="w-full" style={{ maxWidth: 250 }} role="img" aria-label="Progression des objectifs" shapeRendering="geometricPrecision">
@@ -536,8 +536,8 @@ function GoalRings({ metrics, size = 200, centerTop, centerBottom }) {
           </g>
         );
       })}
-      <text x={cx} y={cy - 1} textAnchor="middle" fill="#f1f5f9" fontSize={24} fontWeight="800">{centerTop}</text>
-      <text x={cx} y={cy + 15} textAnchor="middle" fill="#94a3b8" fontSize={9} fontWeight="700" letterSpacing="1.5">{centerBottom}</text>
+      <text x={cx} y={cy - 1} textAnchor="middle" fill="#f1f5f9" fontSize={17} fontWeight="800">{centerTop}</text>
+      <text x={cx} y={cy + 12} textAnchor="middle" fill="#94a3b8" fontSize={7} fontWeight="700" letterSpacing="1.2">{centerBottom}</text>
     </svg>
   );
 }
