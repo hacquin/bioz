@@ -520,7 +520,7 @@ function GoalRings({ metrics, size = 200, centerTop, centerBottom }) {
   const sw = 14, gap = 8;
   const outerR = size / 2 - sw / 2 - 2;
   return (
-    <svg viewBox={`0 0 ${size} ${size}`} className="w-full" style={{ maxWidth: 190 }} role="img" aria-label="Progression des objectifs" shapeRendering="geometricPrecision">
+    <svg viewBox={`0 0 ${size} ${size}`} className="w-full" style={{ maxWidth: 250 }} role="img" aria-label="Progression des objectifs" shapeRendering="geometricPrecision">
       {metrics.map((m, i) => {
         const r = outerR - i * (sw + gap);
         const c = 2 * Math.PI * r;
