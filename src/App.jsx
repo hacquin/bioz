@@ -1827,9 +1827,12 @@ BMR : ${f(ind.bmr)} kcal${sportSection}${activitySection}`;
               { key: 'oms',    name: 'Recommandé OMS',     color: '#f59e0b', dashed: true,  width: 2,   area: 0.06 },
               { key: 'target', name: 'Cible',              color: '#8b5cf6', dashed: true,  width: 2,   area: 0.06 },
             ];
-            // Échelle dynamique par axe : fenêtre serrée autour de TOUTES les valeurs (axes stables au toggle)
+            const fmt = (v, u) => (v === null || v === undefined || v === '') ? '—' : `${v}${u}`;
+            const visibleTraces = TRACES.filter(t => radarTraces[t.key]);
+            // Échelle dynamique par axe : fenêtre serrée autour des SEULS tracés visibles
+            // => maximise la lisibilité de l'écart entre les courbes affichées (l'axe se rezoome au toggle)
             indicators.forEach(i => {
-              const vals = TRACES.map(t => i[t.key]).filter(v => v !== null && v !== undefined);
+              const vals = visibleTraces.map(t => i[t.key]).filter(v => v !== null && v !== undefined);
               if (vals.length === 0) { i.min = 0; i.max = 1; return; }
               const lo = Math.min(...vals), hi = Math.max(...vals);
               const span = hi - lo;
@@ -1837,8 +1840,6 @@ BMR : ${f(ind.bmr)} kcal${sportSection}${activitySection}`;
               i.min = Math.max(0, Math.floor(lo - pad));
               i.max = Math.ceil(hi + pad);
             });
-            const fmt = (v, u) => (v === null || v === undefined || v === '') ? '—' : `${v}${u}`;
-            const visibleTraces = TRACES.filter(t => radarTraces[t.key]);
             const hexToRgba = (hex, a) => { const n = parseInt(hex.slice(1), 16); return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`; };
             const option = {
               backgroundColor: 'transparent',
