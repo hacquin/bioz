@@ -509,20 +509,25 @@ function BalanceCard({ daily, healthLogs, user, db, timeFrame, anchorDate, setAn
 //  Une carte quotidienne + une carte hebdomadaire. Chaque objectif = un anneau.
 // =============================================================================
 
+// Palette à fort contraste, sûre pour le daltonisme (rouge-vert) :
+// séparation par luminance (jaune clair → bleu foncé) ET par teinte chaud/froid.
+// Ordre = de l'anneau extérieur vers l'intérieur.
+const RING_COLORS = ['#FFD500', '#FF7A00', '#5BC8FF', '#1E6FFF'];
+
 // Anneaux concentriques : 1 anneau par métrique, rempli au prorata de l'objectif.
-function GoalRings({ metrics, size = 240, centerTop, centerBottom }) {
+function GoalRings({ metrics, size = 300, centerTop, centerBottom }) {
   const cx = size / 2, cy = size / 2;
-  const sw = 14, gap = 7;
+  const sw = 20, gap = 7;
   const outerR = size / 2 - sw / 2 - 2;
   return (
-    <svg viewBox={`0 0 ${size} ${size}`} className="w-full" style={{ maxWidth: size }} role="img" aria-label="Progression des objectifs">
+    <svg viewBox={`0 0 ${size} ${size}`} className="w-full" style={{ maxWidth: size }} role="img" aria-label="Progression des objectifs" shapeRendering="geometricPrecision">
       {metrics.map((m, i) => {
         const r = outerR - i * (sw + gap);
         const c = 2 * Math.PI * r;
         const pct = Math.max(0, Math.min(1, m.pct ?? 0));
         return (
           <g key={i} transform={`rotate(-90 ${cx} ${cy})`}>
-            <circle cx={cx} cy={cy} r={r} fill="none" stroke="#1e293b" strokeWidth={sw} />
+            <circle cx={cx} cy={cy} r={r} fill="none" stroke="#0f172a" strokeWidth={sw} />
             <circle
               cx={cx} cy={cy} r={r} fill="none" stroke={m.color} strokeWidth={sw}
               strokeLinecap="round" strokeDasharray={c} strokeDashoffset={c * (1 - pct)}
@@ -531,8 +536,8 @@ function GoalRings({ metrics, size = 240, centerTop, centerBottom }) {
           </g>
         );
       })}
-      <text x={cx} y={cy - 2} textAnchor="middle" fill="#f1f5f9" fontSize={32} fontWeight="800">{centerTop}</text>
-      <text x={cx} y={cy + 18} textAnchor="middle" fill="#94a3b8" fontSize={10} fontWeight="700" letterSpacing="1.5">{centerBottom}</text>
+      <text x={cx} y={cy - 1} textAnchor="middle" fill="#f1f5f9" fontSize={24} fontWeight="800">{centerTop}</text>
+      <text x={cx} y={cy + 15} textAnchor="middle" fill="#94a3b8" fontSize={9} fontWeight="700" letterSpacing="1.5">{centerBottom}</text>
     </svg>
   );
 }
@@ -605,13 +610,13 @@ function DailyGoalsCard({ daily, healthLogs, user, db, anchorDate, setAnchorDate
   const G = DAILY_GOALS;
 
   const metrics = [
-    { label: 'Pas', color: '#22d3ee', pct: steps == null ? 0 : steps / G.steps,
+    { label: 'Pas', color: RING_COLORS[0], pct: steps == null ? 0 : steps / G.steps,
       valueText: fmtInt(steps), goalText: fmtInt(G.steps), pctText: pctStr(steps, G.steps) },
-    { label: 'Dépense', color: '#fb923c', pct: expend == null ? 0 : expend / G.expend,
+    { label: 'Dépense', color: RING_COLORS[1], pct: expend == null ? 0 : expend / G.expend,
       valueText: expend == null ? '—' : `${fmtInt(expend)} kcal`, goalText: `${fmtInt(G.expend)} kcal`, pctText: pctStr(expend, G.expend) },
-    { label: 'Apport', color: '#a78bfa', pct: intake == null ? 0 : intake / G.intake,
+    { label: 'Apport', color: RING_COLORS[2], pct: intake == null ? 0 : intake / G.intake,
       valueText: intake == null ? '—' : `${fmtInt(intake)} kcal`, goalText: `${fmtInt(G.intake)} kcal`, pctText: pctStr(intake, G.intake) },
-    { label: 'Sommeil', color: '#60a5fa', pct: sleep == null ? 0 : sleep / G.sleep,
+    { label: 'Sommeil', color: RING_COLORS[3], pct: sleep == null ? 0 : sleep / G.sleep,
       valueText: fmtMin(sleep), goalText: '7h', pctText: pctStr(sleep, G.sleep) },
   ];
 
@@ -688,13 +693,13 @@ function WeeklyGoalsCard({ daily, healthLogs, stravaLogs, hevyWorkouts, user, db
   const lossText = lossG == null ? '—' : (lossG >= 0 ? `${fmtInt(lossG)} g` : `+${fmtInt(-lossG)} g`);
 
   const metrics = [
-    { label: 'Entraînement', color: '#f472b6', pct: trainingMin / G.training,
+    { label: 'Entraînement', color: RING_COLORS[0], pct: trainingMin / G.training,
       valueText: `${fmtInt(trainingMin)} min`, goalText: `${G.training} min`, pctText: pctStr(trainingMin, G.training) },
-    { label: 'Pas', color: '#22d3ee', pct: stepsWeek / G.steps,
+    { label: 'Pas', color: RING_COLORS[1], pct: stepsWeek / G.steps,
       valueText: fmtInt(stepsWeek), goalText: fmtInt(G.steps), pctText: pctStr(stepsWeek, G.steps) },
-    { label: 'Perte de poids', color: '#34d399', pct: lossG == null ? 0 : lossG / G.loss,
+    { label: 'Perte de poids', color: RING_COLORS[2], pct: lossG == null ? 0 : lossG / G.loss,
       valueText: lossText, goalText: `-${G.loss} g`, pctText: lossG == null ? '—' : `${Math.round((lossG / G.loss) * 100)}%` },
-    { label: 'Déficit', color: '#fbbf24', pct: deficit == null ? 0 : deficit / G.deficit,
+    { label: 'Déficit', color: RING_COLORS[3], pct: deficit == null ? 0 : deficit / G.deficit,
       valueText: deficit == null ? '—' : `${fmtInt(deficit)} kcal`, goalText: `${fmtInt(G.deficit)} kcal`, pctText: pctStr(deficit, G.deficit) },
   ];
 
