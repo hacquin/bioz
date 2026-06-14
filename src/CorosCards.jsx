@@ -415,24 +415,39 @@ function BalanceCard({ daily, healthLogs, user, db, timeFrame, anchorDate, setAn
   const days = useMemo(() => daysInRange(range.start, range.end), [range]);
   const cronoIntake = useIntakeData(user, db, days, demoIntake);
 
+  // BMR : dernière valeur connue (balance Withings), ~constante sur la période.
+  const bmr = useMemo(() => {
+    const logs = (healthLogs || []).filter((l) => l.bmr != null);
+    if (!logs.length) return null;
+    logs.sort((a, b) => (a.date < b.date ? 1 : -1));
+    return logs[0].bmr;
+  }, [healthLogs]);
+
+  // Dépense = base (BMR) + actif (activeKcal), comme « Énergie dépensée au total » de
+  // Google Health. activeKcal ne contient QUE la part active : il faut ajouter le BMR.
+  // AUJOURD'HUI : BMR proraté au temps écoulé pour suivre le total qui s'accumule en
+  // temps réel ; les jours passés gardent le BMR plein (journée complète).
   // Apport = Google Health prioritaire (kcalIntake), Cronometer en repli.
-  // Dépense = activeKcal = « Énergie dépensée au total » de Google Health : cette
-  // valeur inclut DÉJÀ le métabolisme de base (Fitbit), on ne rajoute donc pas le BMR
-  // (sinon double comptage). Les deux valeurs proviennent ainsi directement de Google Health.
+  const todayKey = localDateKey(new Date());
+  const elapsed = dayElapsedFraction();
   const perDay = useMemo(() => days.map((k) => {
     const intake = daily[k]?.kcalIntake ?? cronoIntake[k] ?? null;
-    const expend = daily[k]?.activeKcal ?? null;
-    return { date: k, intake, expend };
-  }), [days, cronoIntake, daily]);
+    const active = daily[k]?.activeKcal ?? null;
+    const bmrPart = bmr == null ? null : (k === todayKey ? bmr * elapsed : bmr);
+    const expend = bmrPart == null ? null : bmrPart + (active || 0);
+    return { date: k, intake, expend, bmrPart };
+  }), [days, cronoIntake, daily, bmr, todayKey, elapsed]);
 
-  let inKcal, outKcal;
+  let inKcal, outKcal, bmrShown;
   if (mode === 'day') {
     const d = perDay.find((p) => p.date === localDateKey(anchorDate));
     inKcal = d?.intake ?? null;
     outKcal = d?.expend ?? null;
+    bmrShown = d?.bmrPart ?? null;
   } else {
     inKcal = avg(perDay.map((p) => p.intake));
     outKcal = avg(perDay.filter((p) => p.expend != null).map((p) => p.expend));
+    bmrShown = avg(perDay.filter((p) => p.expend != null).map((p) => p.bmrPart));
   }
 
   const net = (inKcal != null && outKcal != null) ? inKcal - outKcal : null; // >0 surplus
@@ -461,9 +476,13 @@ function BalanceCard({ daily, healthLogs, user, db, timeFrame, anchorDate, setAn
         step={mode === 'day' ? 1 : mode === 'week' ? 7 : 30}
       />
 
-      {inKcal == null && outKcal == null ? (
+      {bmr == null ? (
         <div className="flex-1 flex items-center justify-center text-center text-sm text-slate-500 mt-4 px-2">
-          Pas de données d'énergie sur cette période.
+          BMR manquant — ajoute une mesure de composition (balance Withings) pour calculer la dépense totale.
+        </div>
+      ) : inKcal == null ? (
+        <div className="flex-1 flex items-center justify-center text-center text-sm text-slate-500 mt-4 px-2">
+          Pas de données nutrition sur cette période.
         </div>
       ) : (
         <>
@@ -472,7 +491,7 @@ function BalanceCard({ daily, healthLogs, user, db, timeFrame, anchorDate, setAn
           </div>
           <div className="mt-1 flex items-center justify-between text-xs flex-wrap gap-2">
             <span className="text-slate-400">
-              {footerLabel} · apport {Math.round(inKcal || 0)} · dépense totale {Math.round(outKcal || 0)} kcal (Google Health)
+              {footerLabel} · dépense {Math.round(bmrShown || 0)} base + {Math.round((outKcal || 0) - (bmrShown || 0))} actif
             </span>
             {status && (
               <span className="font-semibold px-2 py-0.5 rounded-full" style={{ backgroundColor: `${status.color}22`, color: status.color }}>
@@ -585,7 +604,9 @@ function DailyGoalsCard({ daily, healthLogs, user, db, anchorDate, setAnchorDate
 
   const d = daily[key] || {};
   const steps = d.steps ?? null;
-  const expend = d.activeKcal ?? null; // « Énergie dépensée au total » Google Health (BMR + actif déjà inclus)
+  const active = d.activeKcal ?? null;
+  const bmrPart = bmr == null ? null : (isToday ? bmr * dayElapsedFraction() : bmr);
+  const expend = bmrPart == null ? null : bmrPart + (active || 0); // base (BMR) + actif = total Google Health
   const intake = cronoIntake[key] ?? d.kcalIntake ?? null;
   const sleep = d.sleepMainMin ?? null;
   const G = DAILY_GOALS;
@@ -661,11 +682,13 @@ function WeeklyGoalsCard({ daily, healthLogs, stravaLogs, hevyWorkouts, user, db
     let sumExpend = 0, sumIntake = 0, has = false;
     days.forEach((k) => {
       const intake = cronoIntake[k] ?? daily[k]?.kcalIntake ?? null;
-      const expend = daily[k]?.activeKcal ?? null; // total Google Health (BMR + actif déjà inclus)
+      const active = daily[k]?.activeKcal ?? null;
+      const bmrPart = bmr == null ? null : (k === todayKey ? bmr * dayElapsedFraction() : bmr);
+      const expend = bmrPart == null ? null : bmrPart + (active || 0); // base (BMR) + actif = total Google Health
       if (intake != null && expend != null) { sumExpend += expend; sumIntake += intake; has = true; }
     });
     return has ? Math.round(sumExpend - sumIntake) : null;
-  }, [days, cronoIntake, daily]);
+  }, [days, cronoIntake, daily, bmr, todayKey]);
 
   const G = WEEKLY_GOALS;
   const lossText = lossG == null ? '—' : (lossG >= 0 ? `${fmtInt(lossG)} g` : `+${fmtInt(-lossG)} g`);
