@@ -989,7 +989,9 @@ export function CorosSection({ user, db, timeFrame, healthLogs, stravaLogs = [],
             onDragLeave={() => { if (dropId === id) setDropId(null); }}
             style={!isMobile ? { cursor: isDragging ? 'grabbing' : 'grab' } : {}}
           >
-            <FullscreenableCard className="h-full" fit={['h_corosSommeil', 'h_corosBilan', 'h_goalsDaily', 'h_goalsWeekly'].includes(id) ? 'center' : 'fill'}>{el}</FullscreenableCard>
+            {['h_goalsDaily', 'h_goalsWeekly'].includes(id)
+              ? el
+              : <FullscreenableCard className="h-full">{el}</FullscreenableCard>}
           </div>
         );
       })}

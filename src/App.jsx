@@ -1532,7 +1532,6 @@ BMR : ${f(ind.bmr)} kcal${sportSection}${activitySection}`;
       })()}
 
       {isHealthCardVisible('h_goalsGauges') && (
-      <FullscreenableCard fit="center">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {[
           { label: 'Poids', from: START_WEIGHT, to: TARGET_WEIGHT, unit: 'kg', progress: weightProgress, lost: lostWeight, lostUnit: 'kg perdus', color: '#8b5cf6' },
@@ -1608,7 +1607,6 @@ BMR : ${f(ind.bmr)} kcal${sportSection}${activitySection}`;
           );
         })}
       </div>
-      </FullscreenableCard>
       )}
 
       {/* --- CARTE PROJECTIONS --- */}
