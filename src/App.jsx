@@ -20,7 +20,7 @@ import corpsHomme from './corps-homme-blanc.png';
 import corpsFemme from './corps-femme-blanc.png';
 import { DEMO_DATA } from './demoData';
 import NutritionImport from './NutritionImport';
-import { CorosSection } from './CorosCards';
+import { CorosSection, FullscreenableCard } from './CorosCards';
 
 import video1 from './1.mp4';
 import video2 from './2.mp4';
@@ -1530,6 +1530,7 @@ BMR : ${f(ind.bmr)} kcal${sportSection}${activitySection}`;
       })()}
 
       {isHealthCardVisible('h_goalsGauges') && (
+      <FullscreenableCard>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {[
           { label: 'Poids', from: START_WEIGHT, to: TARGET_WEIGHT, unit: 'kg', progress: weightProgress, lost: lostWeight, lostUnit: 'kg perdus', color: '#8b5cf6' },
@@ -1605,6 +1606,7 @@ BMR : ${f(ind.bmr)} kcal${sportSection}${activitySection}`;
           );
         })}
       </div>
+      </FullscreenableCard>
       )}
 
       {/* --- CARTE PROJECTIONS --- */}
@@ -1673,6 +1675,7 @@ BMR : ${f(ind.bmr)} kcal${sportSection}${activitySection}`;
         if (!hasEnoughData) return null;
 
         return (
+          <FullscreenableCard>
           <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-lg">
             <div className="flex items-center gap-2 mb-5">
               <TrendingUp size={16} className="text-cyan-400" />
@@ -1768,6 +1771,7 @@ BMR : ${f(ind.bmr)} kcal${sportSection}${activitySection}`;
             </div>
             <p className="text-[10px] text-slate-600 mt-4 text-center">Projection basée sur une régression linéaire pondérée des 90 derniers jours — les données récentes ont plus de poids.</p>
           </div>
+          </FullscreenableCard>
         );
       })()}
 

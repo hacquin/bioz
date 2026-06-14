@@ -5,7 +5,8 @@
 //  Pilotée par le `timeFrame` global de HealthTracker.
 // =============================================================================
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   collection,
   doc,
@@ -17,7 +18,7 @@ import {
 } from 'firebase/firestore';
 import {
   Moon, Heart, Info, ChevronLeft, ChevronRight, RefreshCw, AlertCircle, Scale,
-  Target, Footprints, Flame, Utensils, Dumbbell, TrendingDown,
+  Target, Footprints, Flame, Utensils, Dumbbell, TrendingDown, Maximize2, Minimize2,
 } from 'lucide-react';
 import {
   LineChart, Line, BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -26,6 +27,94 @@ import {
 import {
   useFitbitData, mergeHealthDaily, SourceChip, FitbitCard, FITBIT_CARD_IDS,
 } from './FitbitCards';
+
+// =============================================================================
+//  PLEIN ÉCRAN réutilisable : Fullscreen API native (desktop/Android), repli CSS
+//  portalisé pour iOS (qui ne supporte pas l'API sur un <div>). Sur mobile portrait,
+//  on pivote en paysage (rotate 90°).
+// =============================================================================
+const fsSupported = (el) => !!(el && (el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen));
+const fsEnter = (el) => {
+  const fn = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
+  try { const r = fn.call(el); return r && r.then ? r : Promise.resolve(); } catch { return Promise.reject(); }
+};
+const fsExit = () => {
+  if (document.fullscreenElement || document.webkitFullscreenElement) {
+    const fn = document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen;
+    try { fn && fn.call(document); } catch { /* ignore */ }
+  }
+};
+
+export function FullscreenableCard({ children, className = '', wide = false }) {
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  const ref = useRef(null);
+  const [active, setActive] = useState(false);
+  const [native, setNative] = useState(false);
+  const [portrait, setPortrait] = useState(() => window.innerHeight >= window.innerWidth);
+  useEffect(() => {
+    const onFs = () => { if (!document.fullscreenElement && !document.webkitFullscreenElement) { setActive(false); setNative(false); } };
+    const onResize = () => setPortrait(window.innerHeight >= window.innerWidth);
+    document.addEventListener('fullscreenchange', onFs);
+    document.addEventListener('webkitfullscreenchange', onFs);
+    window.addEventListener('resize', onResize);
+    window.addEventListener('orientationchange', onResize);
+    return () => {
+      document.removeEventListener('fullscreenchange', onFs);
+      document.removeEventListener('webkitfullscreenchange', onFs);
+      window.removeEventListener('resize', onResize);
+      window.removeEventListener('orientationchange', onResize);
+    };
+  }, []);
+  const close = () => {
+    try { window.screen?.orientation?.unlock?.(); } catch { /* ignore */ }
+    fsExit(); setActive(false); setNative(false);
+    setTimeout(() => window.dispatchEvent(new Event('resize')), 120);
+  };
+  const toggle = (e) => {
+    e.stopPropagation();
+    if (active) { close(); return; }
+    const el = ref.current;
+    if (el && fsSupported(el)) {
+      setActive(true); setNative(true);
+      fsEnter(el).then(() => { try { window.screen?.orientation?.lock?.('landscape'); } catch { /* ignore */ } }).catch(() => setNative(false));
+    } else {
+      setActive(true); setNative(false);
+    }
+    setTimeout(() => window.dispatchEvent(new Event('resize')), 120);
+  };
+  const rotate = active && !native && isMobile && portrait;
+  return (
+    <div ref={ref} data-fscard className={`relative ${wide ? 'col-span-full' : ''} ${className}`}>
+      <button
+        onClick={toggle}
+        title={active ? 'Quitter le plein écran' : 'Plein écran'}
+        className="absolute top-2 right-2 z-30 p-1.5 rounded-lg bg-slate-900/70 hover:bg-slate-700 text-slate-400 hover:text-slate-100 border border-slate-700 transition-colors opacity-60 hover:opacity-100"
+      >
+        {active ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+      </button>
+      {children}
+      {active && !native && createPortal(
+        <div className="fixed inset-0 bg-slate-900 overflow-hidden" style={{ zIndex: 2147483000 }}>
+          <button
+            onClick={close}
+            className="fixed z-10 flex items-center gap-1.5 bg-slate-800/90 hover:bg-slate-700 text-slate-100 border border-slate-600 rounded-full px-3 py-2 text-xs font-bold shadow-lg"
+            style={{ top: 'calc(env(safe-area-inset-top, 0px) + 10px)', right: 'calc(env(safe-area-inset-right, 0px) + 10px)' }}
+          >
+            <Minimize2 size={16} /> Fermer
+          </button>
+          <div style={rotate
+            ? { position: 'absolute', top: '50%', left: '50%', width: '100vh', height: '100vw', transform: 'translate(-50%, -50%) rotate(90deg)' }
+            : { position: 'absolute', inset: 0 }}>
+            <div className={`fs-portal ${rotate ? 'fs-portal-rotated' : ''} w-full h-full flex flex-col p-3 pt-14 overflow-auto`}>
+              {children}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
 
 // =============================================================================
 //  Hook : abonnement Firestore
@@ -848,7 +937,7 @@ export function CorosSection({ user, db, timeFrame, healthLogs, stravaLogs = [],
             onDragLeave={() => { if (dropId === id) setDropId(null); }}
             style={!isMobile ? { cursor: isDragging ? 'grabbing' : 'grab' } : {}}
           >
-            {el}
+            <FullscreenableCard className="h-full">{el}</FullscreenableCard>
           </div>
         );
       })}

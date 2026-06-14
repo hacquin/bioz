@@ -58,6 +58,7 @@
   border-radius: 0;
   overflow: auto;
   padding: 1.5rem;
+  background: #0f172a;
 }
 
 /* En plein écran : le graphe Recharts prend une hauteur définie (ResponsiveContainer
