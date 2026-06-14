@@ -391,6 +391,7 @@ export const DEMO_DATA = {
     startWaist: 107,
     targetWaist: 95,
     heightCm: 178, targetMuscle: 44, targetHydration: 62, targetVisceral: 6,
+    bmrGoogle: 1830,
   },
   nutritionDocs: _demoNutritionDocs,
   aiBilan: {

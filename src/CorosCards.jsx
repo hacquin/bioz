@@ -409,19 +409,15 @@ function BalanceScale({ inKcal, outKcal }) {
   );
 }
 
-function BalanceCard({ daily, healthLogs, user, db, timeFrame, anchorDate, setAnchorDate, demoIntake }) {
+function BalanceCard({ daily, healthLogs, bmrGoogle = 1830, user, db, timeFrame, anchorDate, setAnchorDate, demoIntake }) {
   const mode = timeFrame;
   const range = useMemo(() => getPeriodRange(mode, anchorDate), [mode, anchorDate]);
   const days = useMemo(() => daysInRange(range.start, range.end), [range]);
   const cronoIntake = useIntakeData(user, db, days, demoIntake);
 
-  // BMR : dernière valeur connue (balance Withings), ~constante sur la période.
-  const bmr = useMemo(() => {
-    const logs = (healthLogs || []).filter((l) => l.bmr != null);
-    if (!logs.length) return null;
-    logs.sort((a, b) => (a.date < b.date ? 1 : -1));
-    return logs[0].bmr;
-  }, [healthLogs]);
+  // BMR de référence Google Health (réglable dans Objectifs, défaut 1830) — Google
+  // utilise son propre métabolisme de base, plus bas que celui de la balance Withings.
+  const bmr = Number(bmrGoogle) || null;
 
   // Dépense = base (BMR) + actif (activeKcal), comme « Énergie dépensée au total » de
   // Google Health. activeKcal ne contient QUE la part active : il faut ajouter le BMR.
@@ -595,12 +591,12 @@ function useLastBmr(healthLogs) {
 // --- Objectifs QUOTIDIENS : pas 8000 · dépense 3000 · apport 2300 · sommeil 7h ---
 const DAILY_GOALS = { steps: 8000, expend: 3000, intake: 2300, sleep: 420 };
 
-function DailyGoalsCard({ daily, healthLogs, user, db, anchorDate, setAnchorDate, demoIntake }) {
+function DailyGoalsCard({ daily, healthLogs, bmrGoogle = 1830, user, db, anchorDate, setAnchorDate, demoIntake }) {
   const key = localDateKey(anchorDate);
   const todayKey = localDateKey(new Date());
   const isToday = key === todayKey;
   const cronoIntake = useIntakeData(user, db, [key], demoIntake);
-  const bmr = useLastBmr(healthLogs);
+  const bmr = Number(bmrGoogle) || null; // BMR de référence Google (réglable, défaut 1830)
 
   const d = daily[key] || {};
   const steps = d.steps ?? null;
@@ -639,11 +635,11 @@ function DailyGoalsCard({ daily, healthLogs, user, db, anchorDate, setAnchorDate
 const WEEKLY_GOALS = { training: 300, steps: 60000, loss: 500, deficit: 4900 };
 const MUSCU_TYPES = ['WeightTraining', 'Workout', 'Crossfit', 'HIIT', 'Hiit'];
 
-function WeeklyGoalsCard({ daily, healthLogs, stravaLogs, hevyWorkouts, user, db, anchorDate, setAnchorDate, demoIntake }) {
+function WeeklyGoalsCard({ daily, healthLogs, bmrGoogle = 1830, stravaLogs, hevyWorkouts, user, db, anchorDate, setAnchorDate, demoIntake }) {
   const range = useMemo(() => getPeriodRange('week', anchorDate), [anchorDate]);
   const days = useMemo(() => daysInRange(range.start, range.end), [range]);
   const cronoIntake = useIntakeData(user, db, days, demoIntake);
-  const bmr = useLastBmr(healthLogs);
+  const bmr = Number(bmrGoogle) || null; // BMR de référence Google (réglable, défaut 1830)
   const todayKey = localDateKey(new Date());
 
   // Borne fin de semaine inclusive (fin de journée).
@@ -733,7 +729,7 @@ const WEARABLE_DEFAULT_ORDER = [
 ];
 const WEARABLE_ORDER_KEY = 'bioz_wearableCardOrder';
 
-export function CorosSection({ user, db, timeFrame, healthLogs, stravaLogs = [], hevyWorkouts = [], hiddenCards = [], demo = null }) {
+export function CorosSection({ user, db, timeFrame, healthLogs, stravaLogs = [], hevyWorkouts = [], hiddenCards = [], bmrGoogle = 1830, demo = null }) {
   const { daily: corosDaily, baseline, loading, error } = useCorosData(user, db, demo);
   const fitbitDaily = useFitbitData(user, db, demo ? demo.fitbitDaily : undefined);
   const [anchorDate, setAnchorDate] = useState(new Date());
@@ -820,13 +816,13 @@ export function CorosSection({ user, db, timeFrame, healthLogs, stravaLogs = [],
   const hLogs = demo ? (demo.hevyWorkouts || []) : (hevyWorkouts || []);
 
   const content = {
-    h_goalsDaily: <DailyGoalsCard daily={daily} healthLogs={healthLogs} user={user} db={db} anchorDate={anchorDate} setAnchorDate={setAnchorDate} demoIntake={demo ? demo.intake : undefined} />,
-    h_goalsWeekly: <WeeklyGoalsCard daily={daily} healthLogs={healthLogs} stravaLogs={sLogs} hevyWorkouts={hLogs} user={user} db={db} anchorDate={anchorDate} setAnchorDate={setAnchorDate} demoIntake={demo ? demo.intake : undefined} />,
+    h_goalsDaily: <DailyGoalsCard daily={daily} healthLogs={healthLogs} bmrGoogle={bmrGoogle} user={user} db={db} anchorDate={anchorDate} setAnchorDate={setAnchorDate} demoIntake={demo ? demo.intake : undefined} />,
+    h_goalsWeekly: <WeeklyGoalsCard daily={daily} healthLogs={healthLogs} bmrGoogle={bmrGoogle} stravaLogs={sLogs} hevyWorkouts={hLogs} user={user} db={db} anchorDate={anchorDate} setAnchorDate={setAnchorDate} demoIntake={demo ? demo.intake : undefined} />,
     h_corosBilan: <BilanSanteCard daily={daily} healthLogs={healthLogs} user={user} />,
     h_corosSommeil: <SommeilCard daily={daily} baseline={baseline} timeFrame={timeFrame} anchorDate={anchorDate} setAnchorDate={setAnchorDate} />,
     h_corosVfc: <VfcCard daily={daily} baseline={baseline} timeFrame={timeFrame} anchorDate={anchorDate} setAnchorDate={setAnchorDate} />,
     h_corosFcRepos: <FcReposCard daily={daily} timeFrame={timeFrame} anchorDate={anchorDate} setAnchorDate={setAnchorDate} />,
-    h_energyBalance: <BalanceCard daily={daily} healthLogs={healthLogs} user={user} db={db} timeFrame={timeFrame} anchorDate={anchorDate} setAnchorDate={setAnchorDate} demoIntake={demo ? demo.intake : undefined} />,
+    h_energyBalance: <BalanceCard daily={daily} healthLogs={healthLogs} bmrGoogle={bmrGoogle} user={user} db={db} timeFrame={timeFrame} anchorDate={anchorDate} setAnchorDate={setAnchorDate} demoIntake={demo ? demo.intake : undefined} />,
   };
   for (const id of FITBIT_CARD_IDS) {
     content[id] = <FitbitCard id={id} fitbitDaily={fitbitDaily} timeFrame={timeFrame} anchorDate={anchorDate} setAnchorDate={setAnchorDate} />;
