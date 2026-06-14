@@ -2290,7 +2290,7 @@ BMR : ${f(ind.bmr)} kcal${sportSection}${activitySection}`;
                   <Minimize2 size={16} /> Fermer
                 </button>
                 <div style={rotate
-                  ? { position: 'absolute', top: '50%', left: '50%', width: '100vh', height: '100vw', transform: 'translate(-50%, -50%) rotate(90deg)' }
+                  ? { position: 'absolute', top: '50%', left: '50%', width: window.innerHeight, height: window.innerWidth, transform: 'translate(-50%, -50%) rotate(90deg)' }
                   : { position: 'absolute', inset: 0 }}>
                   <div className={`fs-portal ${rotate ? 'fs-portal-rotated' : ''} w-full h-full flex flex-col p-4 pt-14 overflow-hidden`}>
                     <FitToScreen rotated={rotate}>{healthCardContent}</FitToScreen>
