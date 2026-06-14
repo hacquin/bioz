@@ -47,36 +47,44 @@ const fsExit = () => {
 
 // Met le contenu à l'échelle pour remplir l'écran (cartes non-graphiques) : rendu à une
 // largeur de base puis scale = min(largeur dispo / base, hauteur dispo / hauteur contenu).
-export function FitToScreen({ baseWidth = 860, children }) {
+export function FitToScreen({ maxBaseWidth = 860, children }) {
   const outerRef = useRef(null);
   const innerRef = useRef(null);
-  const natHRef = useRef(null); // hauteur naturelle du contenu (à zoom 1), mesurée une fois
+  // On utilise `zoom` (et non transform:scale) : il reflowe le contenu, ce qui préserve
+  // les masques CSS + clipPath (silhouettes) que scale() casse en WebKit.
+  // La largeur de base est plafonnée à la largeur DISPONIBLE (cruciale en paysage mobile
+  // où l'espace est étroit) : ainsi le zoom est ≥ 1 et le contenu remplit la largeur.
+  const [base, setBase] = useState(maxBaseWidth);
   const [zoom, setZoom] = useState(1);
+  const natHRef = useRef(null); // hauteur naturelle (à zoom 1) pour la base courante
   useEffect(() => {
     const compute = () => {
       const o = outerRef.current, i = innerRef.current;
       if (!o || !i) return;
-      if (natHRef.current == null && zoom === 1) {
-        const h = i.getBoundingClientRect().height;
-        if (h) natHRef.current = h;
-      }
-      const natH = natHRef.current;
-      if (!natH) { requestAnimationFrame(compute); return; }
       const ow = o.clientWidth, oh = o.clientHeight;
       if (!ow || !oh) return;
-      // On utilise `zoom` (et non transform:scale) : il reflowe le contenu, ce qui
-      // préserve les masques CSS + clipPath (silhouettes) que scale() casse en WebKit.
-      setZoom(Math.max(0.3, Math.min(ow / baseWidth, oh / natH, 4)));
+      const nextBase = Math.max(280, Math.min(maxBaseWidth, Math.round(ow)));
+      if (nextBase !== base) { natHRef.current = null; setBase(nextBase); setZoom(1); return; }
+      // on mesure la hauteur naturelle uniquement à zoom 1 (évite les écarts navigateur)
+      if (natHRef.current == null) {
+        if (zoom !== 1) { setZoom(1); return; }
+        const h = i.getBoundingClientRect().height;
+        if (!h) { requestAnimationFrame(compute); return; }
+        natHRef.current = h;
+      }
+      const z = Math.max(0.3, Math.min(ow / base, oh / natHRef.current, 4));
+      if (Math.abs(z - zoom) > 0.02) setZoom(z);
     };
     compute();
-    const t1 = setTimeout(compute, 200);
+    const t1 = setTimeout(compute, 120);
+    const t2 = setTimeout(compute, 360);
     window.addEventListener('resize', compute);
     window.addEventListener('orientationchange', compute);
-    return () => { clearTimeout(t1); window.removeEventListener('resize', compute); window.removeEventListener('orientationchange', compute); };
-  }, [baseWidth, zoom]);
+    return () => { clearTimeout(t1); clearTimeout(t2); window.removeEventListener('resize', compute); window.removeEventListener('orientationchange', compute); };
+  }, [maxBaseWidth, base, zoom]);
   return (
     <div ref={outerRef} className="w-full h-full flex items-center justify-center overflow-hidden">
-      <div ref={innerRef} className="fit-screen-inner" style={{ width: baseWidth, zoom }}>
+      <div ref={innerRef} className="fit-screen-inner" style={{ width: base, zoom }}>
         {children}
       </div>
     </div>
