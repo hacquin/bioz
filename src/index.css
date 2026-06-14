@@ -49,3 +49,17 @@
 .pb-safe {
   padding-bottom: env(safe-area-inset-bottom);
 }
+
+/* Carte en plein écran navigateur (Fullscreen API) : remplit l'écran */
+[data-fscard]:fullscreen,
+[data-fscard]:-webkit-full-screen {
+  width: 100vw;
+  height: 100vh;
+  border-radius: 0;
+  overflow: auto;
+  padding: 1.5rem;
+}
+[data-fscard]:fullscreen .recharts-responsive-container,
+[data-fscard]:-webkit-full-screen .recharts-responsive-container {
+  min-height: 60vh;
+}

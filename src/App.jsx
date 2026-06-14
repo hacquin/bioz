@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Dumbbell, Activity, Calendar, BarChart2, Save, Settings, X, AlertCircle, Filter, Scale, TrendingUp, LogOut, User, Droplet, RefreshCw, Cloud, CloudLightning, Ruler, Target, Footprints, Percent, Heart, HeartPulse, Map as MapIcon, ArrowRight,
-  Bike, Mountain, Award, Waves, Flame, ChevronDown, ChevronUp, Clock, Plus, Trash2, UtensilsCrossed, Upload, FileText, ExternalLink, CheckCircle2, Download, Maximize2, RotateCcw
+  Bike, Mountain, Award, Waves, Flame, ChevronDown, ChevronUp, Clock, Plus, Trash2, UtensilsCrossed, Upload, FileText, ExternalLink, CheckCircle2, Download, Maximize2, Minimize2
 } from 'lucide-react';
 import { 
   BarChart, Bar, LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ComposedChart, PieChart, Pie, Cell, LabelList
@@ -133,50 +133,21 @@ function NavButton({ icon: Icon, label, active, onClick }) { return (<button onC
 function Modal({ isOpen, onClose, title, children, confirmText, onConfirm, isDestructive }) { if (!isOpen) return null; return (<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in"><div className="bg-slate-800 border border-slate-700 rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-slide-up"><div className="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-800"><h3 className="font-bold text-lg text-white flex items-center gap-2">{isDestructive && <AlertCircle className="w-5 h-5 text-red-500" />}{title}</h3><button onClick={onClose} className="text-slate-400 hover:text-white p-1"><X size={24} /></button></div><div className="p-6 text-slate-300">{children}</div><div className="p-4 bg-slate-900/50 flex gap-3 justify-end">{onConfirm && (<><button onClick={onClose} className="px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-700 font-medium">Annuler</button><button onClick={() => { onConfirm(); onClose(); }} className={`px-4 py-3 rounded-lg text-white font-medium shadow-lg ${isDestructive ? 'bg-red-600 hover:bg-red-700' : 'bg-violet-600 hover:bg-violet-700'}`}>{confirmText || 'Confirmer'}</button></>)}{!onConfirm && <button onClick={onClose} className="px-4 py-3 bg-slate-700 rounded-lg text-white font-medium hover:bg-slate-600">Fermer</button>}</div></div></div>); }
 function WaterModal({ isOpen, onClose, onAdd }) { if (!isOpen) return null; return (<Modal isOpen={isOpen} onClose={onClose} title="Ajouter de l'eau" confirmText={null} onConfirm={null}><div className="grid grid-cols-2 gap-4"><button onClick={() => onAdd(300)} className="bg-blue-600/20 hover:bg-blue-600/40 border-2 border-blue-500 p-6 rounded-2xl flex flex-col items-center gap-3 transition-all active:scale-95"><Droplet size={40} className="text-blue-400" /> <span className="text-xl font-bold text-blue-200">30 cl</span></button><button onClick={() => onAdd(500)} className="bg-blue-600/20 hover:bg-blue-600/40 border-2 border-blue-500 p-6 rounded-2xl flex flex-col items-center gap-3 transition-all active:scale-95"><div className="relative"><Droplet size={48} className="text-blue-400" /> <span className="absolute -top-1 -right-2 font-bold text-xl text-blue-300">+</span></div><span className="text-xl font-bold text-blue-200">50 cl</span></button></div><p className="text-center text-slate-400 text-sm mt-4">Sélectionnez la quantité bue</p></Modal>); }
 
-// --- OVERLAY PLEIN ÉCRAN pour une carte/graphe ---
-// Sur mobile en portrait, on pivote le contenu de 90° (mode paysage large) car
-// iOS Safari ne permet pas le verrouillage programmatique de l'orientation.
-function FullscreenCardOverlay({ onClose, children }) {
-  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-  const [portrait, setPortrait] = useState(() => window.innerHeight >= window.innerWidth);
-  useEffect(() => {
-    const onResize = () => setPortrait(window.innerHeight >= window.innerWidth);
-    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('resize', onResize);
-    window.addEventListener('orientationchange', onResize);
-    window.addEventListener('keydown', onKey);
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      window.removeEventListener('resize', onResize);
-      window.removeEventListener('orientationchange', onResize);
-      window.removeEventListener('keydown', onKey);
-      document.body.style.overflow = prevOverflow;
-    };
-  }, [onClose]);
-  const rotate = isMobile && portrait;
-  const panelStyle = rotate
-    ? { width: '100vh', height: '100vw', position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%) rotate(90deg)' }
-    : { width: '100%', height: '100%' };
-  return (
-    <div className="fixed inset-0 z-[90] bg-slate-900/98 backdrop-blur-sm animate-fade-in overflow-hidden" style={{ touchAction: 'none' }}>
-      <button onClick={onClose}
-        className="absolute top-3 right-3 z-[95] flex items-center gap-1.5 bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-slate-600 rounded-full px-3 py-1.5 text-xs font-bold shadow-lg">
-        <X size={16} /> Fermer
-      </button>
-      {rotate && (
-        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-[95] flex items-center gap-1.5 text-slate-500 text-[11px]">
-          <RotateCcw size={12} /> Mode paysage
-        </div>
-      )}
-      <div style={panelStyle}>
-        <div className="w-full h-full p-4 sm:p-6 pt-12 flex flex-col">
-          {children}
-        </div>
-      </div>
-    </div>
-  );
-}
+// --- PLEIN ÉCRAN d'une carte via la Fullscreen API native du navigateur ---
+// Pas d'overlay React (qui bloquait la navigation) : on met la CARTE elle-même en
+// plein écran navigateur. Repli CSS (position fixe) pour iOS Safari, qui ne supporte
+// pas l'API fullscreen sur un élément <div>.
+const supportsNativeFs = (el) => !!(el && (el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen));
+const enterNativeFs = (el) => {
+  const fn = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
+  try { const r = fn.call(el); return r && r.then ? r : Promise.resolve(); } catch { return Promise.reject(); }
+};
+const exitNativeFs = () => {
+  if (document.fullscreenElement || document.webkitFullscreenElement) {
+    const fn = document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen;
+    try { fn && fn.call(document); } catch { /* ignore */ }
+  }
+};
 
 // --- LAZY CARD: ne rend le contenu que quand la carte est visible (IntersectionObserver) ---
 function LazyCard({ children, height = 300, className = "", style = {}, ...props }) {
@@ -794,7 +765,44 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, stravaLogs, hevyWo
       return next;
     });
   };
-  const [fullscreenCard, setFullscreenCard] = useState(null);
+  // Plein écran d'une carte : Fullscreen API native (desktop/Android), repli CSS sur iOS.
+  const [fsCardId, setFsCardId] = useState(null);
+  const [fsNative, setFsNative] = useState(false);
+  const [fsPortrait, setFsPortrait] = useState(() => window.innerHeight >= window.innerWidth);
+  const closeFullscreen = () => {
+    try { window.screen?.orientation?.unlock?.(); } catch { /* ignore */ }
+    exitNativeFs();
+    setFsCardId(null); setFsNative(false);
+    setTimeout(() => window.dispatchEvent(new Event('resize')), 120);
+  };
+  const toggleFullscreen = (e, id) => {
+    e.stopPropagation();
+    if (fsCardId === id) { closeFullscreen(); return; }
+    const el = e.currentTarget.closest('[data-fscard]');
+    if (el && supportsNativeFs(el)) {
+      setFsCardId(id); setFsNative(true);
+      enterNativeFs(el).then(() => { try { window.screen?.orientation?.lock?.('landscape'); } catch { /* ignore */ } }).catch(() => setFsNative(false));
+    } else {
+      setFsCardId(id); setFsNative(false); // repli CSS (iOS Safari)
+    }
+    setTimeout(() => window.dispatchEvent(new Event('resize')), 120);
+  };
+  useEffect(() => {
+    const onFsChange = () => {
+      if (!document.fullscreenElement && !document.webkitFullscreenElement) { setFsCardId(null); setFsNative(false); }
+    };
+    const onResize = () => setFsPortrait(window.innerHeight >= window.innerWidth);
+    document.addEventListener('fullscreenchange', onFsChange);
+    document.addEventListener('webkitfullscreenchange', onFsChange);
+    window.addEventListener('resize', onResize);
+    window.addEventListener('orientationchange', onResize);
+    return () => {
+      document.removeEventListener('fullscreenchange', onFsChange);
+      document.removeEventListener('webkitfullscreenchange', onFsChange);
+      window.removeEventListener('resize', onResize);
+      window.removeEventListener('orientationchange', onResize);
+    };
+  }, []);
 
   const [healthCardOrder, setHealthCardOrder] = useState(() => {
     try {
@@ -2240,33 +2248,34 @@ BMR : ${f(ind.bmr)} kcal${sportSection}${activitySection}`;
         if (!healthCardContent) return null;
         const isDragging = healthDragId === id;
         const isDropTarget = healthDropTargetId === id && healthDragId !== id;
+        const isFs = fsCardId === id;
+        const cssFsStyle = (isFs && !fsNative)
+          ? (isMobile && fsPortrait
+              ? { position: 'fixed', top: '50%', left: '50%', width: '100vh', height: '100vw', transform: 'translate(-50%, -50%) rotate(90deg)', zIndex: 80, borderRadius: 0, margin: 0, overflow: 'auto' }
+              : { position: 'fixed', inset: 0, width: '100vw', height: '100vh', zIndex: 80, borderRadius: 0, margin: 0, overflow: 'auto' })
+          : {};
         return (
-          <div key={id}
+          <div key={id} data-fscard
             className={`relative group bg-slate-800 p-4 rounded-xl border-2 shadow-lg transition-all duration-150 flex flex-col ${id === 'h_glucoseKetoneChart' ? 'col-span-full xl:col-span-3' : id === 'h_weightFat' || id === 'h_composition' || id === 'h_muscleFatBar' || id === 'h_bodySilhouette' ? 'col-span-full xl:col-span-2' : 'min-h-[300px]'} ${isDragging ? 'border-violet-500 opacity-40 scale-95' : isDropTarget ? 'border-violet-400 ring-2 ring-violet-400/30 scale-[1.02]' : 'border-slate-700'}`}
-            draggable={!isMobile}
+            draggable={!isMobile && !isFs}
             onDragStart={(e) => handleHealthDragStart(e, id)}
             onDragOver={(e) => handleHealthDragOver(e, id)}
             onDrop={(e) => handleHealthDrop(e, id)}
             onDragEnd={handleHealthDragEnd}
             onDragLeave={() => { if (healthDropTargetId === id) setHealthDropTargetId(null); }}
-            style={!isMobile ? { cursor: isDragging ? 'grabbing' : 'grab' } : {}}
+            style={{ ...(!isMobile && !isFs ? { cursor: isDragging ? 'grabbing' : 'grab' } : {}), ...cssFsStyle }}
           >
             <button
               draggable={false}
-              onClick={(e) => { e.stopPropagation(); setFullscreenCard(id); }}
-              title="Plein écran"
-              className="absolute top-2 right-2 z-20 p-1.5 rounded-lg bg-slate-900/70 hover:bg-slate-700 text-slate-400 hover:text-slate-100 border border-slate-700 transition-colors opacity-60 hover:opacity-100"
+              onClick={(e) => toggleFullscreen(e, id)}
+              title={isFs ? 'Quitter le plein écran' : 'Plein écran'}
+              className="absolute top-2 right-2 z-30 p-1.5 rounded-lg bg-slate-900/70 hover:bg-slate-700 text-slate-400 hover:text-slate-100 border border-slate-700 transition-colors opacity-60 hover:opacity-100"
             >
-              <Maximize2 size={15} />
+              {isFs ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
             </button>
             <LazyCard height={300} className="flex-1 flex flex-col" style={isDragging ? { pointerEvents: 'none' } : {}}>
               {healthCardContent}
             </LazyCard>
-            {fullscreenCard === id && (
-              <FullscreenCardOverlay onClose={() => setFullscreenCard(null)}>
-                {healthCardContent}
-              </FullscreenCardOverlay>
-            )}
           </div>
         );
       })}
