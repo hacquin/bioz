@@ -50,26 +50,33 @@ const fsExit = () => {
 export function FitToScreen({ baseWidth = 860, children }) {
   const outerRef = useRef(null);
   const innerRef = useRef(null);
-  const [scale, setScale] = useState(0.5);
+  const natHRef = useRef(null); // hauteur naturelle du contenu (à zoom 1), mesurée une fois
+  const [zoom, setZoom] = useState(1);
   useEffect(() => {
     const compute = () => {
       const o = outerRef.current, i = innerRef.current;
       if (!o || !i) return;
+      if (natHRef.current == null && zoom === 1) {
+        const h = i.getBoundingClientRect().height;
+        if (h) natHRef.current = h;
+      }
+      const natH = natHRef.current;
+      if (!natH) { requestAnimationFrame(compute); return; }
       const ow = o.clientWidth, oh = o.clientHeight;
-      const iw = i.offsetWidth || baseWidth, ih = i.offsetHeight || 1;
-      if (!ow || !oh || !ih) return;
-      setScale(Math.max(0.2, Math.min(ow / iw, oh / ih, 4)));
+      if (!ow || !oh) return;
+      // On utilise `zoom` (et non transform:scale) : il reflowe le contenu, ce qui
+      // préserve les masques CSS + clipPath (silhouettes) que scale() casse en WebKit.
+      setZoom(Math.max(0.3, Math.min(ow / baseWidth, oh / natH, 4)));
     };
     compute();
-    const t1 = setTimeout(compute, 150);
-    const t2 = setTimeout(compute, 450);
+    const t1 = setTimeout(compute, 200);
     window.addEventListener('resize', compute);
     window.addEventListener('orientationchange', compute);
-    return () => { clearTimeout(t1); clearTimeout(t2); window.removeEventListener('resize', compute); window.removeEventListener('orientationchange', compute); };
-  }, [baseWidth]);
+    return () => { clearTimeout(t1); window.removeEventListener('resize', compute); window.removeEventListener('orientationchange', compute); };
+  }, [baseWidth, zoom]);
   return (
     <div ref={outerRef} className="w-full h-full flex items-center justify-center overflow-hidden">
-      <div ref={innerRef} className="fit-screen-inner" style={{ width: baseWidth, transformOrigin: 'center center', transform: `scale(${scale})` }}>
+      <div ref={innerRef} className="fit-screen-inner" style={{ width: baseWidth, zoom }}>
         {children}
       </div>
     </div>
