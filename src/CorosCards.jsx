@@ -83,8 +83,7 @@ export function FitToScreen({ baseWidth = 860, children }) {
   );
 }
 
-export function FullscreenableCard({ children, className = '', wide = false, fit = 'fill' }) {
-  const center = fit === 'center';
+export function FullscreenableCard({ children, className = '', wide = false }) {
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
   const ref = useRef(null);
   const [active, setActive] = useState(false);
@@ -131,7 +130,7 @@ export function FullscreenableCard({ children, className = '', wide = false, fit
       >
         {active ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
       </button>
-      {active && native && center ? <FitToScreen>{children}</FitToScreen> : children}
+      {active && native ? <FitToScreen>{children}</FitToScreen> : children}
       {active && !native && createPortal(
         <div className="fixed inset-0 bg-slate-900 overflow-hidden" style={{ zIndex: 2147483000 }}>
           <button
@@ -144,8 +143,8 @@ export function FullscreenableCard({ children, className = '', wide = false, fit
           <div style={rotate
             ? { position: 'absolute', top: '50%', left: '50%', width: '100vh', height: '100vw', transform: 'translate(-50%, -50%) rotate(90deg)' }
             : { position: 'absolute', inset: 0 }}>
-            <div className={`fs-portal ${rotate ? 'fs-portal-rotated' : ''} w-full h-full flex flex-col p-3 pt-14 overflow-auto`}>
-              {center ? <FitToScreen>{children}</FitToScreen> : children}
+            <div className={`fs-portal ${rotate ? 'fs-portal-rotated' : ''} w-full h-full flex flex-col p-3 pt-14 overflow-hidden`}>
+              <FitToScreen>{children}</FitToScreen>
             </div>
           </div>
         </div>,

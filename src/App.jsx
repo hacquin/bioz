@@ -2258,7 +2258,6 @@ BMR : ${f(ind.bmr)} kcal${sportSection}${activitySection}`;
         const isFs = fsCardId === id;
         const isCssFs = isFs && !fsNative; // repli iOS : portail plein écran
         const rotate = isCssFs && isMobile && fsPortrait;
-        const centerFit = ['h_bodySilhouette', 'h_composition', 'h_muscleFatBar'].includes(id);
         return (
           <div key={id} data-fscard
             className={`relative group bg-slate-800 p-4 rounded-xl border-2 shadow-lg transition-all duration-150 flex flex-col ${id === 'h_glucoseKetoneChart' ? 'col-span-full xl:col-span-3' : id === 'h_weightFat' || id === 'h_composition' || id === 'h_muscleFatBar' || id === 'h_bodySilhouette' ? 'col-span-full xl:col-span-2' : 'min-h-[300px]'} ${isDragging ? 'border-violet-500 opacity-40 scale-95' : isDropTarget ? 'border-violet-400 ring-2 ring-violet-400/30 scale-[1.02]' : 'border-slate-700'}`}
@@ -2279,7 +2278,7 @@ BMR : ${f(ind.bmr)} kcal${sportSection}${activitySection}`;
               {isFs ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
             </button>
             <LazyCard height={300} className="flex-1 flex flex-col" style={isDragging ? { pointerEvents: 'none' } : {}}>
-              {isFs && fsNative && centerFit ? <FitToScreen>{healthCardContent}</FitToScreen> : healthCardContent}
+              {isFs && fsNative ? <FitToScreen>{healthCardContent}</FitToScreen> : healthCardContent}
             </LazyCard>
             {isCssFs && createPortal(
               <div className="fixed inset-0 bg-slate-900 overflow-hidden" style={{ zIndex: 2147483000 }}>
@@ -2293,8 +2292,8 @@ BMR : ${f(ind.bmr)} kcal${sportSection}${activitySection}`;
                 <div style={rotate
                   ? { position: 'absolute', top: '50%', left: '50%', width: '100vh', height: '100vw', transform: 'translate(-50%, -50%) rotate(90deg)' }
                   : { position: 'absolute', inset: 0 }}>
-                  <div className={`fs-portal ${rotate ? 'fs-portal-rotated' : ''} w-full h-full flex flex-col p-4 pt-14 overflow-auto`}>
-                    {centerFit ? <FitToScreen>{healthCardContent}</FitToScreen> : healthCardContent}
+                  <div className={`fs-portal ${rotate ? 'fs-portal-rotated' : ''} w-full h-full flex flex-col p-4 pt-14 overflow-hidden`}>
+                    <FitToScreen>{healthCardContent}</FitToScreen>
                   </div>
                 </div>
               </div>,

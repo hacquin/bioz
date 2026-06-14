@@ -61,28 +61,7 @@
   background: #0f172a;
 }
 
-/* En plein écran : le graphe Recharts prend une hauteur définie (ResponsiveContainer
-   a besoin d'une hauteur explicite). vh en mode normal, vw quand le portail est pivoté
-   (paysage sur mobile portrait : la hauteur visible correspond à la largeur viewport). */
-[data-fscard]:fullscreen .h-56,
-[data-fscard]:fullscreen .h-72,
-[data-fscard]:-webkit-full-screen .h-56,
-[data-fscard]:-webkit-full-screen .h-72,
-.fs-portal .h-56,
-.fs-portal .h-72 {
-  height: 74vh !important;
-}
-.fs-portal-rotated .h-56,
-.fs-portal-rotated .h-72 {
-  height: 68vw !important;
-}
-[data-fscard]:fullscreen .recharts-responsive-container,
-[data-fscard]:-webkit-full-screen .recharts-responsive-container,
-.fs-portal .recharts-responsive-container {
-  height: 100% !important;
-}
-
-/* Contenu mis à l'échelle (cartes non-graphiques en plein écran) : on neutralise
+/* Contenu mis à l'échelle (toutes les cartes en plein écran) : on neutralise
    le h-full de la carte interne (enfant direct uniquement) qui n'aurait pas de
    hauteur de référence. NE PAS cibler les h-full imbriqués (ex. remplissage masqué
    des silhouettes), sinon ils s'effondrent. */
