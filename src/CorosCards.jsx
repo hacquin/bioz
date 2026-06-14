@@ -47,7 +47,7 @@ const fsExit = () => {
 
 // Met le contenu à l'échelle pour remplir l'écran (cartes non-graphiques) : rendu à une
 // largeur de base puis scale = min(largeur dispo / base, hauteur dispo / hauteur contenu).
-export function FitToScreen({ maxBaseWidth = 860, children }) {
+export function FitToScreen({ maxBaseWidth = 860, rotated = false, children }) {
   const outerRef = useRef(null);
   const innerRef = useRef(null);
   // On utilise `zoom` (et non transform:scale) : il reflowe le contenu, ce qui préserve
@@ -61,7 +61,11 @@ export function FitToScreen({ maxBaseWidth = 860, children }) {
     const compute = () => {
       const o = outerRef.current, i = innerRef.current;
       if (!o || !i) return;
-      const ow = o.clientWidth, oh = o.clientHeight;
+      // En mode pivoté (paysage mobile), on ne peut pas fiablement mesurer le conteneur
+      // tourné : on prend les dimensions de la fenêtre, axes inversés (largeur contenu =
+      // hauteur écran, hauteur contenu = largeur écran). Sinon on mesure le conteneur.
+      const ow = rotated ? (window.innerHeight - 16) : o.clientWidth;
+      const oh = rotated ? (window.innerWidth - 16) : o.clientHeight;
       if (!ow || !oh) return;
       const nextBase = Math.max(280, Math.min(maxBaseWidth, Math.round(ow)));
       if (nextBase !== base) { natHRef.current = null; setBase(nextBase); setZoom(1); return; }
@@ -81,7 +85,7 @@ export function FitToScreen({ maxBaseWidth = 860, children }) {
     window.addEventListener('resize', compute);
     window.addEventListener('orientationchange', compute);
     return () => { clearTimeout(t1); clearTimeout(t2); window.removeEventListener('resize', compute); window.removeEventListener('orientationchange', compute); };
-  }, [maxBaseWidth, base, zoom]);
+  }, [maxBaseWidth, base, zoom, rotated]);
   return (
     <div ref={outerRef} className="w-full h-full flex items-center justify-center overflow-hidden">
       <div ref={innerRef} className="fit-screen-inner" style={{ width: base, zoom }}>
@@ -152,7 +156,7 @@ export function FullscreenableCard({ children, className = '', wide = false }) {
             ? { position: 'absolute', top: '50%', left: '50%', width: '100vh', height: '100vw', transform: 'translate(-50%, -50%) rotate(90deg)' }
             : { position: 'absolute', inset: 0 }}>
             <div className={`fs-portal ${rotate ? 'fs-portal-rotated' : ''} w-full h-full flex flex-col p-3 pt-14 overflow-hidden`}>
-              <FitToScreen>{children}</FitToScreen>
+              <FitToScreen rotated={rotate}>{children}</FitToScreen>
             </div>
           </div>
         </div>,
