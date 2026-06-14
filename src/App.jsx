@@ -8,6 +8,7 @@ import {
 } from 'recharts';
 
 import ReactECharts from 'echarts-for-react';
+import { createPortal } from 'react-dom';
 
 // --- FIREBASE IMPORTS ---
 import { initializeApp } from "firebase/app";
@@ -2249,11 +2250,8 @@ BMR : ${f(ind.bmr)} kcal${sportSection}${activitySection}`;
         const isDragging = healthDragId === id;
         const isDropTarget = healthDropTargetId === id && healthDragId !== id;
         const isFs = fsCardId === id;
-        const cssFsStyle = (isFs && !fsNative)
-          ? (isMobile && fsPortrait
-              ? { position: 'fixed', top: '50%', left: '50%', width: '100vh', height: '100vw', transform: 'translate(-50%, -50%) rotate(90deg)', zIndex: 80, borderRadius: 0, margin: 0, overflow: 'auto' }
-              : { position: 'fixed', inset: 0, width: '100vw', height: '100vh', zIndex: 80, borderRadius: 0, margin: 0, overflow: 'auto' })
-          : {};
+        const isCssFs = isFs && !fsNative; // repli iOS : portail plein écran
+        const rotate = isCssFs && isMobile && fsPortrait;
         return (
           <div key={id} data-fscard
             className={`relative group bg-slate-800 p-4 rounded-xl border-2 shadow-lg transition-all duration-150 flex flex-col ${id === 'h_glucoseKetoneChart' ? 'col-span-full xl:col-span-3' : id === 'h_weightFat' || id === 'h_composition' || id === 'h_muscleFatBar' || id === 'h_bodySilhouette' ? 'col-span-full xl:col-span-2' : 'min-h-[300px]'} ${isDragging ? 'border-violet-500 opacity-40 scale-95' : isDropTarget ? 'border-violet-400 ring-2 ring-violet-400/30 scale-[1.02]' : 'border-slate-700'}`}
@@ -2263,7 +2261,7 @@ BMR : ${f(ind.bmr)} kcal${sportSection}${activitySection}`;
             onDrop={(e) => handleHealthDrop(e, id)}
             onDragEnd={handleHealthDragEnd}
             onDragLeave={() => { if (healthDropTargetId === id) setHealthDropTargetId(null); }}
-            style={{ ...(!isMobile && !isFs ? { cursor: isDragging ? 'grabbing' : 'grab' } : {}), ...cssFsStyle }}
+            style={!isMobile && !isFs ? { cursor: isDragging ? 'grabbing' : 'grab' } : {}}
           >
             <button
               draggable={false}
@@ -2276,6 +2274,25 @@ BMR : ${f(ind.bmr)} kcal${sportSection}${activitySection}`;
             <LazyCard height={300} className="flex-1 flex flex-col" style={isDragging ? { pointerEvents: 'none' } : {}}>
               {healthCardContent}
             </LazyCard>
+            {isCssFs && createPortal(
+              <div className="fixed inset-0 bg-slate-900 overflow-hidden" style={{ zIndex: 2147483000 }}>
+                <button
+                  onClick={() => closeFullscreen()}
+                  className="fixed z-10 flex items-center gap-1.5 bg-slate-800/90 hover:bg-slate-700 text-slate-100 border border-slate-600 rounded-full px-3 py-2 text-xs font-bold shadow-lg"
+                  style={{ top: 'calc(env(safe-area-inset-top, 0px) + 10px)', right: 'calc(env(safe-area-inset-right, 0px) + 10px)' }}
+                >
+                  <Minimize2 size={16} /> Fermer
+                </button>
+                <div style={rotate
+                  ? { position: 'absolute', top: '50%', left: '50%', width: '100vh', height: '100vw', transform: 'translate(-50%, -50%) rotate(90deg)' }
+                  : { position: 'absolute', inset: 0 }}>
+                  <div className="fs-portal w-full h-full flex flex-col p-4 pt-14 overflow-auto">
+                    {healthCardContent}
+                  </div>
+                </div>
+              </div>,
+              document.body
+            )}
           </div>
         );
       })}

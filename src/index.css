@@ -59,7 +59,20 @@
   overflow: auto;
   padding: 1.5rem;
 }
+
+/* En plein écran (natif ou portail iOS) : le graphe occupe toute la hauteur dispo */
+[data-fscard]:fullscreen .h-56,
+[data-fscard]:fullscreen .h-72,
+[data-fscard]:-webkit-full-screen .h-56,
+[data-fscard]:-webkit-full-screen .h-72,
+.fs-portal .h-56,
+.fs-portal .h-72 {
+  flex: 1 1 auto;
+  height: auto !important;
+  min-height: 0;
+}
 [data-fscard]:fullscreen .recharts-responsive-container,
-[data-fscard]:-webkit-full-screen .recharts-responsive-container {
-  min-height: 60vh;
+[data-fscard]:-webkit-full-screen .recharts-responsive-container,
+.fs-portal .recharts-responsive-container {
+  height: 100% !important;
 }
