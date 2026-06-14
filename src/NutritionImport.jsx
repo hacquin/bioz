@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { doc, getDoc, getDocs, collection, query, orderBy, limit } from 'firebase/firestore';
 import ReactECharts from 'echarts-for-react';
+import { FullscreenableCard } from './CorosCards';
 import {
   ComposedChart, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
@@ -167,9 +168,11 @@ function CardSection({ title, cardIds, cardContent, wideCards = [], dragState, i
             onDragLeave={() => { if (dropTargetId === id) onDragLeave(); }}
             style={!isMobile ? { cursor: isDragging ? 'grabbing' : 'grab' } : {}}
           >
+            <FullscreenableCard>
             <LazyCard height={300} className="flex-1 flex flex-col" style={isDragging ? { pointerEvents: 'none' } : {}}>
               {content}
             </LazyCard>
+            </FullscreenableCard>
           </div>
         );
       })}

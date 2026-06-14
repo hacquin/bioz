@@ -437,9 +437,11 @@ function Dashboard({ healthLogs, stravaLogs }) {
             onDragLeave={() => { if (dropTargetId === id) setDropTargetId(null); }}
             style={!isMobile ? { cursor: isDragging ? 'grabbing' : 'grab' } : {}}
           >
+            <FullscreenableCard>
             <LazyCard height={224} style={isDragging ? { pointerEvents: 'none' } : {}}>
               {cardContent}
             </LazyCard>
+            </FullscreenableCard>
           </div>
         );
       })}
