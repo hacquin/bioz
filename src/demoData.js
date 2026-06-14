@@ -342,7 +342,8 @@ const generateDemoWearables = (nutritionDocs) => {
     const restDay = dow === 0; // dimanche plus calme
     const baseSteps = restDay ? 3500 : 6500;
     const steps = Math.round((baseSteps + Math.random() * 6000) * elapsed);
-    const activeKcal = Math.round((180 + steps * 0.045 + Math.random() * 150) * 1); // dépense active
+    // Énergie dépensée AU TOTAL (comme Google Health) = métabolisme de base + actif
+    const activeKcal = Math.round((1850 + steps * 0.045 + Math.random() * 150) * (isToday ? elapsed : 1));
     // Profil keto : glycémie basse et stable
     const gAvg = Math.round(82 + Math.random() * 16); // 82-98
     const nut = nutByDate[key];
