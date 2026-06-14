@@ -45,7 +45,39 @@ const fsExit = () => {
   }
 };
 
-export function FullscreenableCard({ children, className = '', wide = false }) {
+// Met le contenu à l'échelle pour remplir l'écran (cartes non-graphiques) : rendu à une
+// largeur de base puis scale = min(largeur dispo / base, hauteur dispo / hauteur contenu).
+export function FitToScreen({ baseWidth = 860, children }) {
+  const outerRef = useRef(null);
+  const innerRef = useRef(null);
+  const [scale, setScale] = useState(0.5);
+  useEffect(() => {
+    const compute = () => {
+      const o = outerRef.current, i = innerRef.current;
+      if (!o || !i) return;
+      const ow = o.clientWidth, oh = o.clientHeight;
+      const iw = i.offsetWidth || baseWidth, ih = i.offsetHeight || 1;
+      if (!ow || !oh || !ih) return;
+      setScale(Math.max(0.2, Math.min(ow / iw, oh / ih, 4)));
+    };
+    compute();
+    const t1 = setTimeout(compute, 150);
+    const t2 = setTimeout(compute, 450);
+    window.addEventListener('resize', compute);
+    window.addEventListener('orientationchange', compute);
+    return () => { clearTimeout(t1); clearTimeout(t2); window.removeEventListener('resize', compute); window.removeEventListener('orientationchange', compute); };
+  }, [baseWidth]);
+  return (
+    <div ref={outerRef} className="w-full h-full flex items-center justify-center overflow-hidden">
+      <div ref={innerRef} className="fit-screen-inner" style={{ width: baseWidth, transformOrigin: 'center center', transform: `scale(${scale})` }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+export function FullscreenableCard({ children, className = '', wide = false, fit = 'fill' }) {
+  const center = fit === 'center';
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
   const ref = useRef(null);
   const [active, setActive] = useState(false);
@@ -92,7 +124,7 @@ export function FullscreenableCard({ children, className = '', wide = false }) {
       >
         {active ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
       </button>
-      {children}
+      {active && native && center ? <FitToScreen>{children}</FitToScreen> : children}
       {active && !native && createPortal(
         <div className="fixed inset-0 bg-slate-900 overflow-hidden" style={{ zIndex: 2147483000 }}>
           <button
@@ -106,7 +138,7 @@ export function FullscreenableCard({ children, className = '', wide = false }) {
             ? { position: 'absolute', top: '50%', left: '50%', width: '100vh', height: '100vw', transform: 'translate(-50%, -50%) rotate(90deg)' }
             : { position: 'absolute', inset: 0 }}>
             <div className={`fs-portal ${rotate ? 'fs-portal-rotated' : ''} w-full h-full flex flex-col p-3 pt-14 overflow-auto`}>
-              {children}
+              {center ? <FitToScreen>{children}</FitToScreen> : children}
             </div>
           </div>
         </div>,
@@ -937,7 +969,7 @@ export function CorosSection({ user, db, timeFrame, healthLogs, stravaLogs = [],
             onDragLeave={() => { if (dropId === id) setDropId(null); }}
             style={!isMobile ? { cursor: isDragging ? 'grabbing' : 'grab' } : {}}
           >
-            <FullscreenableCard className="h-full">{el}</FullscreenableCard>
+            <FullscreenableCard className="h-full" fit={['h_corosSommeil', 'h_corosBilan', 'h_goalsDaily', 'h_goalsWeekly'].includes(id) ? 'center' : 'fill'}>{el}</FullscreenableCard>
           </div>
         );
       })}

@@ -20,7 +20,7 @@ import corpsHomme from './corps-homme-blanc.png';
 import corpsFemme from './corps-femme-blanc.png';
 import { DEMO_DATA } from './demoData';
 import NutritionImport from './NutritionImport';
-import { CorosSection, FullscreenableCard } from './CorosCards';
+import { CorosSection, FullscreenableCard, FitToScreen } from './CorosCards';
 
 import video1 from './1.mp4';
 import video2 from './2.mp4';
@@ -1530,7 +1530,7 @@ BMR : ${f(ind.bmr)} kcal${sportSection}${activitySection}`;
       })()}
 
       {isHealthCardVisible('h_goalsGauges') && (
-      <FullscreenableCard>
+      <FullscreenableCard fit="center">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {[
           { label: 'Poids', from: START_WEIGHT, to: TARGET_WEIGHT, unit: 'kg', progress: weightProgress, lost: lostWeight, lostUnit: 'kg perdus', color: '#8b5cf6' },
@@ -1675,7 +1675,7 @@ BMR : ${f(ind.bmr)} kcal${sportSection}${activitySection}`;
         if (!hasEnoughData) return null;
 
         return (
-          <FullscreenableCard>
+          <FullscreenableCard fit="center">
           <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-lg">
             <div className="flex items-center gap-2 mb-5">
               <TrendingUp size={16} className="text-cyan-400" />
@@ -2256,6 +2256,7 @@ BMR : ${f(ind.bmr)} kcal${sportSection}${activitySection}`;
         const isFs = fsCardId === id;
         const isCssFs = isFs && !fsNative; // repli iOS : portail plein écran
         const rotate = isCssFs && isMobile && fsPortrait;
+        const centerFit = ['h_bodySilhouette', 'h_composition', 'h_muscleFatBar'].includes(id);
         return (
           <div key={id} data-fscard
             className={`relative group bg-slate-800 p-4 rounded-xl border-2 shadow-lg transition-all duration-150 flex flex-col ${id === 'h_glucoseKetoneChart' ? 'col-span-full xl:col-span-3' : id === 'h_weightFat' || id === 'h_composition' || id === 'h_muscleFatBar' || id === 'h_bodySilhouette' ? 'col-span-full xl:col-span-2' : 'min-h-[300px]'} ${isDragging ? 'border-violet-500 opacity-40 scale-95' : isDropTarget ? 'border-violet-400 ring-2 ring-violet-400/30 scale-[1.02]' : 'border-slate-700'}`}
@@ -2276,7 +2277,7 @@ BMR : ${f(ind.bmr)} kcal${sportSection}${activitySection}`;
               {isFs ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
             </button>
             <LazyCard height={300} className="flex-1 flex flex-col" style={isDragging ? { pointerEvents: 'none' } : {}}>
-              {healthCardContent}
+              {isFs && fsNative && centerFit ? <FitToScreen>{healthCardContent}</FitToScreen> : healthCardContent}
             </LazyCard>
             {isCssFs && createPortal(
               <div className="fixed inset-0 bg-slate-900 overflow-hidden" style={{ zIndex: 2147483000 }}>
@@ -2291,7 +2292,7 @@ BMR : ${f(ind.bmr)} kcal${sportSection}${activitySection}`;
                   ? { position: 'absolute', top: '50%', left: '50%', width: '100vh', height: '100vw', transform: 'translate(-50%, -50%) rotate(90deg)' }
                   : { position: 'absolute', inset: 0 }}>
                   <div className={`fs-portal ${rotate ? 'fs-portal-rotated' : ''} w-full h-full flex flex-col p-4 pt-14 overflow-auto`}>
-                    {healthCardContent}
+                    {centerFit ? <FitToScreen>{healthCardContent}</FitToScreen> : healthCardContent}
                   </div>
                 </div>
               </div>,

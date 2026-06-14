@@ -81,3 +81,9 @@
 .fs-portal .recharts-responsive-container {
   height: 100% !important;
 }
+
+/* Contenu mis à l'échelle (cartes non-graphiques en plein écran) : on neutralise
+   le h-full de la carte interne qui n'aurait pas de hauteur de référence. */
+.fit-screen-inner .h-full {
+  height: auto !important;
+}
