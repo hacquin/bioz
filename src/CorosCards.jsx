@@ -69,10 +69,12 @@ export function FitToScreen({ maxBaseWidth = 860, rotated = false, children }) {
       if (!ow || !oh) return;
       const nextBase = Math.max(280, Math.min(maxBaseWidth, Math.round(ow)));
       if (nextBase !== base) { natHRef.current = null; setBase(nextBase); setZoom(1); return; }
-      // on mesure la hauteur naturelle uniquement à zoom 1 (évite les écarts navigateur)
+      // Hauteur naturelle mesurée à zoom 1 via offsetHeight (hauteur de MISE EN PAGE,
+      // qui ignore la rotation de l'ancêtre — contrairement à getBoundingClientRect()
+      // qui renverrait la boîte pivotée et fausserait totalement le calcul).
       if (natHRef.current == null) {
         if (zoom !== 1) { setZoom(1); return; }
-        const h = i.getBoundingClientRect().height;
+        const h = i.offsetHeight;
         if (!h) { requestAnimationFrame(compute); return; }
         natHRef.current = h;
       }
