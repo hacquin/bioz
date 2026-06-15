@@ -247,7 +247,13 @@ function SimpleMetricCard({ fitbitDaily, timeFrame, anchorDate, setAnchorDate, c
     } else {
       s = aggregateByMonth(fitbitDaily, anchorDate, cfg.field);
     }
-    return withTrend(s);
+    const t = withTrend(s);
+    // Marque les valeurs isolées (sans voisin non-nul) : sans segment de ligne à
+    // tracer, une mesure unique resterait invisible — on lui dessine un point.
+    return t.map((d, i) => ({
+      ...d,
+      isolated: d.value != null && t[i - 1]?.value == null && t[i + 1]?.value == null,
+    }));
   }, [mode, anchorDate, fitbitDaily, days, cfg.field]);
 
   // Valeur de tête : dernier jour connu (mode jour) sinon moyenne période
@@ -324,7 +330,20 @@ function SimpleMetricCard({ fitbitDaily, timeFrame, anchorDate, setAnchorDate, c
             {mode === 'month' ? (
               <Bar dataKey="value" fill={cfg.color} radius={[4, 4, 0, 0]} name={cfg.title} />
             ) : (
-              <Area type="monotone" dataKey="value" stroke={cfg.color} fill={`url(#${gid})`} strokeWidth={2} dot={false} connectNulls name={cfg.title} />
+              <Area
+                type="monotone"
+                dataKey="value"
+                stroke={cfg.color}
+                fill={`url(#${gid})`}
+                strokeWidth={2}
+                connectNulls
+                name={cfg.title}
+                dot={(props) => {
+                  const { cx, cy, payload, index } = props;
+                  if (!payload?.isolated || cx == null || cy == null) return null;
+                  return <circle key={`dot-${index}`} cx={cx} cy={cy} r={3} fill={cfg.color} stroke="none" />;
+                }}
+              />
             )}
             <Line type="monotone" dataKey="trend" stroke="#cbd5e1" strokeDasharray="5 5" dot={false} strokeWidth={1.5} isAnimationActive={false} name="Tendance" />
           </ComposedChart>
