@@ -100,49 +100,14 @@ export default function SupplementsTracker({ user, db, isDemo }) {
   return (
     <div className="animate-fade-in space-y-6">
 
-      {/* En-tête + saisie du jour */}
-      <div className="bg-slate-800 p-4 rounded-xl border border-slate-700">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2">
-            <Pill size={22} className="text-blue-400" /> Compléments alimentaires
-          </h2>
-          {/* Anneau de progression du jour */}
-          <div className="flex items-center gap-2 text-sm">
-            <div className="relative w-12 h-12">
-              <svg viewBox="0 0 36 36" className="w-12 h-12 -rotate-90">
-                <circle cx="18" cy="18" r="15.9" fill="none" stroke="#334155" strokeWidth="3" />
-                <circle cx="18" cy="18" r="15.9" fill="none" stroke="#34d399" strokeWidth="3"
-                  strokeLinecap="round"
-                  strokeDasharray={`${(todayCount / TOTAL) * 100} 100`} />
-              </svg>
-              <span className="absolute inset-0 flex items-center justify-center text-[11px] font-bold text-slate-200">{todayCount}/{TOTAL}</span>
-            </div>
-          </div>
-        </div>
-        <p className="text-xs text-slate-500 mb-3 capitalize">{new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
-
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-          {SUPPLEMENTS.map(s => {
-            const taken = !!todayData[s.id];
-            return (
-              <button
-                key={s.id}
-                onClick={() => toggle(todayKey, s.id)}
-                disabled={loading}
-                className={`p-3 rounded-lg border-2 transition-all flex items-center gap-2 text-left active:scale-[0.97] ${
-                  taken
-                    ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300'
-                    : 'bg-slate-700/40 border-slate-600 text-slate-400 hover:border-slate-500'
-                }`}
-              >
-                <span className={`shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center ${taken ? 'bg-emerald-500 border-emerald-500' : 'border-slate-500'}`}>
-                  {taken && <Check size={13} strokeWidth={3} className="text-white" />}
-                </span>
-                <span className="text-sm font-semibold leading-tight">{s.name}</span>
-              </button>
-            );
-          })}
-        </div>
+      {/* En-tête compact */}
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2">
+          <Pill size={22} className="text-blue-400" /> Compléments alimentaires
+        </h2>
+        <span className="text-xs font-semibold text-slate-400 bg-slate-800 border border-slate-700 rounded-full px-3 py-1">
+          Aujourd'hui&nbsp;: {todayCount}/{TOTAL}
+        </span>
       </div>
 
       {/* Calendrier */}
