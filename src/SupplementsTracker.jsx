@@ -97,9 +97,6 @@ export default function SupplementsTracker({ user, db, isDemo }) {
   const isFutureMonth = viewMonth.getFullYear() > new Date().getFullYear() ||
     (viewMonth.getFullYear() === new Date().getFullYear() && viewMonth.getMonth() >= new Date().getMonth());
 
-  // Liste lisible des compléments pris un jour donné
-  const takenNames = (data) => SUPPLEMENTS.filter(s => data?.[s.id]).map(s => s.name);
-
   return (
     <div className="animate-fade-in space-y-6">
 
@@ -176,13 +173,12 @@ export default function SupplementsTracker({ user, db, isDemo }) {
             const size = count > 0 ? 26 + ratio * 30 : 0; // % du conteneur
             const isToday = key === todayKey;
             const isFuture = d > new Date();
-            const names = takenNames(data);
             return (
               <button
                 key={i}
                 onClick={() => !isFuture && setEditDay(key)}
                 disabled={isFuture}
-                className={`group relative aspect-square rounded-lg flex items-center justify-center transition-colors disabled:cursor-default ${
+                className={`relative aspect-square rounded-lg flex items-center justify-center transition-colors disabled:cursor-default ${
                   isToday ? 'ring-2 ring-blue-400' : 'hover:bg-slate-700/40'
                 } ${isFuture ? 'opacity-30' : ''}`}
               >
@@ -192,15 +188,6 @@ export default function SupplementsTracker({ user, db, isDemo }) {
                     className="rounded-full transition-all"
                     style={{ width: `${size}%`, height: `${size}%`, backgroundColor: dotColor(ratio) }}
                   />
-                )}
-                {/* Infobulle (survol desktop) */}
-                {count > 0 && (
-                  <div className="pointer-events-none absolute bottom-full mb-1 left-1/2 -translate-x-1/2 z-20 hidden group-hover:block w-40 bg-slate-900 border border-slate-600 rounded-lg p-2 text-left shadow-xl">
-                    <p className="text-[11px] font-bold text-slate-200 mb-1">{count}/{TOTAL} pris</p>
-                    <ul className="text-[10px] text-slate-400 space-y-0.5">
-                      {names.map(n => <li key={n}>• {n}</li>)}
-                    </ul>
-                  </div>
                 )}
               </button>
             );
