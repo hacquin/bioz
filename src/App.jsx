@@ -559,44 +559,51 @@ function HevyView({ hevyWorkouts, loadingHevy, hevyError, hevySyncStatus, fetchH
 
       {/* --- RECORDS PAR EXERCICE --- */}
       {personalRecords.length > 0 && (
-        <div className="bg-slate-800 border border-slate-700 rounded-2xl shadow-lg overflow-hidden">
-          <div className="flex justify-between items-center px-4 py-3 border-b border-slate-700 bg-slate-800">
-            <h3 className="font-bold text-slate-200 flex items-center gap-2">
-              <Award size={18} className="text-yellow-400" /> Records personnels
-              <span className="text-xs text-slate-500 font-normal ml-1">— 1RM estimé (Brzycki)</span>
-            </h3>
-            <span className="text-xs text-slate-500">{personalRecords.length} exercices</span>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-px bg-slate-700/30">
-            {recordsToShow.map((rec, i) => (
-              <div key={rec.name} className="bg-slate-800 px-4 py-3 flex items-center gap-3 hover:bg-slate-750 transition-colors">
-                {/* Rang */}
-                <div className={`text-xs font-black w-6 text-center shrink-0 ${i === 0 ? 'text-yellow-400' : i === 1 ? 'text-slate-300' : i === 2 ? 'text-amber-600' : 'text-slate-600'}`}>
-                  {i + 1}
-                </div>
-                {/* Nom + détail */}
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-semibold text-slate-200 truncate">{rec.name}</div>
-                  <div className="text-[11px] text-slate-500 mt-0.5">
-                    {rec.weight} kg × {rec.reps} rép
-                    {rec.date && <span className="ml-2">· {rec.date.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</span>}
+        <div className="relative border border-slate-700 rounded-2xl shadow-lg overflow-hidden">
+          {/* Image de fond (fichier dans public/hevy.jpg) */}
+          <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: "url('/hevy.jpg')" }} />
+          {/* Voile pour garder le texte lisible par-dessus l'image */}
+          <div className="absolute inset-0 bg-gradient-to-b from-slate-900/85 via-slate-900/80 to-slate-900/85" />
+
+          <div className="relative">
+            <div className="flex justify-between items-center px-4 py-3 border-b border-slate-700/70 bg-slate-900/30">
+              <h3 className="font-bold text-slate-100 flex items-center gap-2">
+                <Award size={18} className="text-yellow-400" /> Records personnels
+                <span className="text-xs text-slate-400 font-normal ml-1">— 1RM estimé (Brzycki)</span>
+              </h3>
+              <span className="text-xs text-slate-400">{personalRecords.length} exercices</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-px bg-white/5">
+              {recordsToShow.map((rec, i) => (
+                <div key={rec.name} className="bg-slate-900/30 px-4 py-3 flex items-center gap-3 hover:bg-slate-800/50 transition-colors">
+                  {/* Rang */}
+                  <div className={`text-xs font-black w-6 text-center shrink-0 ${i === 0 ? 'text-yellow-400' : i === 1 ? 'text-slate-300' : i === 2 ? 'text-amber-600' : 'text-slate-500'}`}>
+                    {i + 1}
+                  </div>
+                  {/* Nom + détail */}
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-semibold text-slate-100 truncate">{rec.name}</div>
+                    <div className="text-[11px] text-slate-400 mt-0.5">
+                      {rec.weight} kg × {rec.reps} rép
+                      {rec.date && <span className="ml-2">· {rec.date.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</span>}
+                    </div>
+                  </div>
+                  {/* 1RM */}
+                  <div className="text-right shrink-0">
+                    <div className="text-base font-black text-emerald-400">{rec.orm}</div>
+                    <div className="text-[10px] text-slate-400">kg 1RM</div>
                   </div>
                 </div>
-                {/* 1RM */}
-                <div className="text-right shrink-0">
-                  <div className="text-base font-black text-emerald-400">{rec.orm}</div>
-                  <div className="text-[10px] text-slate-500">kg 1RM</div>
-                </div>
-              </div>
-            ))}
-          </div>
-          {personalRecords.length > 12 && (
-            <div className="border-t border-slate-700 p-3 text-center">
-              <button onClick={() => setShowAllRecords(v => !v)} className="text-xs text-blue-400 font-bold hover:text-blue-300 transition-colors">
-                {showAllRecords ? `Voir moins` : `Voir les ${personalRecords.length - 12} autres exercices`}
-              </button>
+              ))}
             </div>
-          )}
+            {personalRecords.length > 12 && (
+              <div className="border-t border-slate-700/70 p-3 text-center bg-slate-900/30">
+                <button onClick={() => setShowAllRecords(v => !v)} className="text-xs text-blue-400 font-bold hover:text-blue-300 transition-colors">
+                  {showAllRecords ? `Voir moins` : `Voir les ${personalRecords.length - 12} autres exercices`}
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
