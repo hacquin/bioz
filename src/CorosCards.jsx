@@ -855,22 +855,14 @@ function WeeklyGoalsCard({ daily, healthLogs, bmrGoogle = 1830, stravaLogs, hevy
 }
 
 // =============================================================================
-//  Composant racine : section "Récupération & Sommeil"
+//  Hook : cartes "wearables" (Coros + Fitbit) pour la grille santé unifiée
 // =============================================================================
 
-// CorosSection est rendue À L'INTÉRIEUR de la grille de health cards
-// (grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6). Elle émet un Fragment avec :
-//   - 1 header en col-span-full (titre de la sous-section)
-//   - 1 carte Sommeil (1 colonne du grid parent)
-//   - 1 carte VFC nocturne (1 colonne du grid parent)
-// Les états loading / error / empty sont aussi col-span-full pour rester lisibles.
-// Ordre par défaut du groupe "wearables" (Coros + Fitbit), réordonnable par drag.
-const WEARABLE_DEFAULT_ORDER = [
-  'h_goalsDaily', 'h_goalsWeekly', 'h_corosBilan', 'h_corosSommeil', 'h_corosVfc', 'h_corosFcRepos', 'h_energyBalance', ...FITBIT_CARD_IDS,
-];
-const WEARABLE_ORDER_KEY = 'bioz_wearableCardOrder';
-
-export function CorosSection({ user, db, timeFrame, healthLogs, stravaLogs = [], hevyWorkouts = [], hiddenCards = [], bmrGoogle = 1830, demo = null }) {
+// Renvoie { byId } : map id → élément de carte, consommée par l'unique grille de
+// HealthTracker (App.jsx). L'ordre et le drag sont gérés là-bas (healthCardOrder),
+// si bien que ces cartes se réordonnent librement avec les cartes de composition
+// corporelle — elles ne sont plus enfermées dans une zone de drag séparée.
+export function useWearableCards({ user, db, timeFrame, healthLogs, stravaLogs = [], hevyWorkouts = [], bmrGoogle = 1830, demo = null }) {
   const { daily: corosDaily, baseline, loading, error } = useCorosData(user, db, demo);
   const fitbitDaily = useFitbitData(user, db, demo ? demo.fitbitDaily : undefined);
   const [anchorDate, setAnchorDate] = useState(new Date());
@@ -878,126 +870,36 @@ export function CorosSection({ user, db, timeFrame, healthLogs, stravaLogs = [],
   // Fusion "Google prioritaire" : Fitbit prime, Coros en repli (cf. mergeHealthDaily).
   const daily = useMemo(() => mergeHealthDaily(corosDaily, fitbitDaily), [corosDaily, fitbitDaily]);
 
-  // Ordre réordonnable (persisté), fusionné avec le défaut pour intégrer de nouveaux ids.
-  const [order, setOrder] = useState(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(WEARABLE_ORDER_KEY) || 'null');
-      if (Array.isArray(saved)) {
-        const missing = WEARABLE_DEFAULT_ORDER.filter((id) => !saved.includes(id));
-        return [...saved.filter((id) => WEARABLE_DEFAULT_ORDER.includes(id)), ...missing];
-      }
-    } catch { /* ignore */ }
-    return WEARABLE_DEFAULT_ORDER;
-  });
-  const [dragId, setDragId] = useState(null);
-  const [dropId, setDropId] = useState(null);
-  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-
-  const onDragStart = (e, id) => {
-    setDragId(id);
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', id);
-  };
-  const onDragOver = (e, id) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    if (id !== dragId) setDropId(id);
-  };
-  const onDrop = (e, targetId) => {
-    e.preventDefault();
-    const sourceId = e.dataTransfer.getData('text/plain');
-    if (sourceId && targetId && sourceId !== targetId) {
-      setOrder((prev) => {
-        const next = [...prev];
-        const fromIdx = next.indexOf(sourceId);
-        const toIdx = next.indexOf(targetId);
-        if (fromIdx !== -1 && toIdx !== -1) {
-          next.splice(fromIdx, 1);
-          next.splice(toIdx, 0, sourceId);
-        }
-        localStorage.setItem(WEARABLE_ORDER_KEY, JSON.stringify(next));
-        return next;
-      });
-    }
-    setDragId(null);
-    setDropId(null);
-  };
-  const onDragEnd = () => { setDragId(null); setDropId(null); };
-
-  if (loading && !fitbitDaily) {
-    return (
-      <div className="col-span-full bg-slate-800 rounded-xl p-6 text-center text-slate-400 flex items-center justify-center gap-2 border border-slate-700">
-        <RefreshCw size={16} className="animate-spin" /> Chargement des données santé…
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="col-span-full bg-slate-800 border border-red-900 rounded-xl p-4 text-red-400 flex items-start gap-2">
-        <AlertCircle size={18} className="mt-0.5 flex-shrink-0" />
-        <div>
-          <div className="font-semibold">Impossible de charger les données santé.</div>
-          <div className="text-xs text-red-300 mt-1">{String(error.message || error)}</div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!daily || Object.keys(daily).length === 0) {
-    return (
-      <div className="col-span-full bg-slate-800 rounded-xl p-6 text-center text-slate-400 border border-slate-700">
-        <Moon size={24} className="mx-auto mb-2 text-slate-500" />
-        <div>Aucune donnée santé (Fitbit / Coros) pour le moment.</div>
-      </div>
-    );
-  }
-
   const sLogs = demo ? (demo.stravaLogs || []) : (stravaLogs || []);
   const hLogs = demo ? (demo.hevyWorkouts || []) : (hevyWorkouts || []);
 
-  const content = {
-    h_goalsDaily: <DailyGoalsCard daily={daily} healthLogs={healthLogs} bmrGoogle={bmrGoogle} user={user} db={db} anchorDate={anchorDate} setAnchorDate={setAnchorDate} demoIntake={demo ? demo.intake : undefined} />,
-    h_goalsWeekly: <WeeklyGoalsCard daily={daily} healthLogs={healthLogs} bmrGoogle={bmrGoogle} stravaLogs={sLogs} hevyWorkouts={hLogs} user={user} db={db} anchorDate={anchorDate} setAnchorDate={setAnchorDate} demoIntake={demo ? demo.intake : undefined} />,
-    h_corosBilan: <BilanSanteCard daily={daily} healthLogs={healthLogs} user={user} />,
-    h_corosSommeil: <SommeilCard daily={daily} baseline={baseline} timeFrame={timeFrame} anchorDate={anchorDate} setAnchorDate={setAnchorDate} />,
-    h_corosVfc: <VfcCard daily={daily} baseline={baseline} timeFrame={timeFrame} anchorDate={anchorDate} setAnchorDate={setAnchorDate} />,
-    h_corosFcRepos: <FcReposCard daily={daily} timeFrame={timeFrame} anchorDate={anchorDate} setAnchorDate={setAnchorDate} />,
-    h_energyBalance: <BalanceCard daily={daily} healthLogs={healthLogs} bmrGoogle={bmrGoogle} user={user} db={db} timeFrame={timeFrame} anchorDate={anchorDate} setAnchorDate={setAnchorDate} demoIntake={demo ? demo.intake : undefined} />,
-  };
-  for (const id of FITBIT_CARD_IDS) {
-    content[id] = <FitbitCard id={id} fitbitDaily={fitbitDaily} timeFrame={timeFrame} anchorDate={anchorDate} setAnchorDate={setAnchorDate} />;
-  }
+  // On ne construit les cartes qu'une fois des données disponibles : sinon certaines
+  // (Bilan, objectifs) n'ont rien à afficher voire planteraient sur un jeu vide.
+  const ready = (!loading || !!fitbitDaily) && daily && Object.keys(daily).length > 0;
 
-  return (
-    <>
-      {order.filter((id) => !hiddenCards.includes(id)).map((id) => {
-        const el = content[id];
-        if (!el) return null;
-        const isDragging = dragId === id;
-        const isDropTarget = dropId === id && dragId !== id;
-        const wide = id === 'h_corosBilan' ? 'col-span-full' : '';
-        return (
-          <div
-            key={id}
-            className={`${wide} rounded-xl transition-all duration-150 ${isDragging ? 'opacity-40 scale-95' : isDropTarget ? 'ring-2 ring-violet-400/50' : ''}`}
-            draggable={!isMobile}
-            onDragStart={(e) => onDragStart(e, id)}
-            onDragOver={(e) => onDragOver(e, id)}
-            onDrop={(e) => onDrop(e, id)}
-            onDragEnd={onDragEnd}
-            onDragLeave={() => { if (dropId === id) setDropId(null); }}
-            style={!isMobile ? { cursor: isDragging ? 'grabbing' : 'grab' } : {}}
-          >
-            {['h_goalsDaily', 'h_goalsWeekly'].includes(id)
-              ? el
-              : <FullscreenableCard className="h-full">{el}</FullscreenableCard>}
-          </div>
-        );
-      })}
-    </>
-  );
+  const byId = useMemo(() => {
+    if (!ready) return {};
+    const content = {
+      h_goalsDaily: <DailyGoalsCard daily={daily} healthLogs={healthLogs} bmrGoogle={bmrGoogle} user={user} db={db} anchorDate={anchorDate} setAnchorDate={setAnchorDate} demoIntake={demo ? demo.intake : undefined} />,
+      h_goalsWeekly: <WeeklyGoalsCard daily={daily} healthLogs={healthLogs} bmrGoogle={bmrGoogle} stravaLogs={sLogs} hevyWorkouts={hLogs} user={user} db={db} anchorDate={anchorDate} setAnchorDate={setAnchorDate} demoIntake={demo ? demo.intake : undefined} />,
+      h_corosBilan: <BilanSanteCard daily={daily} healthLogs={healthLogs} user={user} />,
+      h_corosSommeil: <SommeilCard daily={daily} baseline={baseline} timeFrame={timeFrame} anchorDate={anchorDate} setAnchorDate={setAnchorDate} />,
+      h_corosVfc: <VfcCard daily={daily} baseline={baseline} timeFrame={timeFrame} anchorDate={anchorDate} setAnchorDate={setAnchorDate} />,
+      h_corosFcRepos: <FcReposCard daily={daily} timeFrame={timeFrame} anchorDate={anchorDate} setAnchorDate={setAnchorDate} />,
+      h_energyBalance: <BalanceCard daily={daily} healthLogs={healthLogs} bmrGoogle={bmrGoogle} user={user} db={db} timeFrame={timeFrame} anchorDate={anchorDate} setAnchorDate={setAnchorDate} demoIntake={demo ? demo.intake : undefined} />,
+    };
+    for (const id of FITBIT_CARD_IDS) {
+      content[id] = <FitbitCard id={id} fitbitDaily={fitbitDaily} timeFrame={timeFrame} anchorDate={anchorDate} setAnchorDate={setAnchorDate} />;
+    }
+    return content;
+  }, [ready, daily, baseline, fitbitDaily, timeFrame, anchorDate, healthLogs, bmrGoogle, user, db, demo, sLogs, hLogs]);
+
+  return { byId, loading, error };
 }
+
+// Cartes "wearables" qui portent leur propre chrome (fond/bordure) et restent
+// rendues sans bouton plein écran (anneaux + listes de stats qui se déforment).
+export const WEARABLE_NO_FS_CARDS = ['h_goalsDaily', 'h_goalsWeekly'];
 
 // =============================================================================
 //  Carte FC REPOS — histogramme par jour / semaine ISO / mois

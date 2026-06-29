@@ -20,7 +20,7 @@ import corpsHomme from './corps-homme-blanc.png';
 import corpsFemme from './corps-femme-blanc.png';
 import { DEMO_DATA } from './demoData';
 import NutritionImport from './NutritionImport';
-import { CorosSection, FullscreenableCard, FitToScreen } from './CorosCards';
+import { useWearableCards, WEARABLE_NO_FS_CARDS, FullscreenableCard, FitToScreen } from './CorosCards';
 
 import video1 from './1.mp4';
 import video2 from './2.mp4';
@@ -852,6 +852,14 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, stravaLogs, hevyWo
   const handleHealthDragEnd = () => { setHealthDragId(null); setHealthDropTargetId(null); };
 
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+  // Cartes wearables (Coros + Fitbit) injectées dans la MÊME grille/drag que les
+  // cartes de composition → réordonnables ensemble (cf. useWearableCards).
+  const wearableCards = useWearableCards({
+    user, db, timeFrame, healthLogs, stravaLogs, hevyWorkouts,
+    bmrGoogle: Number(goals.bmrGoogle) || 1830,
+    demo: isDemo ? { corosDaily: DEMO_DATA.corosDaily, fitbitDaily: DEMO_DATA.fitbitDaily, corosBaseline: DEMO_DATA.corosBaseline, intake: DEMO_DATA.intake, stravaLogs: DEMO_DATA.stravaLogs, hevyWorkouts: DEMO_DATA.hevyWorkouts } : null,
+  });
 
   const START_WEIGHT = goals.startWeight; const TARGET_WEIGHT = goals.targetWeight;
   const START_FAT = goals.startFat; const TARGET_FAT = goals.targetFat;
@@ -1777,6 +1785,31 @@ BMR : ${f(ind.bmr)} kcal${sportSection}${activitySection}`;
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
       {healthCardOrder.filter(id => isHealthCardVisible(id)).map(id => {
+        // Cartes wearables (Coros + Fitbit) : même grille, même drag que les cartes
+        // de composition. Elles portent leur propre chrome → wrapper "nu".
+        const wc = wearableCards.byId[id];
+        if (wc) {
+          const isDragging = healthDragId === id;
+          const isDropTarget = healthDropTargetId === id && healthDragId !== id;
+          const wide = id === 'h_corosBilan' ? 'col-span-full' : '';
+          return (
+            <div
+              key={id}
+              className={`${wide} rounded-xl transition-all duration-150 ${isDragging ? 'opacity-40 scale-95' : isDropTarget ? 'ring-2 ring-violet-400/50' : ''}`}
+              draggable={!isMobile}
+              onDragStart={(e) => handleHealthDragStart(e, id)}
+              onDragOver={(e) => handleHealthDragOver(e, id)}
+              onDrop={(e) => handleHealthDrop(e, id)}
+              onDragEnd={handleHealthDragEnd}
+              onDragLeave={() => { if (healthDropTargetId === id) setHealthDropTargetId(null); }}
+              style={!isMobile ? { cursor: isDragging ? 'grabbing' : 'grab' } : {}}
+            >
+              {WEARABLE_NO_FS_CARDS.includes(id)
+                ? wc
+                : <FullscreenableCard className="h-full">{wc}</FullscreenableCard>}
+            </div>
+          );
+        }
         const healthCardContent = {
           h_bodySilhouette: (() => {
             const bodyImg = bodySilhouetteGender === 'homme' ? corpsHomme : corpsFemme;
@@ -2300,9 +2333,6 @@ BMR : ${f(ind.bmr)} kcal${sportSection}${activitySection}`;
           </div>
         );
       })}
-
-      {/* Section Coros : Sommeil + VFC nocturne — rendues comme des health cards dans la grille */}
-      <CorosSection user={user} db={db} timeFrame={timeFrame} healthLogs={healthLogs} stravaLogs={stravaLogs} hevyWorkouts={hevyWorkouts} hiddenCards={healthHiddenCards} bmrGoogle={Number(goals.bmrGoogle) || 1830} demo={isDemo ? { corosDaily: DEMO_DATA.corosDaily, fitbitDaily: DEMO_DATA.fitbitDaily, corosBaseline: DEMO_DATA.corosBaseline, intake: DEMO_DATA.intake, stravaLogs: DEMO_DATA.stravaLogs, hevyWorkouts: DEMO_DATA.hevyWorkouts } : null} />
       </div>
 
       <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-lg">
@@ -3741,7 +3771,11 @@ function App() {
                   // Trier par timestamp croissant pour que la mesure la plus récente de chaque jour gagne
                   const sortedGroups = [...response.body.measuregrps].sort((a, b) => a.date - b.date);
                   sortedGroups.forEach(group => {
-                      const date = new Date(group.date * 1000).toISOString();
+                      // Garde-fou : timestamp absent/invalide → on saute ce groupe
+                      // plutôt que de laisser toISOString() (RangeError) avorter le sync.
+                      const groupDate = new Date(group.date * 1000);
+                      if (isNaN(groupDate.getTime())) return;
+                      const date = groupDate.toISOString();
                       const dateKey = getLocalDateKey(date);
                       let weight = null, bodyFat = null, muscleMass = null, hydration = null;
                       let systolic = null, diastolic = null, pwv = null, visceralFat = null, bmr = null, vascularAge = null, restingHR = null;
@@ -3778,9 +3812,13 @@ function App() {
           actDataArray.forEach(actData => {
             if (actData && actData.status === 0 && actData.body && actData.body.activities) {
                 actData.body.activities.forEach(act => {
+                    // Garde-fou : une date Withings absente/malformée ferait planter
+                    // new Date(...).toISOString() (RangeError) et avorterait TOUT le sync.
+                    const actDate = new Date(act.date);
+                    if (isNaN(actDate.getTime())) return;
                     let logIndex = newHealthLogs.findIndex(l => getLocalDateKey(l.date) === act.date);
-                    if (logIndex === -1) { 
-                        newHealthLogs.push({ id: generateId(), date: new Date(act.date).toISOString(), steps: act.steps, distance: act.distance ? parseFloat((act.distance / 1000).toFixed(2)) : null }); 
+                    if (logIndex === -1) {
+                        newHealthLogs.push({ id: generateId(), date: actDate.toISOString(), steps: act.steps, distance: act.distance ? parseFloat((act.distance / 1000).toFixed(2)) : null });
                         updates++;
                     } else {
                         newHealthLogs[logIndex] = { ...newHealthLogs[logIndex], steps: act.steps || newHealthLogs[logIndex].steps, distance: act.distance ? parseFloat((act.distance / 1000).toFixed(2)) : newHealthLogs[logIndex].distance };
