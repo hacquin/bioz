@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { doc, getDoc, getDocs, collection, query, orderBy, limit } from 'firebase/firestore';
+import { doc, getDoc, setDoc, getDocs, collection, query, orderBy, limit } from 'firebase/firestore';
 import ReactECharts from 'echarts-for-react';
 import { FullscreenableCard } from './CorosCards';
 import {
@@ -604,27 +604,41 @@ export default function NutritionImport({ user, db, isDemo, demoNutritionDocs, g
   const MACRO_WIDE = ['n_weeklyMacros', 'n_weeklyCalories'];
   const KETO_WIDE = ['n_ketoChart'];
 
-  // --- COACH NUTRITION (Claude AI) ---
-  const [coachAdvice, setCoachAdvice] = useState('');
+  // --- DEMANDE AU COACH NUTRITION (Claude AI) ---
+  const [coachQuestion, setCoachQuestion] = useState('');
+  const [coachAnswer, setCoachAnswer] = useState('');
   const [coachLoading, setCoachLoading] = useState(false);
   const [coachError, setCoachError] = useState('');
 
-  const fetchCoachAdvice = async () => {
+  useEffect(() => {
+    if (isDemo || !user || !db) return;
+    (async () => {
+      try {
+        const snap = await getDoc(doc(db, 'users', user.uid));
+        if (snap.exists() && snap.data().nutriCoachLast) {
+          setCoachAnswer(snap.data().nutriCoachLast.answer || '');
+          setCoachQuestion(snap.data().nutriCoachLast.question || '');
+        }
+      } catch (e) { console.error('Erreur chargement coach nutrition', e); }
+    })();
+  }, [user, db, isDemo]);
+
+  const askCoach = async () => {
+    const question = coachQuestion.trim();
+    if (!question || coachLoading) return;
     setCoachLoading(true);
     setCoachError('');
     try {
-      const now = new Date();
-      const fmtKey = (d) => d.toISOString().split('T')[0];
-      const todayKey = fmtKey(now);
-      const cutoff30 = fmtKey(new Date(now.getTime() - 30 * 86400000));
+      const dkey = (d) => { const x = new Date(d); return isNaN(x.getTime()) ? null : x.toISOString().split('T')[0]; };
 
-      // --- Fenêtre nutrition : Google Health (fitbitDaily) + Cronometer (nutrition), Cronometer prioritaire ---
+      // --- On rassemble TOUT l'historique nutrition présent en base ---
+      // Google Health (fitbitDaily) + Cronometer (nutrition), Cronometer prioritaire.
       const byDate = {};
       if (isDemo && Array.isArray(demoNutritionDocs)) {
         demoNutritionDocs.forEach((d) => { if (d.date) byDate[d.date] = { ...d }; });
       } else if (user && db) {
         try {
-          const fsnap = await getDocs(query(collection(db, 'users', user.uid, 'fitbitDaily'), orderBy('date', 'desc'), limit(40)));
+          const fsnap = await getDocs(query(collection(db, 'users', user.uid, 'fitbitDaily'), orderBy('date', 'desc'), limit(400)));
           fsnap.docs.forEach((s) => {
             const f = s.data(); if (!f.date) return;
             const base = { date: f.date, activeKcal: f.activeKcal ?? null };
@@ -635,7 +649,7 @@ export default function NutritionImport({ user, db, isDemo, demoNutritionDocs, g
           });
         } catch {}
         try {
-          const nsnap = await getDocs(query(collection(db, 'users', user.uid, 'nutrition'), orderBy('date', 'desc'), limit(40)));
+          const nsnap = await getDocs(query(collection(db, 'users', user.uid, 'nutrition'), orderBy('date', 'desc'), limit(400)));
           nsnap.docs.forEach((s) => {
             const n = s.data(); if (!n.date) return;
             byDate[n.date] = { ...(byDate[n.date] || {}), ...n, date: n.date, activeKcal: byDate[n.date]?.activeKcal ?? null };
@@ -644,100 +658,51 @@ export default function NutritionImport({ user, db, isDemo, demoNutritionDocs, g
       }
 
       const hasNut = (d) => d && (d.calories != null || d.carbs != null);
-      // On EXCLUT le jour en cours (bilan du matin → journée incomplète) et on borne à 30 jours.
-      const nutDays = Object.keys(byDate)
-        .filter((k) => k < todayKey && k >= cutoff30 && hasNut(byDate[k]))
-        .sort();
-      const yKey = nutDays.length ? nutDays[nutDays.length - 1] : null;
-      const yesterday = yKey ? byDate[yKey] : null;
-
-      // Métabolisme de base (dernière mesure de composition connue)
+      // Métabolisme de base (dernière mesure de composition connue) pour le déficit.
       const bmrLogs = (healthLogs || []).filter((l) => l.bmr != null).sort((a, b) => (a.date < b.date ? 1 : -1));
       const bmr = bmrLogs.length ? bmrLogs[0].bmr : null;
       const deficitOf = (d) => (hasNut(d) && bmr != null) ? Math.round((d.calories || 0) - (bmr + (d.activeKcal || 0))) : null;
 
-      // Moyennes nutrition : mois (30j dispo) vs semaine (7 derniers jours avec données)
-      const avgOf = (keys, key) => { const v = keys.map((k) => byDate[k]).filter(hasNut).map((d) => d[key]).filter((x) => x != null); return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) : null; };
-      const last7keys = nutDays.slice(-7);
-      const monthAvg = { calories: avgOf(nutDays, 'calories'), carbs: avgOf(nutDays, 'carbs'), fat: avgOf(nutDays, 'fat'), protein: avgOf(nutDays, 'protein'), jours: nutDays.length };
-      const weekAvg = { calories: avgOf(last7keys, 'calories'), carbs: avgOf(last7keys, 'carbs'), fat: avgOf(last7keys, 'fat'), protein: avgOf(last7keys, 'protein'), jours: last7keys.length };
-      const deficitVals = nutDays.map((k) => deficitOf(byDate[k])).filter((x) => x != null);
-      const monthDeficit = deficitVals.length ? Math.round(deficitVals.reduce((a, b) => a + b, 0) / deficitVals.length) : null;
+      // Compactage : on retire les valeurs nulles pour envoyer un maximum
+      // d'historique sans saturer le contexte.
+      const strip = (o) => Object.fromEntries(Object.entries(o).filter(([k, v]) => v != null && k !== 'id'));
+      const compactNut = Object.keys(byDate)
+        .filter((k) => hasNut(byDate[k]))
+        .sort()
+        .map((k) => { const d = byDate[k]; return strip({ date: k, calories: d.calories != null ? Math.round(d.calories) : null, glucides: d.carbs != null ? Math.round(d.carbs) : null, lipides: d.fat != null ? Math.round(d.fat) : null, proteines: d.protein != null ? Math.round(d.protein) : null, deficit: deficitOf(d) }); });
+      const compactCompo = [...(healthLogs || [])]
+        .filter((l) => l && l.date)
+        .sort((a, b) => new Date(a.date) - new Date(b.date))
+        .map((l) => strip({ date: dkey(l.date), poids: l.weight, graisse: l.bodyFat, muscle: l.muscleMass, tourTaille: l.waist, viscerale: l.visceralFat, glycemie: l.glucose, cetones: l.ketones }))
+        .filter((l) => l.date && Object.keys(l).length > 1);
 
-      // Composition corporelle (pour la corrélation avec la nutrition)
-      const sortedH = [...(healthLogs || [])].sort((a, b) => new Date(b.date) - new Date(a.date));
-      const inDaysH = (n) => sortedH.filter((l) => (now - new Date(l.date)) / 86400000 <= n);
-      const prevDaysH = (a, b) => sortedH.filter((l) => { const d = (now - new Date(l.date)) / 86400000; return d > a && d <= b; });
-      const avgH = (logs, key) => { const v = logs.filter((l) => l[key] != null).map((l) => l[key]); return v.length ? parseFloat((v.reduce((x, y) => x + y, 0) / v.length).toFixed(1)) : null; };
-      const last30H = inDaysH(30), prev30H = prevDaysH(30, 60), last7H = inDaysH(7);
-      const dlt = (a, b) => (a != null && b != null) ? parseFloat((a - b).toFixed(1)) : null;
-      const compo = {
-        poids: avgH(last7H, 'weight'), poidsDelta30: dlt(avgH(last30H, 'weight'), avgH(prev30H, 'weight')),
-        graisse: avgH(last7H, 'bodyFat'), graisseDelta30: dlt(avgH(last30H, 'bodyFat'), avgH(prev30H, 'bodyFat')),
-        muscle: avgH(last7H, 'muscleMass'), muscleDelta30: dlt(avgH(last30H, 'muscleMass'), avgH(prev30H, 'muscleMass')),
-        tourTaille: avgH(last7H, 'waist'), tourTailleDelta30: dlt(avgH(last30H, 'waist'), avgH(prev30H, 'waist')),
-      };
+      const systemPrompt = `Tu es un coach NUTRITION expert, version nutrition du coach santé global. Interlocuteur : homme de 55 ans, 1m74, régime LOW-CARB (glucides modérés et maîtrisés, PAS de cétose stricte recherchée).
 
-      const f = (v) => (v != null ? v : '—');
-      const fD = (v) => (v != null ? (v > 0 ? `+${v}` : `${v}`) : '—');
-      const yb = yesterday ? {
-        date: yKey,
-        calories: Math.round(yesterday.calories || 0),
-        glucides: Math.round(yesterday.carbs || 0),
-        lipides: Math.round(yesterday.fat || 0),
-        proteines: Math.round(yesterday.protein || 0),
-        repas: { petitDej: Math.round(yesterday.petitDej || 0), dejeuner: Math.round(yesterday.dejeuner || 0), diner: Math.round(yesterday.diner || 0), encas: Math.round(yesterday.encas || 0) },
-        deficit: deficitOf(yesterday),
-      } : null;
+TON : direct, bienveillant, pince-sans-rire avec parcimonie. Tu salues les vrais progrès et tu dis franchement quand ça dérape.
 
-      const systemPrompt = `Tu es le même coach santé que pour le bilan global, version NUTRITION. Interlocuteur : homme de 55 ans, 1m74, régime LOW-CARB (glucides modérés et maîtrisés, PAS de cétose stricte recherchée).
-
-TON : direct, pince-sans-rire, une seule vanne max. Tu salues les vrais progrès et tu dis franchement quand ça dérape.
-
-LANGAGE — ZÉRO JARGON : mots simples, pas de sigle obscur (pas de "GKI" ; dis "métabolisme de base" plutôt que "BMR"). Explique tout simplement.
+DONNÉES : tu disposes de TOUT l'historique de l'utilisateur, fourni en JSON dans le message (nutrition jour par jour — calories, macros, déficit — et composition corporelle jour par jour). Tu DOIS prendre en compte l'ENSEMBLE de cet historique — toutes les dates disponibles, pas seulement les plus récentes — pour analyser les tendances de fond et les corrélations.
 
 RÈGLES :
-- Tu n'analyses QUE des données ANTÉRIEURES à aujourd'hui (le bilan est fait le matin, la journée en cours est incomplète). Le "jour analysé" est HIER.
-- Analyse l'évolution sur le MOIS (ou la semaine à défaut), pas seulement un jour isolé.
-- Cherche les CORRÉLATIONS entre la nutrition (déficit calorique, glucides, protéines) et la composition corporelle (poids, graisse, muscle, tour de taille) : le déficit explique-t-il la perte de poids ? les protéines suffisent-elles à préserver le muscle ?
-- Low-carb : vise des glucides modérés et une glycémie stable ; ne parle PAS de cétose profonde ni de GKI.
-- Analyse UNIQUEMENT les chiffres fournis, ne refais pas les calculs.
+- Réponds DIRECTEMENT et précisément à la question posée. Appuie-toi sur des chiffres réels et des tendances datées tirés des données.
+- Cherche les CORRÉLATIONS entre la nutrition (déficit calorique, glucides, protéines) et la composition corporelle (poids, graisse, muscle, tour de taille) quand c'est pertinent.
+- Low-carb : vise des glucides modérés et une glycémie stable ; ne parle pas de cétose profonde ni de GKI.
+- ZÉRO jargon : mots simples, pas de sigle obscur (dis "métabolisme de base" et non "BMR").
+- Si une donnée nécessaire à la réponse est absente de l'historique, dis-le simplement plutôt que d'inventer.
+- FORMAT : prose claire et naturelle, sans markdown, sans listes à puces, sans titres. Réponse complète mais concise (quelques paragraphes maximum).`;
 
-FORMAT STRICT — prose uniquement, zéro markdown, zéro tiret, zéro étoile. Réponds en EXACTEMENT cinq sections, chacune introduite par son marqueur entre crochets seul sur sa ligne, dans cet ordre. N'invente aucun autre titre.
-[HIER]
-2-3 phrases sur la journée d'hier : total calorique, répartition des repas, macros vs objectifs.
-[MACROS]
-2-3 phrases sur l'évolution des glucides, lipides et protéines sur le mois (et la semaine) : tendance et écarts aux objectifs.
-[DEFICIT]
-2-3 phrases sur le déficit calorique (apport vs dépense métabolisme+activité) et sa cohérence avec l'objectif de perte.
-[COMPOSITION]
-2-3 phrases reliant la nutrition à l'évolution du poids, de la graisse et du muscle (corrélation concrète).
-[CONSEILS]
-2-3 recommandations concrètes et actionnables.`;
-
-      const userMessage = `Bilan nutrition du ${now.toLocaleDateString('fr-FR')} (analyse jusqu'à HIER inclus, jour en cours ignoré).
-
+      const userMessage = `PROFIL : homme, 55 ans, 1m74, régime low-carb.
 OBJECTIFS MACROS/JOUR : glucides ${targets.carbs} g, lipides ${targets.fat} g, protéines ${targets.protein} g, calories ${targets.calories} kcal.
+${bmr != null ? `Métabolisme de base : ${bmr} kcal.` : 'Métabolisme de base inconnu.'}
+Dernières valeurs métaboliques connues : glycémie ${latestGlucose || '—'} mg/dL, cétones ${latestKetones || '—'} mmol/L.
 
-JOURNÉE D'HIER ${yb ? `(${yb.date})` : ''} :
-${yb ? `Calories : ${yb.calories} kcal | Glucides ${yb.glucides} g | Lipides ${yb.lipides} g | Protéines ${yb.proteines} g
-Répartition repas (kcal) : petit-déj ${yb.repas.petitDej}, déjeuner ${yb.repas.dejeuner}, dîner ${yb.repas.diner}, en-cas ${yb.repas.encas}
-Déficit du jour : ${fD(yb.deficit)} kcal (négatif = déficit)` : 'Aucune donnée nutritionnelle pour hier.'}
+HISTORIQUE COMPLET — NUTRITION (chronologique, une entrée par date ; deficit négatif = déficit) :
+${JSON.stringify(compactNut)}
 
-ÉVOLUTION NUTRITION (moyenne/jour — mois sur ${monthAvg.jours} j | semaine sur ${weekAvg.jours} j) :
-Calories : ${f(monthAvg.calories)} | ${f(weekAvg.calories)} kcal
-Glucides : ${f(monthAvg.carbs)} | ${f(weekAvg.carbs)} g
-Lipides : ${f(monthAvg.fat)} | ${f(weekAvg.fat)} g
-Protéines : ${f(monthAvg.protein)} | ${f(weekAvg.protein)} g
-Déficit calorique moyen (mois) : ${f(monthDeficit)} kcal/jour ${bmr != null ? `(métabolisme de base ${bmr} kcal + activité)` : '(métabolisme de base inconnu)'}
+HISTORIQUE COMPLET — COMPOSITION CORPORELLE (chronologique) :
+${JSON.stringify(compactCompo)}
 
-COMPOSITION CORPORELLE (valeur récente | évolution sur 30 j) :
-Poids : ${f(compo.poids)} kg | ${fD(compo.poidsDelta30)}
-Graisse : ${f(compo.graisse)} % | ${fD(compo.graisseDelta30)}
-Muscle : ${f(compo.muscle)} % | ${fD(compo.muscleDelta30)}
-Tour de taille : ${f(compo.tourTaille)} cm | ${fD(compo.tourTailleDelta30)}
-
-GLYCÉMIE / CÉTONES : glucose ${f(latestGlucose)} mg/dL, cétones ${f(latestKetones)} mmol/L.`;
+QUESTION DE L'UTILISATEUR :
+${question}`;
 
       const res = await fetch('/claude_proxy.php', {
         method: 'POST',
@@ -746,9 +711,14 @@ GLYCÉMIE / CÉTONES : glucose ${f(latestGlucose)} mg/dL, cétones ${f(latestKet
       });
       if (!res.ok) throw new Error(`Erreur HTTP ${res.status}`);
       const data = await res.json();
-      setCoachAdvice(data.content?.[0]?.text || 'Aucune réponse.');
+      const text = data.content?.[0]?.text || 'Aucune réponse.';
+      setCoachAnswer(text);
+      if (user && db && !isDemo) {
+        try { await setDoc(doc(db, 'users', user.uid), { nutriCoachLast: { question, answer: text, date: new Date().toISOString() } }, { merge: true }); }
+        catch (e) { console.error('Erreur sauvegarde coach nutrition', e); }
+      }
     } catch (e) {
-      setCoachError("Impossible de générer l'avis. Vérifiez votre connexion ou le proxy PHP.");
+      setCoachError("Impossible d'obtenir une réponse du coach. Vérifiez votre connexion ou le proxy PHP.");
       console.error('Erreur coach nutrition IA', e);
     } finally {
       setCoachLoading(false);
@@ -757,71 +727,74 @@ GLYCÉMIE / CÉTONES : glucose ${f(latestGlucose)} mg/dL, cétones ${f(latestKet
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-      {/* AVIS DU COACH NUTRITION */}
-      <div className="col-span-full bg-gradient-to-r from-slate-800 via-slate-800 to-slate-700 p-5 rounded-xl border-2 border-violet-500/40 shadow-lg shadow-violet-500/10">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <span className="text-2xl">🧠</span>
-            <h2 className="text-sm font-bold text-violet-300 uppercase tracking-widest">Avis du Coach Nutrition</h2>
-            <span className="text-[10px] text-slate-500 bg-slate-700 px-2 py-0.5 rounded-full">Claude AI</span>
+      {/* DEMANDE AU COACH NUTRITION */}
+      <div className="col-span-full relative overflow-hidden rounded-xl border-2 border-violet-500/40 shadow-lg shadow-violet-500/10">
+        {/* Image de fond (fichier dans public/coach-nutri.jpeg) */}
+        <div
+          className="absolute inset-0 bg-cover bg-center"
+          style={{ backgroundImage: "url('/coach-nutri.jpeg')" }}
+        />
+        {/* Voile pour garder le texte lisible par-dessus l'image */}
+        <div className="absolute inset-0 bg-gradient-to-b from-slate-900/80 via-slate-900/85 to-slate-900/90" />
+
+        <div className="relative p-5 space-y-4">
+          <div>
+            <h2 className="text-sm font-bold text-violet-300 uppercase tracking-widest flex items-center gap-2">
+              <span className="text-xl">🧠</span> Demande au coach nutrition
+            </h2>
+            <p className="text-xs text-slate-300/80 mt-1">
+              Pose ta question : le coach prend en compte <strong>tout ton historique nutrition</strong> (calories, macros, déficit) et son lien avec ta composition corporelle pour te répondre.
+            </p>
           </div>
-          <button
-            onClick={fetchCoachAdvice}
-            disabled={coachLoading}
-            className="text-xs bg-violet-600 hover:bg-violet-500 disabled:bg-slate-600 text-white px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5"
-          >
-            {coachLoading ? (
-              <><svg className="animate-spin h-3 w-3" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg> Analyse...</>
-            ) : coachAdvice ? '🔄 Actualiser' : '✨ Analyser'}
-          </button>
-        </div>
-        {coachError && <p className="text-xs text-red-400 mb-2">{coachError}</p>}
-        {coachAdvice ? (() => {
-          const clean = (t) => t.replace(/\*\*/g, '').replace(/^\*\s*/, '').replace(/^#+\s*/, '').replace(/^[-•]\s*/, '').trim();
-          // Normalise les titres : "HIER", "**Hier**", "[HIER] :" → "[HIER]" (DEFICIT accentué ou non).
-          const normalized = coachAdvice.replace(
-            /^[ \t]*\**\[?\s*(HIER|MACROS|D[ÉE]FICIT|COMPOSITION|CONSEILS)\s*\]?\**[ \t]*:?[ \t]*$/gim,
-            (_m, g) => `[${g.toUpperCase().replace('É','E').replace('È','E')}]`
-          );
-          const extract = (tag) => {
-            const re = new RegExp(`\\[${tag}\\]([\\s\\S]*?)(?=\\[(?:HIER|MACROS|DEFICIT|COMPOSITION|CONSEILS)\\]|$)`, 'i');
-            const m = normalized.match(re);
-            return m ? m[1].split('\n').map(clean).filter(Boolean) : [];
-          };
-          const SECTIONS = [
-            { tag: 'HIER', icon: '🌅', title: "Votre journée d'hier", card: 'border-violet-500/30', head: 'bg-violet-500/10 border-violet-500/20', text: 'text-violet-300' },
-            { tag: 'MACROS', icon: '📊', title: 'Évolution des macros', card: 'border-sky-500/30', head: 'bg-sky-500/10 border-sky-500/20', text: 'text-sky-300' },
-            { tag: 'DEFICIT', icon: '⚖️', title: 'Analyse du déficit', card: 'border-amber-500/30', head: 'bg-amber-500/10 border-amber-500/20', text: 'text-amber-300' },
-            { tag: 'COMPOSITION', icon: '💪', title: 'Impact sur votre composition corporelle', card: 'border-emerald-500/30', head: 'bg-emerald-500/10 border-emerald-500/20', text: 'text-emerald-300' },
-            { tag: 'CONSEILS', icon: '💡', title: 'Conseils', card: 'border-pink-500/30', head: 'bg-pink-500/10 border-pink-500/20', text: 'text-pink-300' },
-          ];
-          const parsed = SECTIONS.map((s) => ({ ...s, lines: extract(s.tag) }));
-          const anyParsed = parsed.some((s) => s.lines.length > 0);
-          if (!anyParsed) {
-            return <p className="text-sm text-slate-200 leading-relaxed whitespace-pre-line">{coachAdvice.replace(/\[(?:HIER|MACROS|D[ÉE]FICIT|COMPOSITION|CONSEILS)\]/gi, '\n').trim()}</p>;
-          }
-          return (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {parsed.filter((s) => s.lines.length > 0).map((s) => (
-                <div key={s.tag} className={`bg-slate-800 border rounded-xl overflow-hidden ${s.card}`}>
-                  <div className={`px-4 py-2.5 border-b flex items-center gap-2 ${s.head}`}>
-                    <span className="text-base">{s.icon}</span>
-                    <span className={`text-sm font-bold ${s.text}`}>{s.title}</span>
-                  </div>
-                  <div className="px-4 py-3 space-y-2">
-                    {s.lines.map((l, i) => (
-                      s.tag === 'CONSEILS'
-                        ? <div key={i} className="flex items-start gap-2"><span className="text-pink-400 font-bold text-sm mt-0.5 shrink-0">→</span><p className="text-slate-300 text-sm leading-relaxed">{l}</p></div>
-                        : <p key={i} className="text-slate-300 text-sm leading-relaxed">{l}</p>
-                    ))}
-                  </div>
-                </div>
-              ))}
+
+          <textarea
+            value={coachQuestion}
+            onChange={(e) => setCoachQuestion(e.target.value)}
+            placeholder="Ex : Mon apport en protéines est-il suffisant pour préserver mon muscle ? Mon déficit explique-t-il ma perte de poids ?"
+            disabled={coachLoading || isDemo}
+            rows={3}
+            className="w-full bg-slate-900/70 border border-slate-700 rounded-lg p-3 text-sm text-slate-100 placeholder-slate-500 resize-y focus:outline-none focus:border-violet-500 disabled:opacity-60"
+          />
+
+          <div className="flex justify-end">
+            <button
+              onClick={isDemo ? undefined : askCoach}
+              disabled={coachLoading || isDemo || !coachQuestion.trim()}
+              className="flex items-center gap-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold px-4 py-2 rounded-lg transition-colors shrink-0"
+            >
+              {coachLoading ? (
+                <><svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg> Le coach réfléchit...</>
+              ) : 'Demander'}
+            </button>
+          </div>
+
+          {coachError && (
+            <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4 text-red-400 text-sm">{coachError}</div>
+          )}
+
+          {coachLoading && (
+            <div className="bg-slate-900/60 border border-violet-500/30 rounded-lg flex flex-col items-center justify-center py-10 gap-3">
+              <div className="w-8 h-8 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
+              <p className="text-slate-300 text-sm">Le coach analyse ton historique...</p>
             </div>
-          );
-        })() : !coachLoading && !coachError ? (
-          <p className="text-xs text-slate-500 italic">Cliquez sur "Analyser" pour obtenir l'avis personnalisé de votre coach IA : votre journée d'hier, l'évolution des macros, le déficit, l'impact sur votre composition et des conseils.</p>
-        ) : null}
+          )}
+
+          {coachAnswer && !coachLoading && (
+            <div className="bg-slate-900/70 border border-violet-500/20 rounded-lg overflow-hidden">
+              <div className="bg-violet-500/10 px-5 py-3 border-b border-violet-500/20 flex items-center gap-2">
+                <span className="text-base">🧠</span>
+                <span className="text-sm font-bold text-violet-300">Réponse du coach</span>
+              </div>
+              <div className="px-5 py-4">
+                <p className="text-slate-200 text-sm leading-relaxed whitespace-pre-line">{coachAnswer}</p>
+              </div>
+            </div>
+          )}
+
+          {!coachAnswer && !coachLoading && !coachError && (
+            <p className="text-xs text-slate-400 italic">Écris ta question ci-dessus puis clique sur « Demander ».</p>
+          )}
+        </div>
       </div>
       <CardSection title="Macronutrition du jour" cardIds={macroCardOrder} cardContent={allCards} wideCards={MACRO_WIDE} dragState={macroDrag} isMobile={isMobile} />
       <CardSection title="Régime cétogène" cardIds={ketoCardOrder} cardContent={allCards} wideCards={KETO_WIDE} dragState={ketoDrag} isMobile={isMobile} />
