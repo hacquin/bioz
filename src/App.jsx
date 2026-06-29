@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Dumbbell, Activity, Calendar, BarChart2, Save, Settings, X, AlertCircle, Filter, Scale, TrendingUp, LogOut, User, Droplet, RefreshCw, Cloud, CloudLightning, Ruler, Target, Footprints, Percent, Heart, HeartPulse, Map as MapIcon, ArrowRight,
-  Bike, Mountain, Award, Waves, Flame, ChevronDown, ChevronUp, Clock, Plus, Trash2, UtensilsCrossed, Upload, FileText, ExternalLink, CheckCircle2, Download, Maximize2, Minimize2
+  Bike, Mountain, Award, Waves, Flame, ChevronDown, ChevronUp, Clock, Plus, Trash2, UtensilsCrossed, Upload, FileText, ExternalLink, CheckCircle2, Download, Maximize2, Minimize2, Pill
 } from 'lucide-react';
 import { 
   BarChart, Bar, LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ComposedChart, PieChart, Pie, Cell, LabelList
@@ -15,6 +15,7 @@ import { initializeApp } from "firebase/app";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, setPersistence, browserLocalPersistence } from "firebase/auth";
 import { getFirestore, doc, setDoc, onSnapshot, getDoc, getDocs, collection, query, orderBy, limit, initializeFirestore } from "firebase/firestore";
 
+import SupplementsTracker from './SupplementsTracker';
 import biozLogo from './BIOZ.png';
 import corpsHomme from './corps-homme-blanc.png';
 import corpsFemme from './corps-femme-blanc.png';
@@ -3722,6 +3723,7 @@ function App() {
       case 'health': return <HealthTracker user={user} db={db} healthLogs={healthLogs} setHealthLogs={demoSetHealthLogs} stravaLogs={stravaLogs} hevyWorkouts={hevyWorkouts} isSyncingWithings={isSyncingWithings} onWithingsSync={demoWithingsSync} goals={goals} isDemo={isDemo} onAddWater={(amount) => { handleAddWater(amount); }} onOpenWaterModal={() => setShowWaterModal(true)} />;
       case 'endurance': return <EnduranceView stravaLogs={stravaLogs} onSync={demoStravaSync} isSyncing={isSyncingStrava} isDemo={isDemo} />;
       case 'nutrition': return <NutritionImport user={user} db={db} isDemo={isDemo} demoNutritionDocs={isDemo ? DEMO_DATA.nutritionDocs : null} goals={goals} healthLogs={healthLogs} nutritionVersion={nutritionVersion} />;
+      case 'supplements': return <SupplementsTracker user={user} db={db} isDemo={isDemo} />;
       case 'settings': return <SettingsView user={user} db={db} isWithingsEnabled={isDemo || isWithingsEnabled} handleWithingsAuth={isDemo ? demoNoOp : handleStartWithingsAuth} isStravaEnabled={isDemo || isStravaEnabled} handleStravaAuth={isDemo ? demoNoOp : handleStartStravaAuth} withingsNeedsReconnect={false} hevyApiKey={hevyApiKey} onSaveHevyApiKey={isDemo ? demoNoOp : saveHevyApiKey} goals={goals} setGoals={demoSetGoals} dataSourcePrefs={dataSourcePrefs} setDataSourcePrefs={setDataSourcePrefs} connectedSources={connectedSources} isDemo={isDemo} setNutritionVersion={setNutritionVersion} />;
       default: return <div className="flex items-center justify-center h-64 text-slate-500">Chargement...</div>;
     }
@@ -3741,6 +3743,7 @@ function App() {
           <div className="flex items-center gap-3">
              {!isDemo && <div className="text-xs">{syncStatus === 'syncing' && <CloudLightning className="text-yellow-400 animate-pulse" size={20} />}{syncStatus === 'saved' && <Cloud className="text-green-400" size={20} />}{syncStatus === 'error' && <AlertCircle className="text-red-500" size={20} />}{syncStatus === 'idle' && <Cloud className="text-slate-600" size={20} />}</div>}
              <div className="hidden md:flex items-center gap-2 text-sm text-slate-400"><User size={16}/> {isDemo ? 'Visiteur Démo' : (user?.displayName || user?.email || 'Anonyme')}</div>
+             <button onClick={() => setActiveTab('supplements')} className={`p-2 rounded-full transition-colors ${activeTab === 'supplements' ? 'text-blue-400 bg-slate-700/50' : 'text-slate-400 hover:text-slate-300 hover:bg-slate-700'}`}><Pill size={20} /></button>
              <button onClick={() => setActiveTab('settings')} className={`p-2 rounded-full transition-colors ${activeTab === 'settings' ? 'text-violet-400 bg-slate-700/50' : 'text-slate-400 hover:text-slate-300 hover:bg-slate-700'}`}><Settings size={20} /></button>
              {isDemo ? (
                <button onClick={handleExitDemo} className="text-slate-400 hover:text-red-400 transition-colors p-2 rounded-full hover:bg-slate-700"><LogOut size={20} /></button>
