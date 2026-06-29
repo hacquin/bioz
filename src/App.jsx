@@ -921,236 +921,117 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, stravaLogs, hevyWo
       });
   }, [healthLogs]);
 
-  // --- BILAN IA ---
-  const [aiBilan, setAiBilan] = useState(null);
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiError, setAiError] = useState(null);
-  const [aiDate, setAiDate] = useState(null);
+  // --- COACH IA (Demande au coach) ---
+  const [coachQuestion, setCoachQuestion] = useState('');
+  const [coachAnswer, setCoachAnswer] = useState(null);
+  const [coachLoading, setCoachLoading] = useState(false);
+  const [coachError, setCoachError] = useState(null);
 
   useEffect(() => {
-    if (isDemo) {
-      setAiBilan(DEMO_DATA.aiBilan.text);
-      setAiDate(DEMO_DATA.aiBilan.date);
-      return;
-    }
+    if (isDemo) { setCoachAnswer(DEMO_DATA.aiBilan?.text || null); return; }
     if (!user || !db) return;
-    const loadBilan = async () => {
+    const loadCoach = async () => {
       try {
         const docSnap = await getDoc(doc(db, 'users', user.uid));
         if (docSnap.exists()) {
           const data = docSnap.data();
-          if (data.aiBilan) { setAiBilan(data.aiBilan.text); setAiDate(data.aiBilan.date); }
+          if (data.coachLast) { setCoachAnswer(data.coachLast.answer || null); setCoachQuestion(data.coachLast.question || ''); }
         }
-      } catch(e) { console.error('Erreur chargement bilan IA', e); }
+      } catch(e) { console.error('Erreur chargement coach IA', e); }
     };
-    loadBilan();
+    loadCoach();
   }, [user, db, isDemo]);
 
-  const generateAiBilan = async () => {
-    setAiLoading(true);
-    setAiError(null);
+  const askCoach = async () => {
+    const question = coachQuestion.trim();
+    if (!question || coachLoading) return;
+    setCoachLoading(true);
+    setCoachError(null);
 
-    // --- Pré-calcul des indicateurs côté JS ---
-    const sorted = [...healthLogs].sort((a, b) => new Date(b.date) - new Date(a.date));
-    const now = new Date();
-    const logsInRange = (days) => sorted.filter(l => (now - new Date(l.date)) / 86400000 <= days);
-    const last7 = logsInRange(7);
-    const prev7 = sorted.filter(l => { const d = (now - new Date(l.date)) / 86400000; return d > 7 && d <= 14; });
-    const last30 = logsInRange(30);
-    const prev30 = sorted.filter(l => { const d = (now - new Date(l.date)) / 86400000; return d > 30 && d <= 60; });
+    // --- On rassemble TOUT l'historique présent en base de données ---
+    let logs = Array.isArray(healthLogs) ? healthLogs : [];
+    let strava = Array.isArray(stravaLogs) ? stravaLogs : [];
+    let hevy = Array.isArray(hevyWorkouts) ? hevyWorkouts : [];
+    let fitbit = [];
+    if (user && db) {
+      try {
+        const uSnap = await getDoc(doc(db, 'users', user.uid));
+        if (uSnap.exists()) {
+          const ud = uSnap.data();
+          if (Array.isArray(ud.healthLogs)) logs = ud.healthLogs;
+          if (Array.isArray(ud.stravaLogs)) strava = ud.stravaLogs;
+          if (Array.isArray(ud.hevyWorkouts)) hevy = ud.hevyWorkouts;
+        }
+        const fSnap = await getDocs(query(collection(db, 'users', user.uid, 'fitbitDaily'), orderBy('date', 'desc'), limit(400)));
+        fitbit = fSnap.docs.map((d) => d.data()).filter((d) => d.date);
+      } catch (e) { console.error('Coach: lecture des données', e); }
+    }
 
-    const avg = (logs, key) => {
-      const vals = logs.filter(l => l[key] != null).map(l => l[key]);
-      return vals.length ? parseFloat((vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1)) : null;
-    };
-    const delta = (recent, prev) => (recent != null && prev != null) ? parseFloat((recent - prev).toFixed(1)) : null;
-    const pct = (current, start, target) => (start !== target) ? Math.min(100, Math.max(0, Math.round(((start - current) / (start - target)) * 100))) : null;
+    // Compactage : on retire les valeurs nulles et les détails volumineux (sets/exos)
+    // pour envoyer un maximum d'historique sans saturer le contexte.
+    const strip = (o) => Object.fromEntries(Object.entries(o).filter(([k, v]) => v != null && k !== 'id'));
+    const compactLogs = [...logs]
+      .sort((a, b) => new Date(a.date) - new Date(b.date))
+      .map((l) => strip({ date: getLocalDateKey(l.date), poids: l.weight, graisse: l.bodyFat, muscle: l.muscleMass, hydratation: l.hydration, tourTaille: l.waist, viscerale: l.visceralFat, systolique: l.systolic, diastolique: l.diastolic, fcRepos: l.restingHR, ondePouls: l.pwv, ageVasc: l.vascularAge, bmr: l.bmr, pas: l.steps, distance: l.distance, glycemie: l.glucose, cetones: l.ketones, spo2: l.spo2, freqResp: l.respiratoryRate }));
+    const compactFitbit = [...fitbit]
+      .sort((a, b) => new Date(a.date) - new Date(b.date))
+      .map((d) => strip({ date: getLocalDateKey(d.date), pas: d.steps, kcalActif: d.activeKcal, apportKcal: d.kcalIntake, sommeilMin: d.sleepMainMin, vfc: d.hrvAvgMs, fcRepos: d.rhrBpm, spo2: d.spo2AvgPct, glycemie: d.glucoseAvgMgDl }));
+    const compactStrava = [...strava]
+      .filter((a) => a && a.start_date)
+      .sort((a, b) => new Date(a.start_date) - new Date(b.start_date))
+      .map((a) => strip({ date: getLocalDateKey(a.start_date), type: a.type, km: a.distance ? +(a.distance / 1000).toFixed(1) : null, min: a.moving_time ? Math.round(a.moving_time / 60) : null, nom: a.name }));
+    const compactHevy = [...hevy]
+      .filter((w) => w && w.start_time)
+      .sort((a, b) => new Date(a.start_time) - new Date(b.start_time))
+      .map((w) => strip({ date: getLocalDateKey(w.start_time), titre: w.title, exercices: Array.isArray(w.exercises) ? w.exercises.length : null }));
 
-    const ind = {
-      weight:    { now: latestWeight, avg7: avg(last7, 'weight'), avg7prev: avg(prev7, 'weight'), avg30: avg(last30, 'weight'), avg30prev: avg(prev30, 'weight') },
-      bodyFat:   { now: latestFat, avg7: avg(last7, 'bodyFat'), avg7prev: avg(prev7, 'bodyFat'), avg30: avg(last30, 'bodyFat'), avg30prev: avg(prev30, 'bodyFat') },
-      muscle:    { now: latestMuscle, avg7: avg(last7, 'muscleMass'), avg7prev: avg(prev7, 'muscleMass'), avg30: avg(last30, 'muscleMass'), avg30prev: avg(prev30, 'muscleMass') },
-      hydration: { now: latestHydration, avg7: avg(last7, 'hydration'), avg7prev: avg(prev7, 'hydration') },
-      waist:     { now: latestWaist, avg7: avg(last7, 'waist'), avg7prev: avg(prev7, 'waist'), avg30: avg(last30, 'waist'), avg30prev: avg(prev30, 'waist') },
-      visceral:  { now: latestVisceral, avg7: avg(last7, 'visceralFat'), avg7prev: avg(prev7, 'visceralFat') },
-      cardio:    { sys: latestSystolic, dia: latestDiastolic, hr: latestRestingHR, pwv: latestPWV, vascAge: latestVascularAge, sysAvg7: avg(last7, 'systolic'), diaAvg7: avg(last7, 'diastolic'), hrAvg7: avg(last7, 'restingHR') },
-      bmr:       latestBMR,
-    };
+    const systemPrompt = `Tu es un coach santé GLOBAL expert en composition corporelle, activité physique, sport, sommeil, récupération et métabolisme. Ton interlocuteur est un homme de 55 ans, 1m74, qui suit un régime LOW-CARB (glucides modérés et maîtrisés, PAS de cétose stricte recherchée).
 
-    const f = (v) => v != null ? v : '—';
-    const fDelta = (v) => v != null ? (v > 0 ? `+${v}` : `${v}`) : '—';
+TON : direct, bienveillant, pince-sans-rire avec parcimonie. Tu salues les vrais progrès et tu dis franchement quand ça stagne.
 
-    // --- Données wearables (Fitbit / Google Health) : activité, sommeil, récupération, métabolique ---
-    let act = null;
-    try {
-      const wSnap = await getDocs(query(collection(db, 'users', user.uid, 'fitbitDaily'), orderBy('date', 'desc'), limit(35)));
-      const wDocs = wSnap.docs.map((d) => d.data()).filter((d) => d.date);
-      // Bilan généré le matin : on INCLUT le jour en cours (sommeil de la nuit, premiers pas, etc.).
-      const wIn = (n) => wDocs.filter((l) => { const age = (now - new Date(l.date)) / 86400000; return age >= 0 && age <= n; });
-      const w7 = wIn(7), w30 = wIn(30);
-      const wAvg = (logs, key) => { const v = logs.filter((l) => l[key] != null).map((l) => l[key]); return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) : null; };
-      const sleepMin = wAvg(w7, 'sleepMainMin');
-      const fmtSleep = (m) => m != null ? `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}` : null;
-      // Instantané du JOUR (données déjà disponibles ce matin)
-      const wToday = wDocs.find((l) => getLocalDateKey(l.date) === getLocalDateKey(now)) || null;
-      act = {
-        steps7: wAvg(w7, 'steps'), steps30: wAvg(w30, 'steps'),
-        active7: wAvg(w7, 'activeKcal'),
-        intake7: wAvg(w7, 'kcalIntake'),
-        sleep7: fmtSleep(sleepMin),
-        hrv7: wAvg(w7, 'hrvAvgMs'), hrv30: wAvg(w30, 'hrvAvgMs'),
-        rhr7: wAvg(w7, 'rhrBpm'),
-        spo2: wAvg(w7, 'spo2AvgPct'),
-        glucose7: wAvg(w7, 'glucoseAvgMgDl'), glucose30: wAvg(w30, 'glucoseAvgMgDl'),
-        todaySleep: wToday ? fmtSleep(wToday.sleepMainMin) : null,
-        todaySteps: wToday?.steps ?? null,
-        todayHrv: wToday?.hrvAvgMs ?? null,
-        todayRhr: wToday?.rhrBpm ?? null,
-        todayActive: wToday?.activeKcal ?? null,
-      };
-      if (act.intake7 != null && ind.bmr != null && act.active7 != null) {
-        act.balance7 = act.intake7 - (ind.bmr + act.active7);
-      }
-    } catch (e) { console.error('Erreur lecture wearables pour bilan IA', e); }
+DONNÉES : tu disposes de TOUT l'historique de l'utilisateur, fourni en JSON dans le message (mesures corporelles et cardio jour par jour, activité/sommeil/récupération/métabolique quotidiens, séances cardio et séances de musculation). Tu DOIS prendre en compte l'ENSEMBLE de cet historique — toutes les dates disponibles, pas seulement les plus récentes — pour analyser les tendances de fond et répondre.
 
-    // --- Données sport : cardio (Strava) + muscu (Hevy ET Strava type musculation, souvent loggée via Fitbit) ---
-    let sport = null;
-    try {
-      const uSnap = await getDoc(doc(db, 'users', user.uid));
-      const udata = uSnap.exists() ? uSnap.data() : {};
-      const strava = Array.isArray(udata.stravaLogs) ? udata.stravaLogs : [];
-      const hevy = Array.isArray(udata.hevyWorkouts) ? udata.hevyWorkouts : [];
-      // Une séance de musculation peut venir de Hevy OU de Strava (type WeightTraining/Workout, ex. enregistrée via Fitbit).
-      const MUSCU_TYPES = ['WeightTraining', 'Workout', 'Crossfit', 'HIIT', 'Hiit'];
-      const isMuscu = (t) => MUSCU_TYPES.includes(t);
-      const inDays = (dateStr, n) => { if (!dateStr) return false; const age = (now - new Date(dateStr)) / 86400000; return age >= 0 && age <= n; };
-      const dayKey = (d) => getLocalDateKey(new Date(d));
-      const s7 = strava.filter((a) => inDays(a.start_date, 7));
-      const s30 = strava.filter((a) => inDays(a.start_date, 30));
-      const h7 = hevy.filter((w) => inDays(w.start_time, 7));
-      const h30 = hevy.filter((w) => inDays(w.start_time, 30));
-      // Cardio = Strava hors types musculation
-      const cardio7 = s7.filter((a) => !isMuscu(a.type));
-      const cardio30 = s30.filter((a) => !isMuscu(a.type));
-      // Muscu = jours distincts avec une séance Hevy OU une séance Strava type musculation (dédup anti double-comptage)
-      const muscuStrava7 = s7.filter((a) => isMuscu(a.type));
-      const muscuStrava30 = s30.filter((a) => isMuscu(a.type));
-      const muscuDays7 = new Set([...h7.map((w) => dayKey(w.start_time)), ...muscuStrava7.map((a) => dayKey(a.start_date))]);
-      const muscuDays30 = new Set([...h30.map((w) => dayKey(w.start_time)), ...muscuStrava30.map((a) => dayKey(a.start_date))]);
-      const byType = {};
-      cardio7.forEach((a) => { const t = a.type || 'Autre'; byType[t] = (byType[t] || 0) + 1; });
-      sport = {
-        cardio7: cardio7.length, cardio30: cardio30.length,
-        cardioKm7: Math.round(cardio7.reduce((t, a) => t + (a.distance || 0), 0) / 1000),
-        cardioMin7: Math.round(cardio7.reduce((t, a) => t + (a.moving_time || 0), 0) / 60),
-        cardioTypes: Object.entries(byType).map(([t, n]) => `${n}×${t}`).join(', ') || null,
-        muscu7: muscuDays7.size, muscu30: muscuDays30.size,
-        muscuDetail: `${h7.length} via Hevy + ${muscuStrava7.length} via Strava/Fitbit`,
-      };
-    } catch (e) { console.error('Erreur lecture sport pour bilan IA', e); }
+RÈGLES :
+- Réponds DIRECTEMENT et précisément à la question posée. Appuie-toi sur des chiffres réels et des tendances tirés des données (cite des valeurs et des évolutions datées quand c'est pertinent).
+- Impédancemétrie : si l'hydratation est inférieure à 55%, les mesures de graisse et de muscle sont faussées (graisse surestimée, muscle sous-estimé) ; signale-le si concerné.
+- Régime LOW-CARB : vise des glucides modérés et une glycémie stable ; ne parle pas de cétose profonde ni de GKI.
+- Musculation : elle peut venir de Hevy OU de Strava (type WeightTraining/Workout) ; ne conclus jamais à une absence de muscu sans tenir compte des deux sources.
+- ZÉRO jargon : pas de sigle obscur (dis "rigidité des artères" et non "PWV", "variabilité cardiaque" et non "VFC/HRV", "métabolisme de base" et non "BMR").
+- Si une donnée nécessaire à la réponse est absente de l'historique, dis-le simplement plutôt que d'inventer.
+- FORMAT : prose claire et naturelle, sans markdown, sans listes à puces, sans titres. Réponse complète mais concise (quelques paragraphes maximum).`;
 
-    const systemPrompt = `Tu es un coach santé GLOBAL expert en composition corporelle, activité physique, sport, sommeil et récupération. Ton interlocuteur est un homme de 55 ans, 1m74, qui suit un régime LOW-CARB (glucides modérés et maîtrisés, PAS de cétose stricte recherchée).
+    const userMessage = `PROFIL : homme, 55 ans, 1m74, régime low-carb.
+OBJECTIFS : Poids ${goals.startWeight}→${goals.targetWeight} kg | Graisse ${goals.startFat}→${goals.targetFat}% | Tour de taille ${goals.startWaist}→${goals.targetWaist} cm
 
-TON : Direct, pince-sans-rire, une seule vanne max par bilan. Tu salues les vrais progrès et tu dis franchement quand ça stagne.
+HISTORIQUE COMPLET — MESURES CORPORELLES & CARDIO (chronologique, une entrée par date) :
+${JSON.stringify(compactLogs)}
 
-CHAMP D'ANALYSE — tu analyses l'ENSEMBLE des paramètres, pas seulement la composition ou le régime :
-1) Composition & morphologie (poids, graisse, muscle, tour de taille, viscérale)
-2) Cardio-vasculaire (tension, FC repos, onde de pouls, âge vasculaire)
-3) Sport & entraînement (séances cardio Strava et muscu Hevy : fréquence, volume, type)
-4) Activité quotidienne & dépense (pas, énergie active, balance énergétique apport/dépense)
-5) Sommeil & récupération (durée de sommeil, VFC nocturne, FC repos)
-6) Métabolique (glycémie, SpO2)
-Fais des LIENS entre ces dimensions (ex : charge d'entraînement élevée + VFC en baisse → surmenage/récup à surveiller ; déficit énergétique soutenu → perte de poids ; régularité sportive → composition qui s'améliore ; manque de séances → stagnation).
+HISTORIQUE COMPLET — ACTIVITÉ / SOMMEIL / RÉCUPÉRATION / MÉTABOLIQUE (quotidien) :
+${JSON.stringify(compactFitbit)}
 
-RÈGLES D'ANALYSE :
-- Analyse UNIQUEMENT les valeurs et deltas pré-calculés fournis. Ne refais pas les calculs.
-- Un delta 7j = tendance court terme, un delta 30j = tendance de fond. Priorise le 30j.
-- Impédancemétrie : si hydratation < 55%, les mesures de graisse et muscle sont FAUSSÉES (graisse surestimée, muscle sous-estimé). Mentionne-le.
-- Régime LOW-CARB : vise des glucides modérés et une glycémie stable ; ne parle PAS de cétose profonde ni de GKI.
-- Sport : valorise la régularité et le volume ; signale une charge en forte hausse couplée à une variabilité cardiaque en baisse (surmenage) ou au contraire un manque d'entraînement qui peut expliquer une stagnation. La MUSCULATION est comptée à la fois depuis Hevy ET depuis Strava (séances de type musculation, souvent enregistrées via Fitbit) : ne conclus JAMAIS à une absence de muscu sans tenir compte des deux sources.
-- Composition : priorité 1) tour de taille (graisse viscérale), 2) poids, 3) graisse/muscle. La perte de muscle n'est PAS alarmante si la graisse baisse aussi.
-- Signale ce qui sort de l'ordinaire : rigidité des artères élevée (> 9 m/s), FC repos > 80 bpm, variabilité cardiaque en baisse marquée vs 30j, SpO2 < 90%, sommeil < 6h, balance énergétique fortement positive. Ne commente pas un paramètre normal et stable.
-- Ce bilan est généré le MATIN : prends en compte les données DU JOUR (sommeil de la nuit, poids du matin, première activité) en plus des moyennes 7j et 30j.
+HISTORIQUE COMPLET — SÉANCES CARDIO (Strava) :
+${JSON.stringify(compactStrava)}
 
-LANGAGE — ZÉRO JARGON : écris pour quelqu'un qui n'est pas médecin. N'utilise JAMAIS de sigle obscur : pas de "PWV" (dis "rigidité des artères"), pas de "VFC" ni "HRV" seuls (dis "variabilité cardiaque", marqueur de récupération), pas de "BMR" (dis "métabolisme de base"). Si un terme technique est inévitable, explique-le en trois mots entre parenthèses.
+HISTORIQUE COMPLET — SÉANCES MUSCULATION (Hevy) :
+${JSON.stringify(compactHevy)}
 
-FORMAT STRICT — prose uniquement, zéro markdown, zéro tiret, zéro étoile. Réponds en EXACTEMENT trois sections, chacune introduite par son marqueur entre crochets seul sur sa ligne, dans cet ordre. N'invente aucun autre titre.
-[BILAN]
-4-5 phrases factuelles couvrant les dimensions pertinentes (composition, sport/activité, sommeil-récup, métabolique). Cite les chiffres clés.
-[ALERTES]
-0 à 3 alertes courtes si nécessaire (déshydratation, stagnation >2 semaines, anomalie cardio, récup dégradée, sommeil insuffisant, surmenage). Si rien d'alarmant, écris "Rien à signaler."
-[ACTIONS]
-2-3 recommandations concrètes et actionnables couvrant si possible nutrition, sport/activité ET récupération.`;
-
-    const sportSection = sport ? `
-
-SPORT & ENTRAÎNEMENT (7j | 30j) :
-Séances cardio : ${sport.cardio7} | ${sport.cardio30}${sport.cardioTypes ? ` (${sport.cardioTypes})` : ''}
-Volume cardio 7j : ${sport.cardioKm7} km, ${sport.cardioMin7} min
-Séances muscu (Hevy + Strava/Fitbit) : ${sport.muscu7} | ${sport.muscu30} (7j : ${sport.muscuDetail})` : '';
-
-    const activitySection = act ? `
-
-ACTIVITÉ & DÉPENSE (moyennes 7j | 30j) :
-Pas : ${f(act.steps7)} | ${f(act.steps30)} /jour
-Énergie active : ${f(act.active7)} kcal/jour
-Apport calorique : ${f(act.intake7)} kcal/jour
-Balance énergétique : ${act.balance7 != null ? fDelta(act.balance7) : '—'} kcal/jour (apport − dépense BMR+actif ; négatif = déficit)
-
-SOMMEIL & RÉCUPÉRATION (moyennes 7j) :
-Durée de sommeil : ${f(act.sleep7)}
-Variabilité cardiaque nocturne (récupération) : ${f(act.hrv7)} ms (30j : ${f(act.hrv30)})
-FC repos (montre) : ${f(act.rhr7)} bpm
-
-MÉTABOLIQUE :
-Glycémie : ${f(act.glucose7)} mg/dL (30j : ${f(act.glucose30)})
-SpO2 nocturne : ${f(act.spo2)}%
-
-AUJOURD'HUI (données déjà disponibles ce matin) :
-Sommeil de la nuit : ${f(act.todaySleep)}
-Variabilité cardiaque cette nuit : ${f(act.todayHrv)} ms
-FC repos ce matin : ${f(act.todayRhr)} bpm
-Pas / énergie active du jour : ${f(act.todaySteps)} pas, ${f(act.todayActive)} kcal` : '';
-
-    const userMessage = `Bilan du ${new Date().toLocaleDateString('fr-FR')}
-
-OBJECTIFS : Poids ${goals.startWeight}→${goals.targetWeight} kg (${f(pct(ind.weight.now, goals.startWeight, goals.targetWeight))}% atteint) | Graisse ${goals.startFat}→${goals.targetFat}% (${f(pct(ind.bodyFat.now, goals.startFat, goals.targetFat))}% atteint) | Tour de taille ${goals.startWaist}→${goals.targetWaist} cm (${f(pct(ind.waist.now, goals.startWaist, goals.targetWaist))}% atteint)
-
-COMPOSITION CORPORELLE (valeur actuelle | delta 7j | delta 30j) :
-Poids : ${f(ind.weight.now)} kg | ${fDelta(delta(ind.weight.avg7, ind.weight.avg7prev))} | ${fDelta(delta(ind.weight.avg30, ind.weight.avg30prev))}
-Graisse : ${f(ind.bodyFat.now)}% | ${fDelta(delta(ind.bodyFat.avg7, ind.bodyFat.avg7prev))} | ${fDelta(delta(ind.bodyFat.avg30, ind.bodyFat.avg30prev))}
-Muscle : ${f(ind.muscle.now)}% | ${fDelta(delta(ind.muscle.avg7, ind.muscle.avg7prev))} | ${fDelta(delta(ind.muscle.avg30, ind.muscle.avg30prev))}
-Hydratation : ${f(ind.hydration.now)}% | ${fDelta(delta(ind.hydration.avg7, ind.hydration.avg7prev))}
-
-MORPHOLOGIE :
-Tour de taille : ${f(ind.waist.now)} cm | ${fDelta(delta(ind.waist.avg7, ind.waist.avg7prev))} | ${fDelta(delta(ind.waist.avg30, ind.waist.avg30prev))}
-Graisse viscérale : ${f(ind.visceral.now)} | ${fDelta(delta(ind.visceral.avg7, ind.visceral.avg7prev))}
-
-CARDIO-VASCULAIRE :
-Tension : ${f(ind.cardio.sys)}/${f(ind.cardio.dia)} mmHg (moy 7j : ${f(ind.cardio.sysAvg7)}/${f(ind.cardio.diaAvg7)})
-FC repos : ${f(ind.cardio.hr)} bpm (moy 7j : ${f(ind.cardio.hrAvg7)})
-Vitesse onde de pouls : ${f(ind.cardio.pwv)} m/s
-Âge vasculaire : ${f(ind.cardio.vascAge)} ans
-
-MÉTABOLISME :
-BMR : ${f(ind.bmr)} kcal${sportSection}${activitySection}`;
+QUESTION DE L'UTILISATEUR :
+${question}`;
 
     try {
       const response = await fetch('/claude_proxy.php', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ system: systemPrompt, messages: [{ role: 'user', content: userMessage }] }) });
       if (!response.ok) throw new Error(`Erreur HTTP ${response.status}`);
       const data = await response.json();
       const text = data.content?.[0]?.text || 'Aucune réponse reçue.';
-      const today = new Date().toISOString().split('T')[0];
-      setAiBilan(text);
-      setAiDate(today);
+      setCoachAnswer(text);
       if (user && db) {
         try {
           const docSnap = await getDoc(doc(db, 'users', user.uid));
-          if (docSnap.exists()) { await setDoc(doc(db, 'users', user.uid), sanitizeForFirestore({ ...docSnap.data(), aiBilan: { text, date: today } })); }
-        } catch(e) { console.error('Erreur sauvegarde bilan IA', e); }
+          if (docSnap.exists()) { await setDoc(doc(db, 'users', user.uid), sanitizeForFirestore({ ...docSnap.data(), coachLast: { question, answer: text, date: new Date().toISOString() } })); }
+        } catch (e) { console.error('Erreur sauvegarde coach IA', e); }
       }
-    } catch(e) { setAiError("Impossible de générer le bilan. Vérifiez votre connexion ou le proxy PHP."); console.error('Erreur bilan IA', e); }
-    finally { setAiLoading(false); }
+    } catch (e) { setCoachError("Impossible d'obtenir une réponse du coach. Vérifiez votre connexion ou le proxy PHP."); console.error('Erreur coach IA', e); }
+    finally { setCoachLoading(false); }
   };
 
   const handleSave = async () => {
@@ -1329,129 +1210,79 @@ BMR : ${f(ind.bmr)} kcal${sportSection}${activitySection}`;
 
   return (
     <div className="animate-fade-in space-y-6">
-      {/* --- CARTES BILAN IA --- */}
-      <div className="space-y-4">
+      {/* --- DEMANDE AU COACH --- */}
+      <div className="relative overflow-hidden rounded-xl border border-violet-500/30 shadow-lg">
+        {/* Image de fond (fichier dans public/coach-bg.jpeg) */}
+        <div
+          className="absolute inset-0 bg-cover bg-center"
+          style={{ backgroundImage: "url('/coach-bg.jpeg')" }}
+        />
+        {/* Voile pour garder le texte lisible par-dessus l'image */}
+        <div className="absolute inset-0 bg-gradient-to-b from-slate-900/80 via-slate-900/85 to-slate-900/90" />
 
-        {/* En-tête avec bouton */}
-        <div className="flex justify-between items-center">
+        <div className="relative p-5 space-y-4">
           <div>
             <h3 className="font-bold text-slate-100 flex items-center gap-2 text-base">
-              <span className="text-violet-400">✦</span> Analyse IA du jour
+              <span className="text-violet-400">💬</span> Demande au coach
             </h3>
-            {aiDate && (
-              <p className="text-[10px] text-slate-500 mt-0.5">
-                {new Date(aiDate + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}
-                {aiDate !== new Date().toISOString().split('T')[0] && <span className="text-orange-400"> — non actualisé aujourd'hui</span>}
-              </p>
-            )}
+            <p className="text-xs text-slate-300/80 mt-1">
+              Pose ta question : le coach prend en compte <strong>tout ton historique</strong> (mesures, activité, sommeil, récupération, sport) pour te répondre.
+            </p>
           </div>
-          <button
-            onClick={isDemo ? undefined : generateAiBilan}
-            disabled={aiLoading || isDemo}
-            className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold px-3 py-2 rounded-lg transition-colors shrink-0"
-          >
-            <RefreshCw size={13} className={aiLoading ? 'animate-spin' : ''} />
-            {aiLoading ? 'Analyse...' : aiDate === new Date().toISOString().split('T')[0] ? 'Regénérer' : 'Générer mon bilan'}
-          </button>
-        </div>
 
-        {/* Chargement */}
-        {aiLoading && (
-          <div className="bg-slate-800 border border-violet-500/30 rounded-xl flex flex-col items-center justify-center py-12 gap-3">
-            <div className="w-8 h-8 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
-            <p className="text-slate-400 text-sm">Claude analyse vos données...</p>
+          <textarea
+            value={coachQuestion}
+            onChange={(e) => setCoachQuestion(e.target.value)}
+            placeholder="Ex : Ma perte de poids est-elle sur la bonne trajectoire ? Comment améliorer mon sommeil et ma récupération ?"
+            disabled={coachLoading || isDemo}
+            rows={3}
+            className="w-full bg-slate-900/70 border border-slate-700 rounded-lg p-3 text-sm text-slate-100 placeholder-slate-500 resize-y focus:outline-none focus:border-violet-500 disabled:opacity-60"
+          />
+
+          <div className="flex justify-end">
+            <button
+              onClick={isDemo ? undefined : askCoach}
+              disabled={coachLoading || isDemo || !coachQuestion.trim()}
+              className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold px-4 py-2 rounded-lg transition-colors shrink-0"
+            >
+              <RefreshCw size={13} className={coachLoading ? 'animate-spin' : ''} />
+              {coachLoading ? 'Le coach réfléchit...' : 'Demander'}
+            </button>
           </div>
-        )}
 
-        {/* Erreur */}
-        {aiError && !aiLoading && (
-          <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-red-400 text-sm flex items-start gap-2">
-            <AlertCircle size={16} className="shrink-0 mt-0.5" /><span>{aiError}</span>
-          </div>
-        )}
-
-        {/* État vide */}
-        {!aiBilan && !aiLoading && !aiError && (
-          <div className="bg-slate-800 border border-slate-700 rounded-xl text-center py-12 text-slate-500">
-            <span className="text-4xl block mb-3 text-violet-500/30">✦</span>
-            <p className="text-sm">Cliquez sur "Générer mon bilan" pour recevoir<br/>une analyse personnalisée de vos données.</p>
-          </div>
-        )}
-
-        {/* Contenu en 3 cartes */}
-        {aiBilan && !aiLoading && (() => {
-          const clean = (text) => text.replace(/\*\*/g, '').replace(/^\*\s*/,'').replace(/^#+\s*/,'').replace(/^[-•]\s*/, '').trim();
-          // Normalise les titres de section : Claude écrit parfois "BILAN", "**BILAN**" ou "BILAN :"
-          // au lieu de "[BILAN]" — on les ramène tous à la forme à crochets pour fiabiliser le parsing.
-          const normalized = aiBilan.replace(/^[ \t]*\**\[?\s*(BILAN|ALERTES|ACTIONS|CONSEILS)\s*\]?\**[ \t]*:?[ \t]*$/gim, '[$1]');
-          // Parse les 3 sections [BILAN], [ALERTES], [ACTIONS] — fallback sur l'ancien format [CONSEILS]
-          const extractSection = (tag) => {
-            const regex = new RegExp(`\\[${tag}\\]([\\s\\S]*?)(?=\\[(?:BILAN|ALERTES|ACTIONS|CONSEILS)\\]|$)`, 'i');
-            const match = normalized.match(regex);
-            return match ? match[1].split('\n').map(l => clean(l)).filter(Boolean) : [];
-          };
-          let bilanLines = extractSection('BILAN');
-          const alertLines = extractSection('ALERTES');
-          const actionLines = extractSection('ACTIONS').length > 0 ? extractSection('ACTIONS') : extractSection('CONSEILS');
-          // Robustesse : si le modèle n'a vraiment respecté aucun format, on affiche le texte brut
-          // nettoyé dans la carte principale plutôt qu'une carte vide.
-          if (bilanLines.length === 0 && alertLines.length === 0 && actionLines.length === 0) {
-            bilanLines = normalized
-              .replace(/\[(?:BILAN|ALERTES|ACTIONS|CONSEILS|SYNTH[ÈE]SE)\]/gi, '\n')
-              .split('\n').map((l) => clean(l)).filter(Boolean);
-          }
-
-          return (
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-              {/* Carte 1 — Bilan */}
-              <div className="bg-slate-800 border border-violet-500/30 rounded-xl overflow-hidden xl:row-span-2">
-                <div className="bg-violet-500/10 px-5 py-3 border-b border-violet-500/20 flex items-center gap-2">
-                  <HeartPulse size={15} className="text-violet-400 shrink-0" />
-                  <span className="text-sm font-bold text-violet-300">Bilan du jour</span>
-                </div>
-                <div className="px-5 py-4 space-y-3">
-                  {bilanLines.map((line, i) => (
-                    <p key={i} className="text-slate-300 text-sm leading-relaxed">{line}</p>
-                  ))}
-                </div>
-              </div>
-
-              {/* Carte 2 — Alertes */}
-              {alertLines.length > 0 && (
-                <div className="bg-slate-800 border border-orange-500/30 rounded-xl overflow-hidden">
-                  <div className="bg-orange-500/10 px-5 py-3 border-b border-orange-500/20 flex items-center gap-2">
-                    <AlertCircle size={15} className="text-orange-400 shrink-0" />
-                    <span className="text-sm font-bold text-orange-300">Points d'attention</span>
-                  </div>
-                  <div className="px-5 py-4 space-y-3">
-                    {alertLines.map((line, i) => (
-                      <p key={i} className="text-slate-300 text-sm leading-relaxed">{line}</p>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Carte 3 — Actions */}
-              {actionLines.length > 0 && (
-                <div className="bg-slate-800 border border-emerald-500/30 rounded-xl overflow-hidden">
-                  <div className="bg-emerald-500/10 px-5 py-3 border-b border-emerald-500/20 flex items-center gap-2">
-                    <TrendingUp size={15} className="text-emerald-400 shrink-0" />
-                    <span className="text-sm font-bold text-emerald-300">Actions recommandées</span>
-                  </div>
-                  <div className="px-5 py-4 space-y-4">
-                    {actionLines.map((line, i) => (
-                      <div key={i} className="flex items-start gap-3">
-                        <span className="text-emerald-500 font-bold text-sm mt-0.5 shrink-0">→</span>
-                        <p className="text-slate-300 text-sm leading-relaxed">{line}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+          {/* Chargement */}
+          {coachLoading && (
+            <div className="bg-slate-900/60 border border-violet-500/30 rounded-lg flex flex-col items-center justify-center py-10 gap-3">
+              <div className="w-8 h-8 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
+              <p className="text-slate-300 text-sm">Le coach analyse ton historique...</p>
             </div>
-          );
-        })()}
+          )}
 
+          {/* Erreur */}
+          {coachError && !coachLoading && (
+            <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4 text-red-400 text-sm flex items-start gap-2">
+              <AlertCircle size={16} className="shrink-0 mt-0.5" /><span>{coachError}</span>
+            </div>
+          )}
+
+          {/* Réponse */}
+          {coachAnswer && !coachLoading && (
+            <div className="bg-slate-900/70 border border-violet-500/20 rounded-lg overflow-hidden">
+              <div className="bg-violet-500/10 px-5 py-3 border-b border-violet-500/20 flex items-center gap-2">
+                <HeartPulse size={15} className="text-violet-400 shrink-0" />
+                <span className="text-sm font-bold text-violet-300">Réponse du coach</span>
+              </div>
+              <div className="px-5 py-4">
+                <p className="text-slate-200 text-sm leading-relaxed whitespace-pre-line">{coachAnswer}</p>
+              </div>
+            </div>
+          )}
+
+          {/* État vide */}
+          {!coachAnswer && !coachLoading && !coachError && (
+            <p className="text-xs text-slate-400 italic">Écris ta question ci-dessus puis clique sur « Demander ».</p>
+          )}
+        </div>
       </div>
 
       <div className="bg-slate-800 p-4 rounded-xl shadow-lg border border-slate-700 flex flex-col gap-4">
