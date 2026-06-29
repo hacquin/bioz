@@ -149,7 +149,13 @@ export default function SupplementsTracker({ user, db, isDemo }) {
       </div>
 
       {/* Calendrier */}
-      <div className="bg-slate-800 p-4 rounded-xl border border-slate-700">
+      <div className="relative rounded-xl border border-slate-700 overflow-hidden">
+        {/* Image de fond (fichier dans public/pills.jpeg) */}
+        <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: "url('/pills.jpeg')" }} />
+        {/* Voile pour garder le contenu lisible par-dessus l'image */}
+        <div className="absolute inset-0 bg-gradient-to-b from-slate-900/90 via-slate-900/85 to-slate-900/90" />
+
+        <div className="relative p-4">
         <div className="flex items-center justify-between mb-4">
           <button onClick={() => goMonth(-1)} className="p-2 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-700"><ChevronLeft size={20} /></button>
           <h3 className="text-base font-bold text-slate-100 capitalize">{MONTHS[viewMonth.getMonth()]} {viewMonth.getFullYear()}</h3>
@@ -208,6 +214,7 @@ export default function SupplementsTracker({ user, db, isDemo }) {
             <span key={r} className="rounded-full" style={{ width: 8 + r * 10, height: 8 + r * 10, backgroundColor: dotColor(r) }} />
           ))}
           <span>Tout pris</span>
+        </div>
         </div>
       </div>
 
