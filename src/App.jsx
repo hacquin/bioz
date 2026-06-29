@@ -921,34 +921,34 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, stravaLogs, hevyWo
       });
   }, [healthLogs]);
 
-  // --- COACH IA (Demande au coach) ---
+  // --- COACH IA (Demande au coach) — fil de conversation multi-tours ---
+  // Le fil vit le temps de la session ; il repart à zéro au rechargement.
+  const [coachMessages, setCoachMessages] = useState([]); // [{ role: 'user'|'assistant', content }]
   const [coachQuestion, setCoachQuestion] = useState('');
-  const [coachAnswer, setCoachAnswer] = useState(null);
   const [coachLoading, setCoachLoading] = useState(false);
   const [coachError, setCoachError] = useState(null);
+  // Contexte de données (gros JSON d'historique) construit une seule fois par
+  // conversation et injecté dans le 1er message envoyé à Claude.
+  const coachContextRef = useRef(null);
 
-  useEffect(() => {
-    if (isDemo) { setCoachAnswer(DEMO_DATA.aiBilan?.text || null); return; }
-    if (!user || !db) return;
-    const loadCoach = async () => {
-      try {
-        const docSnap = await getDoc(doc(db, 'users', user.uid));
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          if (data.coachLast) { setCoachAnswer(data.coachLast.answer || null); setCoachQuestion(data.coachLast.question || ''); }
-        }
-      } catch(e) { console.error('Erreur chargement coach IA', e); }
-    };
-    loadCoach();
-  }, [user, db, isDemo]);
+  const COACH_SYSTEM_PROMPT = `Tu es un coach santé GLOBAL expert en composition corporelle, activité physique, sport, sommeil, récupération et métabolisme. Ton interlocuteur est un homme de 55 ans, 1m74, qui suit un régime LOW-CARB (glucides modérés et maîtrisés, PAS de cétose stricte recherchée).
 
-  const askCoach = async () => {
-    const question = coachQuestion.trim();
-    if (!question || coachLoading) return;
-    setCoachLoading(true);
-    setCoachError(null);
+TON : direct, bienveillant, pince-sans-rire avec parcimonie. Tu salues les vrais progrès et tu dis franchement quand ça stagne.
 
-    // --- On rassemble TOUT l'historique présent en base de données ---
+DONNÉES : le PREMIER message de l'utilisateur contient TOUT son historique en JSON (mesures corporelles et cardio jour par jour, activité/sommeil/récupération/métabolique quotidiens, séances cardio et séances de musculation). Tu DOIS prendre en compte l'ENSEMBLE de cet historique — toutes les dates disponibles — pour répondre, y compris aux questions de relance qui suivent.
+
+RÈGLES :
+- Tu es dans une CONVERSATION : tiens compte de tes réponses précédentes et réponds à la nouvelle question en gardant le fil.
+- Réponds DIRECTEMENT et précisément. Appuie-toi sur des chiffres réels et des tendances datées tirés des données.
+- Impédancemétrie : si l'hydratation est inférieure à 55%, les mesures de graisse et de muscle sont faussées (graisse surestimée, muscle sous-estimé) ; signale-le si concerné.
+- Régime LOW-CARB : vise des glucides modérés et une glycémie stable ; ne parle pas de cétose profonde ni de GKI.
+- Musculation : elle peut venir de Hevy OU de Strava (type WeightTraining/Workout) ; ne conclus jamais à une absence de muscu sans tenir compte des deux sources.
+- ZÉRO jargon : pas de sigle obscur (dis "rigidité des artères" et non "PWV", "variabilité cardiaque" et non "VFC/HRV", "métabolisme de base" et non "BMR").
+- Si une donnée nécessaire est absente de l'historique, dis-le simplement plutôt que d'inventer.
+- FORMAT : prose claire et naturelle, sans markdown, sans listes à puces, sans titres. Réponse complète mais concise (quelques paragraphes maximum).`;
+
+  // Rassemble TOUT l'historique présent en base et le formate en contexte texte.
+  const buildCoachContext = async () => {
     let logs = Array.isArray(healthLogs) ? healthLogs : [];
     let strava = Array.isArray(stravaLogs) ? stravaLogs : [];
     let hevy = Array.isArray(hevyWorkouts) ? hevyWorkouts : [];
@@ -967,8 +967,6 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, stravaLogs, hevyWo
       } catch (e) { console.error('Coach: lecture des données', e); }
     }
 
-    // Compactage : on retire les valeurs nulles et les détails volumineux (sets/exos)
-    // pour envoyer un maximum d'historique sans saturer le contexte.
     const strip = (o) => Object.fromEntries(Object.entries(o).filter(([k, v]) => v != null && k !== 'id'));
     const compactLogs = [...logs]
       .sort((a, b) => new Date(a.date) - new Date(b.date))
@@ -985,22 +983,7 @@ function HealthTracker({ user, db, healthLogs, setHealthLogs, stravaLogs, hevyWo
       .sort((a, b) => new Date(a.start_time) - new Date(b.start_time))
       .map((w) => strip({ date: getLocalDateKey(w.start_time), titre: w.title, exercices: Array.isArray(w.exercises) ? w.exercises.length : null }));
 
-    const systemPrompt = `Tu es un coach santé GLOBAL expert en composition corporelle, activité physique, sport, sommeil, récupération et métabolisme. Ton interlocuteur est un homme de 55 ans, 1m74, qui suit un régime LOW-CARB (glucides modérés et maîtrisés, PAS de cétose stricte recherchée).
-
-TON : direct, bienveillant, pince-sans-rire avec parcimonie. Tu salues les vrais progrès et tu dis franchement quand ça stagne.
-
-DONNÉES : tu disposes de TOUT l'historique de l'utilisateur, fourni en JSON dans le message (mesures corporelles et cardio jour par jour, activité/sommeil/récupération/métabolique quotidiens, séances cardio et séances de musculation). Tu DOIS prendre en compte l'ENSEMBLE de cet historique — toutes les dates disponibles, pas seulement les plus récentes — pour analyser les tendances de fond et répondre.
-
-RÈGLES :
-- Réponds DIRECTEMENT et précisément à la question posée. Appuie-toi sur des chiffres réels et des tendances tirés des données (cite des valeurs et des évolutions datées quand c'est pertinent).
-- Impédancemétrie : si l'hydratation est inférieure à 55%, les mesures de graisse et de muscle sont faussées (graisse surestimée, muscle sous-estimé) ; signale-le si concerné.
-- Régime LOW-CARB : vise des glucides modérés et une glycémie stable ; ne parle pas de cétose profonde ni de GKI.
-- Musculation : elle peut venir de Hevy OU de Strava (type WeightTraining/Workout) ; ne conclus jamais à une absence de muscu sans tenir compte des deux sources.
-- ZÉRO jargon : pas de sigle obscur (dis "rigidité des artères" et non "PWV", "variabilité cardiaque" et non "VFC/HRV", "métabolisme de base" et non "BMR").
-- Si une donnée nécessaire à la réponse est absente de l'historique, dis-le simplement plutôt que d'inventer.
-- FORMAT : prose claire et naturelle, sans markdown, sans listes à puces, sans titres. Réponse complète mais concise (quelques paragraphes maximum).`;
-
-    const userMessage = `PROFIL : homme, 55 ans, 1m74, régime low-carb.
+    return `PROFIL : homme, 55 ans, 1m74, régime low-carb.
 OBJECTIFS : Poids ${goals.startWeight}→${goals.targetWeight} kg | Graisse ${goals.startFat}→${goals.targetFat}% | Tour de taille ${goals.startWaist}→${goals.targetWaist} cm
 
 HISTORIQUE COMPLET — MESURES CORPORELLES & CARDIO (chronologique, une entrée par date) :
@@ -1013,25 +996,42 @@ HISTORIQUE COMPLET — SÉANCES CARDIO (Strava) :
 ${JSON.stringify(compactStrava)}
 
 HISTORIQUE COMPLET — SÉANCES MUSCULATION (Hevy) :
-${JSON.stringify(compactHevy)}
+${JSON.stringify(compactHevy)}`;
+  };
 
-QUESTION DE L'UTILISATEUR :
-${question}`;
-
+  const askCoach = async () => {
+    const question = coachQuestion.trim();
+    if (!question || coachLoading) return;
+    setCoachError(null);
+    const nextThread = [...coachMessages, { role: 'user', content: question }];
+    setCoachMessages(nextThread);
+    setCoachQuestion('');
+    setCoachLoading(true);
     try {
-      const response = await fetch('/claude_proxy.php', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ system: systemPrompt, messages: [{ role: 'user', content: userMessage }] }) });
+      if (!coachContextRef.current) coachContextRef.current = await buildCoachContext();
+      // Messages envoyés à Claude = tout le fil ; le contexte de données est
+      // injecté dans le 1er message utilisateur (et donc renvoyé à chaque tour).
+      const apiMessages = nextThread.map((m) => ({ role: m.role, content: m.content }));
+      const firstUser = apiMessages.findIndex((m) => m.role === 'user');
+      if (firstUser >= 0) {
+        apiMessages[firstUser] = { role: 'user', content: `${coachContextRef.current}\n\nQUESTION DE L'UTILISATEUR :\n${apiMessages[firstUser].content}` };
+      }
+      const response = await fetch('/claude_proxy.php', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ system: COACH_SYSTEM_PROMPT, messages: apiMessages }) });
       if (!response.ok) throw new Error(`Erreur HTTP ${response.status}`);
       const data = await response.json();
       const text = data.content?.[0]?.text || 'Aucune réponse reçue.';
-      setCoachAnswer(text);
-      if (user && db) {
-        try {
-          const docSnap = await getDoc(doc(db, 'users', user.uid));
-          if (docSnap.exists()) { await setDoc(doc(db, 'users', user.uid), sanitizeForFirestore({ ...docSnap.data(), coachLast: { question, answer: text, date: new Date().toISOString() } })); }
-        } catch (e) { console.error('Erreur sauvegarde coach IA', e); }
-      }
-    } catch (e) { setCoachError("Impossible d'obtenir une réponse du coach. Vérifiez votre connexion ou le proxy PHP."); console.error('Erreur coach IA', e); }
-    finally { setCoachLoading(false); }
+      setCoachMessages((prev) => [...prev, { role: 'assistant', content: text }]);
+    } catch (e) {
+      setCoachError("Impossible d'obtenir une réponse du coach. Vérifiez votre connexion ou le proxy PHP.");
+      console.error('Erreur coach IA', e);
+    } finally { setCoachLoading(false); }
+  };
+
+  const resetCoach = () => {
+    setCoachMessages([]);
+    setCoachQuestion('');
+    setCoachError(null);
+    coachContextRef.current = null;
   };
 
   const handleSave = async () => {
@@ -1210,7 +1210,7 @@ ${question}`;
 
   return (
     <div className="animate-fade-in space-y-6">
-      {/* --- DEMANDE AU COACH --- */}
+      {/* --- DEMANDE AU COACH (fil de conversation) --- */}
       <div className="relative overflow-hidden rounded-xl border border-violet-500/30 shadow-lg">
         {/* Image de fond (fichier dans public/coach-bg.jpeg) */}
         <div
@@ -1221,40 +1221,52 @@ ${question}`;
         <div className="absolute inset-0 bg-gradient-to-b from-slate-900/80 via-slate-900/85 to-slate-900/90" />
 
         <div className="relative p-5 space-y-4">
-          <div>
-            <h3 className="font-bold text-slate-100 flex items-center gap-2 text-base">
-              <span className="text-violet-400">💬</span> Demande au coach
-            </h3>
-            <p className="text-xs text-slate-300/80 mt-1">
-              Pose ta question : le coach prend en compte <strong>tout ton historique</strong> (mesures, activité, sommeil, récupération, sport) pour te répondre.
-            </p>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="font-bold text-slate-100 flex items-center gap-2 text-base">
+                <span className="text-violet-400">💬</span> Demande au coach
+              </h3>
+              <p className="text-xs text-slate-300/80 mt-1">
+                Discute avec ton coach : il prend en compte <strong>tout ton historique</strong> (mesures, activité, sommeil, récupération, sport) et garde le fil de la conversation.
+              </p>
+            </div>
+            {coachMessages.length > 0 && !isDemo && (
+              <button
+                onClick={resetCoach}
+                disabled={coachLoading}
+                className="flex items-center gap-1.5 bg-slate-700/80 hover:bg-slate-600 disabled:opacity-50 text-slate-200 text-[11px] font-bold px-3 py-1.5 rounded-lg transition-colors shrink-0 border border-slate-600"
+              >
+                <RefreshCw size={12} /> Nouvelle conversation
+              </button>
+            )}
           </div>
 
-          <textarea
-            value={coachQuestion}
-            onChange={(e) => setCoachQuestion(e.target.value)}
-            placeholder="Ex : Ma perte de poids est-elle sur la bonne trajectoire ? Comment améliorer mon sommeil et ma récupération ?"
-            disabled={coachLoading || isDemo}
-            rows={3}
-            className="w-full bg-slate-900/70 border border-slate-700 rounded-lg p-3 text-sm text-slate-100 placeholder-slate-500 resize-y focus:outline-none focus:border-violet-500 disabled:opacity-60"
-          />
-
-          <div className="flex justify-end">
-            <button
-              onClick={isDemo ? undefined : askCoach}
-              disabled={coachLoading || isDemo || !coachQuestion.trim()}
-              className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold px-4 py-2 rounded-lg transition-colors shrink-0"
-            >
-              <RefreshCw size={13} className={coachLoading ? 'animate-spin' : ''} />
-              {coachLoading ? 'Le coach réfléchit...' : 'Demander'}
-            </button>
-          </div>
-
-          {/* Chargement */}
-          {coachLoading && (
-            <div className="bg-slate-900/60 border border-violet-500/30 rounded-lg flex flex-col items-center justify-center py-10 gap-3">
-              <div className="w-8 h-8 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
-              <p className="text-slate-300 text-sm">Le coach analyse ton historique...</p>
+          {/* Fil de conversation */}
+          {coachMessages.length > 0 && (
+            <div className="space-y-3 max-h-[460px] overflow-y-auto pr-1">
+              {coachMessages.map((m, i) => (
+                m.role === 'user' ? (
+                  <div key={i} className="flex justify-end">
+                    <div className="max-w-[85%] bg-violet-600/90 text-white text-sm rounded-2xl rounded-br-sm px-4 py-2.5 whitespace-pre-line leading-relaxed">
+                      {m.content}
+                    </div>
+                  </div>
+                ) : (
+                  <div key={i} className="flex justify-start">
+                    <div className="max-w-[90%] bg-slate-900/70 border border-violet-500/20 text-slate-200 text-sm rounded-2xl rounded-bl-sm px-4 py-3 whitespace-pre-line leading-relaxed">
+                      {m.content}
+                    </div>
+                  </div>
+                )
+              ))}
+              {coachLoading && (
+                <div className="flex justify-start">
+                  <div className="bg-slate-900/70 border border-violet-500/20 rounded-2xl rounded-bl-sm px-4 py-3 flex items-center gap-2 text-slate-400 text-sm">
+                    <div className="w-4 h-4 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
+                    Le coach réfléchit...
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -1265,23 +1277,30 @@ ${question}`;
             </div>
           )}
 
-          {/* Réponse */}
-          {coachAnswer && !coachLoading && (
-            <div className="bg-slate-900/70 border border-violet-500/20 rounded-lg overflow-hidden">
-              <div className="bg-violet-500/10 px-5 py-3 border-b border-violet-500/20 flex items-center gap-2">
-                <HeartPulse size={15} className="text-violet-400 shrink-0" />
-                <span className="text-sm font-bold text-violet-300">Réponse du coach</span>
-              </div>
-              <div className="px-5 py-4">
-                <p className="text-slate-200 text-sm leading-relaxed whitespace-pre-line">{coachAnswer}</p>
-              </div>
+          {/* Saisie */}
+          <div className="space-y-2">
+            <textarea
+              value={coachQuestion}
+              onChange={(e) => setCoachQuestion(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (!isDemo) askCoach(); } }}
+              placeholder={coachMessages.length === 0
+                ? "Ex : Ma perte de poids est-elle sur la bonne trajectoire ? Comment améliorer mon sommeil ?"
+                : "Pose une question de suivi… (Entrée pour envoyer, Maj+Entrée pour un saut de ligne)"}
+              disabled={coachLoading || isDemo}
+              rows={2}
+              className="w-full bg-slate-900/70 border border-slate-700 rounded-lg p-3 text-sm text-slate-100 placeholder-slate-500 resize-y focus:outline-none focus:border-violet-500 disabled:opacity-60"
+            />
+            <div className="flex justify-end">
+              <button
+                onClick={isDemo ? undefined : askCoach}
+                disabled={coachLoading || isDemo || !coachQuestion.trim()}
+                className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold px-4 py-2 rounded-lg transition-colors shrink-0"
+              >
+                <RefreshCw size={13} className={coachLoading ? 'animate-spin' : ''} />
+                {coachLoading ? 'Le coach réfléchit...' : coachMessages.length === 0 ? 'Demander' : 'Envoyer'}
+              </button>
             </div>
-          )}
-
-          {/* État vide */}
-          {!coachAnswer && !coachLoading && !coachError && (
-            <p className="text-xs text-slate-400 italic">Écris ta question ci-dessus puis clique sur « Demander ».</p>
-          )}
+          </div>
         </div>
       </div>
 

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { doc, getDoc, setDoc, getDocs, collection, query, orderBy, limit } from 'firebase/firestore';
+import { doc, getDoc, getDocs, collection, query, orderBy, limit } from 'firebase/firestore';
 import ReactECharts from 'echarts-for-react';
 import { FullscreenableCard } from './CorosCards';
 import {
@@ -604,93 +604,74 @@ export default function NutritionImport({ user, db, isDemo, demoNutritionDocs, g
   const MACRO_WIDE = ['n_weeklyMacros', 'n_weeklyCalories'];
   const KETO_WIDE = ['n_ketoChart'];
 
-  // --- DEMANDE AU COACH NUTRITION (Claude AI) ---
+  // --- DEMANDE AU COACH NUTRITION — fil de conversation multi-tours ---
+  // Le fil vit le temps de la session ; il repart à zéro au rechargement.
+  const [coachMessages, setCoachMessages] = useState([]); // [{ role: 'user'|'assistant', content }]
   const [coachQuestion, setCoachQuestion] = useState('');
-  const [coachAnswer, setCoachAnswer] = useState('');
   const [coachLoading, setCoachLoading] = useState(false);
   const [coachError, setCoachError] = useState('');
+  const coachContextRef = useRef(null);
 
-  useEffect(() => {
-    if (isDemo || !user || !db) return;
-    (async () => {
-      try {
-        const snap = await getDoc(doc(db, 'users', user.uid));
-        if (snap.exists() && snap.data().nutriCoachLast) {
-          setCoachAnswer(snap.data().nutriCoachLast.answer || '');
-          setCoachQuestion(snap.data().nutriCoachLast.question || '');
-        }
-      } catch (e) { console.error('Erreur chargement coach nutrition', e); }
-    })();
-  }, [user, db, isDemo]);
-
-  const askCoach = async () => {
-    const question = coachQuestion.trim();
-    if (!question || coachLoading) return;
-    setCoachLoading(true);
-    setCoachError('');
-    try {
-      const dkey = (d) => { const x = new Date(d); return isNaN(x.getTime()) ? null : x.toISOString().split('T')[0]; };
-
-      // --- On rassemble TOUT l'historique nutrition présent en base ---
-      // Google Health (fitbitDaily) + Cronometer (nutrition), Cronometer prioritaire.
-      const byDate = {};
-      if (isDemo && Array.isArray(demoNutritionDocs)) {
-        demoNutritionDocs.forEach((d) => { if (d.date) byDate[d.date] = { ...d }; });
-      } else if (user && db) {
-        try {
-          const fsnap = await getDocs(query(collection(db, 'users', user.uid, 'fitbitDaily'), orderBy('date', 'desc'), limit(400)));
-          fsnap.docs.forEach((s) => {
-            const f = s.data(); if (!f.date) return;
-            const base = { date: f.date, activeKcal: f.activeKcal ?? null };
-            if (f.kcalIntake != null || f.carbsG != null) {
-              Object.assign(base, { calories: f.kcalIntake ?? 0, carbs: f.carbsG ?? 0, fat: f.fatG ?? 0, protein: f.proteinG ?? 0, petitDej: f.kcalBreakfast ?? 0, dejeuner: f.kcalLunch ?? 0, diner: f.kcalDinner ?? 0, encas: f.kcalSnack ?? 0 });
-            }
-            byDate[f.date] = base;
-          });
-        } catch {}
-        try {
-          const nsnap = await getDocs(query(collection(db, 'users', user.uid, 'nutrition'), orderBy('date', 'desc'), limit(400)));
-          nsnap.docs.forEach((s) => {
-            const n = s.data(); if (!n.date) return;
-            byDate[n.date] = { ...(byDate[n.date] || {}), ...n, date: n.date, activeKcal: byDate[n.date]?.activeKcal ?? null };
-          });
-        } catch {}
-      }
-
-      const hasNut = (d) => d && (d.calories != null || d.carbs != null);
-      // Métabolisme de base (dernière mesure de composition connue) pour le déficit.
-      const bmrLogs = (healthLogs || []).filter((l) => l.bmr != null).sort((a, b) => (a.date < b.date ? 1 : -1));
-      const bmr = bmrLogs.length ? bmrLogs[0].bmr : null;
-      const deficitOf = (d) => (hasNut(d) && bmr != null) ? Math.round((d.calories || 0) - (bmr + (d.activeKcal || 0))) : null;
-
-      // Compactage : on retire les valeurs nulles pour envoyer un maximum
-      // d'historique sans saturer le contexte.
-      const strip = (o) => Object.fromEntries(Object.entries(o).filter(([k, v]) => v != null && k !== 'id'));
-      const compactNut = Object.keys(byDate)
-        .filter((k) => hasNut(byDate[k]))
-        .sort()
-        .map((k) => { const d = byDate[k]; return strip({ date: k, calories: d.calories != null ? Math.round(d.calories) : null, glucides: d.carbs != null ? Math.round(d.carbs) : null, lipides: d.fat != null ? Math.round(d.fat) : null, proteines: d.protein != null ? Math.round(d.protein) : null, deficit: deficitOf(d) }); });
-      const compactCompo = [...(healthLogs || [])]
-        .filter((l) => l && l.date)
-        .sort((a, b) => new Date(a.date) - new Date(b.date))
-        .map((l) => strip({ date: dkey(l.date), poids: l.weight, graisse: l.bodyFat, muscle: l.muscleMass, tourTaille: l.waist, viscerale: l.visceralFat, glycemie: l.glucose, cetones: l.ketones }))
-        .filter((l) => l.date && Object.keys(l).length > 1);
-
-      const systemPrompt = `Tu es un coach NUTRITION expert, version nutrition du coach santé global. Interlocuteur : homme de 55 ans, 1m74, régime LOW-CARB (glucides modérés et maîtrisés, PAS de cétose stricte recherchée).
+  const COACH_SYSTEM_PROMPT = `Tu es un coach NUTRITION expert, version nutrition du coach santé global. Interlocuteur : homme de 55 ans, 1m74, régime LOW-CARB (glucides modérés et maîtrisés, PAS de cétose stricte recherchée).
 
 TON : direct, bienveillant, pince-sans-rire avec parcimonie. Tu salues les vrais progrès et tu dis franchement quand ça dérape.
 
-DONNÉES : tu disposes de TOUT l'historique de l'utilisateur, fourni en JSON dans le message (nutrition jour par jour — calories, macros, déficit — et composition corporelle jour par jour). Tu DOIS prendre en compte l'ENSEMBLE de cet historique — toutes les dates disponibles, pas seulement les plus récentes — pour analyser les tendances de fond et les corrélations.
+DONNÉES : le PREMIER message de l'utilisateur contient TOUT son historique en JSON (nutrition jour par jour — calories, macros, déficit — et composition corporelle jour par jour). Tu DOIS prendre en compte l'ENSEMBLE de cet historique — toutes les dates disponibles — pour répondre, y compris aux questions de relance qui suivent.
 
 RÈGLES :
-- Réponds DIRECTEMENT et précisément à la question posée. Appuie-toi sur des chiffres réels et des tendances datées tirés des données.
+- Tu es dans une CONVERSATION : tiens compte de tes réponses précédentes et réponds à la nouvelle question en gardant le fil.
+- Réponds DIRECTEMENT et précisément. Appuie-toi sur des chiffres réels et des tendances datées tirés des données.
 - Cherche les CORRÉLATIONS entre la nutrition (déficit calorique, glucides, protéines) et la composition corporelle (poids, graisse, muscle, tour de taille) quand c'est pertinent.
 - Low-carb : vise des glucides modérés et une glycémie stable ; ne parle pas de cétose profonde ni de GKI.
 - ZÉRO jargon : mots simples, pas de sigle obscur (dis "métabolisme de base" et non "BMR").
-- Si une donnée nécessaire à la réponse est absente de l'historique, dis-le simplement plutôt que d'inventer.
+- Si une donnée nécessaire est absente de l'historique, dis-le simplement plutôt que d'inventer.
 - FORMAT : prose claire et naturelle, sans markdown, sans listes à puces, sans titres. Réponse complète mais concise (quelques paragraphes maximum).`;
 
-      const userMessage = `PROFIL : homme, 55 ans, 1m74, régime low-carb.
+  // Rassemble TOUT l'historique nutrition + composition et le formate en contexte texte.
+  const buildCoachContext = async () => {
+    const dkey = (d) => { const x = new Date(d); return isNaN(x.getTime()) ? null : x.toISOString().split('T')[0]; };
+
+    const byDate = {};
+    if (isDemo && Array.isArray(demoNutritionDocs)) {
+      demoNutritionDocs.forEach((d) => { if (d.date) byDate[d.date] = { ...d }; });
+    } else if (user && db) {
+      try {
+        const fsnap = await getDocs(query(collection(db, 'users', user.uid, 'fitbitDaily'), orderBy('date', 'desc'), limit(400)));
+        fsnap.docs.forEach((s) => {
+          const f = s.data(); if (!f.date) return;
+          const base = { date: f.date, activeKcal: f.activeKcal ?? null };
+          if (f.kcalIntake != null || f.carbsG != null) {
+            Object.assign(base, { calories: f.kcalIntake ?? 0, carbs: f.carbsG ?? 0, fat: f.fatG ?? 0, protein: f.proteinG ?? 0, petitDej: f.kcalBreakfast ?? 0, dejeuner: f.kcalLunch ?? 0, diner: f.kcalDinner ?? 0, encas: f.kcalSnack ?? 0 });
+          }
+          byDate[f.date] = base;
+        });
+      } catch {}
+      try {
+        const nsnap = await getDocs(query(collection(db, 'users', user.uid, 'nutrition'), orderBy('date', 'desc'), limit(400)));
+        nsnap.docs.forEach((s) => {
+          const n = s.data(); if (!n.date) return;
+          byDate[n.date] = { ...(byDate[n.date] || {}), ...n, date: n.date, activeKcal: byDate[n.date]?.activeKcal ?? null };
+        });
+      } catch {}
+    }
+
+    const hasNut = (d) => d && (d.calories != null || d.carbs != null);
+    const bmrLogs = (healthLogs || []).filter((l) => l.bmr != null).sort((a, b) => (a.date < b.date ? 1 : -1));
+    const bmr = bmrLogs.length ? bmrLogs[0].bmr : null;
+    const deficitOf = (d) => (hasNut(d) && bmr != null) ? Math.round((d.calories || 0) - (bmr + (d.activeKcal || 0))) : null;
+
+    const strip = (o) => Object.fromEntries(Object.entries(o).filter(([k, v]) => v != null && k !== 'id'));
+    const compactNut = Object.keys(byDate)
+      .filter((k) => hasNut(byDate[k]))
+      .sort()
+      .map((k) => { const d = byDate[k]; return strip({ date: k, calories: d.calories != null ? Math.round(d.calories) : null, glucides: d.carbs != null ? Math.round(d.carbs) : null, lipides: d.fat != null ? Math.round(d.fat) : null, proteines: d.protein != null ? Math.round(d.protein) : null, deficit: deficitOf(d) }); });
+    const compactCompo = [...(healthLogs || [])]
+      .filter((l) => l && l.date)
+      .sort((a, b) => new Date(a.date) - new Date(b.date))
+      .map((l) => strip({ date: dkey(l.date), poids: l.weight, graisse: l.bodyFat, muscle: l.muscleMass, tourTaille: l.waist, viscerale: l.visceralFat, glycemie: l.glucose, cetones: l.ketones }))
+      .filter((l) => l.date && Object.keys(l).length > 1);
+
+    return `PROFIL : homme, 55 ans, 1m74, régime low-carb.
 OBJECTIFS MACROS/JOUR : glucides ${targets.carbs} g, lipides ${targets.fat} g, protéines ${targets.protein} g, calories ${targets.calories} kcal.
 ${bmr != null ? `Métabolisme de base : ${bmr} kcal.` : 'Métabolisme de base inconnu.'}
 Dernières valeurs métaboliques connues : glycémie ${latestGlucose || '—'} mg/dL, cétones ${latestKetones || '—'} mmol/L.
@@ -699,24 +680,33 @@ HISTORIQUE COMPLET — NUTRITION (chronologique, une entrée par date ; deficit 
 ${JSON.stringify(compactNut)}
 
 HISTORIQUE COMPLET — COMPOSITION CORPORELLE (chronologique) :
-${JSON.stringify(compactCompo)}
+${JSON.stringify(compactCompo)}`;
+  };
 
-QUESTION DE L'UTILISATEUR :
-${question}`;
-
+  const askCoach = async () => {
+    const question = coachQuestion.trim();
+    if (!question || coachLoading) return;
+    setCoachError('');
+    const nextThread = [...coachMessages, { role: 'user', content: question }];
+    setCoachMessages(nextThread);
+    setCoachQuestion('');
+    setCoachLoading(true);
+    try {
+      if (!coachContextRef.current) coachContextRef.current = await buildCoachContext();
+      const apiMessages = nextThread.map((m) => ({ role: m.role, content: m.content }));
+      const firstUser = apiMessages.findIndex((m) => m.role === 'user');
+      if (firstUser >= 0) {
+        apiMessages[firstUser] = { role: 'user', content: `${coachContextRef.current}\n\nQUESTION DE L'UTILISATEUR :\n${apiMessages[firstUser].content}` };
+      }
       const res = await fetch('/claude_proxy.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ system: systemPrompt, messages: [{ role: 'user', content: userMessage }] }),
+        body: JSON.stringify({ system: COACH_SYSTEM_PROMPT, messages: apiMessages }),
       });
       if (!res.ok) throw new Error(`Erreur HTTP ${res.status}`);
       const data = await res.json();
       const text = data.content?.[0]?.text || 'Aucune réponse.';
-      setCoachAnswer(text);
-      if (user && db && !isDemo) {
-        try { await setDoc(doc(db, 'users', user.uid), { nutriCoachLast: { question, answer: text, date: new Date().toISOString() } }, { merge: true }); }
-        catch (e) { console.error('Erreur sauvegarde coach nutrition', e); }
-      }
+      setCoachMessages((prev) => [...prev, { role: 'assistant', content: text }]);
     } catch (e) {
       setCoachError("Impossible d'obtenir une réponse du coach. Vérifiez votre connexion ou le proxy PHP.");
       console.error('Erreur coach nutrition IA', e);
@@ -725,9 +715,16 @@ ${question}`;
     }
   };
 
+  const resetCoach = () => {
+    setCoachMessages([]);
+    setCoachQuestion('');
+    setCoachError('');
+    coachContextRef.current = null;
+  };
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-      {/* DEMANDE AU COACH NUTRITION */}
+      {/* DEMANDE AU COACH NUTRITION (fil de conversation) */}
       <div className="col-span-full relative overflow-hidden rounded-xl border-2 border-violet-500/40 shadow-lg shadow-violet-500/10">
         {/* Image de fond (fichier dans public/coach-nutri.jpeg) */}
         <div
@@ -738,62 +735,82 @@ ${question}`;
         <div className="absolute inset-0 bg-gradient-to-b from-slate-900/80 via-slate-900/85 to-slate-900/90" />
 
         <div className="relative p-5 space-y-4">
-          <div>
-            <h2 className="text-sm font-bold text-violet-300 uppercase tracking-widest flex items-center gap-2">
-              <span className="text-xl">🧠</span> Demande au coach nutrition
-            </h2>
-            <p className="text-xs text-slate-300/80 mt-1">
-              Pose ta question : le coach prend en compte <strong>tout ton historique nutrition</strong> (calories, macros, déficit) et son lien avec ta composition corporelle pour te répondre.
-            </p>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-bold text-violet-300 uppercase tracking-widest flex items-center gap-2">
+                <span className="text-xl">🧠</span> Demande au coach nutrition
+              </h2>
+              <p className="text-xs text-slate-300/80 mt-1">
+                Discute avec ton coach : il prend en compte <strong>tout ton historique nutrition</strong> (calories, macros, déficit) et son lien avec ta composition corporelle, et garde le fil de la conversation.
+              </p>
+            </div>
+            {coachMessages.length > 0 && !isDemo && (
+              <button
+                onClick={resetCoach}
+                disabled={coachLoading}
+                className="flex items-center gap-1.5 bg-slate-700/80 hover:bg-slate-600 disabled:opacity-50 text-slate-200 text-[11px] font-bold px-3 py-1.5 rounded-lg transition-colors shrink-0 border border-slate-600"
+              >
+                🔄 Nouvelle conversation
+              </button>
+            )}
           </div>
 
-          <textarea
-            value={coachQuestion}
-            onChange={(e) => setCoachQuestion(e.target.value)}
-            placeholder="Ex : Mon apport en protéines est-il suffisant pour préserver mon muscle ? Mon déficit explique-t-il ma perte de poids ?"
-            disabled={coachLoading || isDemo}
-            rows={3}
-            className="w-full bg-slate-900/70 border border-slate-700 rounded-lg p-3 text-sm text-slate-100 placeholder-slate-500 resize-y focus:outline-none focus:border-violet-500 disabled:opacity-60"
-          />
+          {/* Fil de conversation */}
+          {coachMessages.length > 0 && (
+            <div className="space-y-3 max-h-[460px] overflow-y-auto pr-1">
+              {coachMessages.map((m, i) => (
+                m.role === 'user' ? (
+                  <div key={i} className="flex justify-end">
+                    <div className="max-w-[85%] bg-violet-600/90 text-white text-sm rounded-2xl rounded-br-sm px-4 py-2.5 whitespace-pre-line leading-relaxed">
+                      {m.content}
+                    </div>
+                  </div>
+                ) : (
+                  <div key={i} className="flex justify-start">
+                    <div className="max-w-[90%] bg-slate-900/70 border border-violet-500/20 text-slate-200 text-sm rounded-2xl rounded-bl-sm px-4 py-3 whitespace-pre-line leading-relaxed">
+                      {m.content}
+                    </div>
+                  </div>
+                )
+              ))}
+              {coachLoading && (
+                <div className="flex justify-start">
+                  <div className="bg-slate-900/70 border border-violet-500/20 rounded-2xl rounded-bl-sm px-4 py-3 flex items-center gap-2 text-slate-400 text-sm">
+                    <div className="w-4 h-4 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
+                    Le coach réfléchit...
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
-          <div className="flex justify-end">
-            <button
-              onClick={isDemo ? undefined : askCoach}
-              disabled={coachLoading || isDemo || !coachQuestion.trim()}
-              className="flex items-center gap-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold px-4 py-2 rounded-lg transition-colors shrink-0"
-            >
-              {coachLoading ? (
-                <><svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg> Le coach réfléchit...</>
-              ) : 'Demander'}
-            </button>
-          </div>
-
-          {coachError && (
+          {coachError && !coachLoading && (
             <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4 text-red-400 text-sm">{coachError}</div>
           )}
 
-          {coachLoading && (
-            <div className="bg-slate-900/60 border border-violet-500/30 rounded-lg flex flex-col items-center justify-center py-10 gap-3">
-              <div className="w-8 h-8 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
-              <p className="text-slate-300 text-sm">Le coach analyse ton historique...</p>
+          {/* Saisie */}
+          <div className="space-y-2">
+            <textarea
+              value={coachQuestion}
+              onChange={(e) => setCoachQuestion(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (!isDemo) askCoach(); } }}
+              placeholder={coachMessages.length === 0
+                ? "Ex : Mon apport en protéines est-il suffisant pour préserver mon muscle ? Mon déficit explique-t-il ma perte de poids ?"
+                : "Pose une question de suivi… (Entrée pour envoyer, Maj+Entrée pour un saut de ligne)"}
+              disabled={coachLoading || isDemo}
+              rows={2}
+              className="w-full bg-slate-900/70 border border-slate-700 rounded-lg p-3 text-sm text-slate-100 placeholder-slate-500 resize-y focus:outline-none focus:border-violet-500 disabled:opacity-60"
+            />
+            <div className="flex justify-end">
+              <button
+                onClick={isDemo ? undefined : askCoach}
+                disabled={coachLoading || isDemo || !coachQuestion.trim()}
+                className="flex items-center gap-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold px-4 py-2 rounded-lg transition-colors shrink-0"
+              >
+                {coachLoading ? 'Le coach réfléchit...' : coachMessages.length === 0 ? 'Demander' : 'Envoyer'}
+              </button>
             </div>
-          )}
-
-          {coachAnswer && !coachLoading && (
-            <div className="bg-slate-900/70 border border-violet-500/20 rounded-lg overflow-hidden">
-              <div className="bg-violet-500/10 px-5 py-3 border-b border-violet-500/20 flex items-center gap-2">
-                <span className="text-base">🧠</span>
-                <span className="text-sm font-bold text-violet-300">Réponse du coach</span>
-              </div>
-              <div className="px-5 py-4">
-                <p className="text-slate-200 text-sm leading-relaxed whitespace-pre-line">{coachAnswer}</p>
-              </div>
-            </div>
-          )}
-
-          {!coachAnswer && !coachLoading && !coachError && (
-            <p className="text-xs text-slate-400 italic">Écris ta question ci-dessus puis clique sur « Demander ».</p>
-          )}
+          </div>
         </div>
       </div>
       <CardSection title="Macronutrition du jour" cardIds={macroCardOrder} cardContent={allCards} wideCards={MACRO_WIDE} dragState={macroDrag} isMobile={isMobile} />
